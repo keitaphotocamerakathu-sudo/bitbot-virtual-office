@@ -10,7 +10,7 @@
  async function getClient(){
    if(!client){const {createClient}=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm');
      client=createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-     client.auth.onAuthStateChange((_event,s)=>{session=s;updateLogin();});
+     client.auth.onAuthStateChange((_event,s)=>{const old=session?.user?.id;session=s;updateLogin();if(old!==session?.user?.id)setTimeout(()=>status().catch(()=>{}),0);});
      const {data}=await client.auth.getSession();session=data.session;updateLogin();
    }return client;
  }
@@ -37,7 +37,10 @@
    if(!$('limitPrice').value)$('limitPrice').value=Number(quote.priceTHB).toFixed(2);
  }catch(e){$('feedBadge').textContent='FEED ERROR';$('quoteAge').textContent=e.message;}}
  async function status(){try{const x=await api('status');settings=x;
-   show('ข้อมูลราคา: Bitkub API จริง\nเชื่อม Wallet: '+(x.walletConfigured?'ตั้งค่า API Key แล้ว':'ยังไม่ได้ตั้ง API Key')+'\nส่งคำสั่งเงินจริง: '+(x.liveTradingEnabled?'เปิดพร้อมวงเงินความเสี่ยง':'ปิด (ปลอดภัย)')+'\nรูปแบบคำสั่ง: LIMIT เท่านั้น / ยืนยันด้วยตนเอง'+(x.orderCapTHB?'\nวงเงินสูงสุดต่อคำสั่ง: ฿'+fmt(x.orderCapTHB):''));
+   let keyInfo='กรุณาเข้าสู่ระบบและตั้งค่าผ่าน ⚙ ตั้งค่า Bitkub',cap=x.orderCapTHB,approved=false;
+   if(session?.user){const a=await api('setup-status',{auth:true});keyInfo=a.setup?.configured?'บันทึกเข้ารหัสแล้ว • ลงท้าย '+a.setup.keySuffix:'ยังไม่ได้ตั้ง API Key';cap=a.setup?.maxOrderTHB||cap;approved=Boolean(a.setup?.adminApproved&&a.setup?.tradingEnabled&&a.serverLiveEnabled);}
+   settings.liveTradingEnabled=approved;
+   show('ข้อมูลราคา: Bitkub API จริง\nเชื่อม Wallet: '+keyInfo+'\nส่งคำสั่งเงินจริง: '+(approved?'ได้รับสิทธิ์แล้ว':'ปิด (ปลอดภัย)')+'\nรูปแบบคำสั่ง: LIMIT เท่านั้น / ยืนยันด้วยตนเอง'+(cap?'\nวงเงินต่อคำสั่งที่ตั้งไว้: ฿'+fmt(cap):''));
  }catch(e){show('Backend ยังไม่พร้อม: '+e.message,true);}}
  async function login(){const email=$('loginEmail').value.trim();if(!/^\S+@\S+\.\S+$/.test(email)){show('กรุณากรอกอีเมล',true);return;}
    try{const c=await getClient(),{error}=await c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
