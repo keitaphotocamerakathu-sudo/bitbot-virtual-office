@@ -1,8 +1,5 @@
-/* Configure only after creating a NEW, isolated Bitbot Supabase project.
- * The URL and PUBLISHABLE key may appear in the browser. Never put a secret or service-role key here.
- * Default intentionally DISABLED to protect unrelated RESTART/Cooperative projects.
- */
+/* Bitbot dedicated Supabase project. PUBLIC publishable key, never service_role. */
 window.BITBOT_CLOUD_CONFIG = Object.freeze({
-  url: '',
-  publishableKey: ''
+  url: 'https://lrxrigimdaedfemqheug.supabase.co',
+  publishableKey: 'sb_publishable_TvApng9ThTaVLIXd8YPKhQ_dS3TNcWI'
 });
