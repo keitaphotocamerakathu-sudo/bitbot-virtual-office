@@ -707,4 +707,243 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
 })();
 
 </script>
+<script>
+/* Bitbot Trading Memory: persistent browser journal, no API keys or real trading. */
+'use strict';
+(function(){
+ const DB_NAME='bitbot-paper-learning-v4', DB_VERSION=1;
+ const $m=id=>document.getElementById(id);
+ const htmlEscape=s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+ const stamp=()=>new Date().toISOString();
+ const uid=()=>Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12);
+ const snap=s=>s.snapshot();
+ let db, dbError=null, pending=Promise.resolve(), inited=false, sessionId=null, busy=false;
+ let rOpen;
+ try { if(typeof indexedDB==='undefined') throw Error('เบราว์เซอร์นี้ไม่มี IndexedDB'); rOpen=indexedDB.open(DB_NAME,DB_VERSION); }
+ catch(storageError){
+   document.addEventListener('DOMContentLoaded',()=>{
+     const x=document.querySelector('.sim-controls');if(x){const p=document.createElement('p');p.style.color='#ff98ac';p.textContent='⛔ ไม่สามารถเปิดระบบบันทึกประวัติ จึงไม่อนุญาตให้เทรดจำลอง กรุณาใช้ Chrome ปกติหรือเปิดเว็บจากเซิร์ฟเวอร์ localhost: '+storageError.message;x.prepend(p);}
+     for(const id of ['simPlay','simStep','simQA','showTradeNow']){const btn=document.getElementById(id);if(btn)btn.disabled=true;}
+   });
+   return;
+ }
+
+ const ready=new Promise((resolve,reject)=>{
+   rOpen.onupgradeneeded=()=>{
+     const d=rOpen.result;
+     const a=d.createObjectStore('runs',{keyPath:'id'}); a.createIndex('scenario','scenario');
+     const b=d.createObjectStore('journal',{keyPath:'id'});b.createIndex('run','runId');
+     const c=d.createObjectStore('lessons',{keyPath:'id'});c.createIndex('run','runId');
+   };
+   rOpen.onsuccess=()=>{db=rOpen.result;db.onversionchange=()=>db.close();resolve(db);};
+   rOpen.onerror=()=>reject(rOpen.error||Error('IndexedDB open failed'));
+ });
+ function txPut(store,items){return ready.then(d=>new Promise((resolve,reject)=>{
+   const tx=d.transaction(store,'readwrite'),obj=tx.objectStore(store);
+   for(const item of items) obj.put(item);
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||Error('IndexedDB write failed'));
+   tx.onabort=()=>reject(tx.error||Error('IndexedDB aborted'));
+ }));}
+ function txMulti(records){return ready.then(d=>new Promise((resolve,reject)=>{
+   const tx=d.transaction(['journal','lessons'],'readwrite'),j=tx.objectStore('journal'),l=tx.objectStore('lessons');
+   for(const x of records.journal)j.put(x);
+   for(const x of records.lessons)l.put(x);
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||Error('Write failed'));
+   tx.onabort=()=>reject(tx.error||Error('Transaction aborted'));
+ }));}
+ const getAll=name=>ready.then(d=>new Promise((resolve,reject)=>{
+   const q=d.transaction(name).objectStore(name).getAll();q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);
+ }));
+ function panic(e){dbError=e; if(typeof stopSim==='function')stopSim(); if($m('memoryStatus'))$m('memoryStatus').textContent='⛔ บันทึกไม่สำเร็จ หยุดเทรดจำลอง: '+(e?.message||String(e));}
+ function queue(op){
+   pending=pending.then(op).catch(err=>{panic(err);throw err;});
+   pending.catch(()=>{});
+   return pending;
+ }
+ function fingerprint(bars){
+   let n=2166136261;for(const b of bars){for(const v of [b.t,b.o,b.c])n=Math.imul(n^Math.floor(v*100),16777619)>>>0;}return n.toString(16);
+ }
+ function sessionRecord(sim,type='interactive'){
+   return {id:uid(),kind:type,createdAt:stamp(),updatedAt:stamp(),source:sim.dataSource,scenario:sim.scenario,
+     guard:sim.__memoryGuard||$m('simGuard')?.value||'balanced',seed:sim.__seed??null,startCash:sim.cfg.cash,fees:sim.cfg.fee,slippage:sim.cfg.slippage,
+     fingerprint:fingerprint(sim.bars),bars:sim.bars.length,cfg:{...sim.cfg},status:'IN_PROGRESS',summary:null,version:4};
+ }
+ function begin(sim,type='interactive'){
+   if(dbError)throw dbError;
+   const s=sessionRecord(sim,type);
+   sim.__memoryId=s.id; sim.__memoryRun=s;
+   queue(()=>txPut('runs',[s]));
+   return s.id;
+ }
+ function tick(sim,fromTrades=0,fromDecisions=0,fromEvents=0){
+   if(dbError)throw dbError;
+   const id=sim.__memoryId;if(!id)return;
+   const p=sim.snapshot(), cursor=p.cursor, dec=sim.decisions.slice(fromDecisions);
+   const trades=sim.trades.slice(fromTrades),ev=sim.events.slice(fromEvents).filter(e=>e.type!=='signal');
+   const journal=[];const lessons=[];
+   for(let i=0;i<dec.length;i++){
+     const d=dec[i];journal.push({id:`${id}:decision:${cursor}:${i}`,runId:id,kind:'decision',seq:cursor,ts:d.ts,
+       signal:d.signal,source:sim.dataSource,scenario:sim.scenario,
+       evidence:{...d.detail, snapshot:{cash:p.cash,btc:p.btc,equity:p.equity,fees:p.fees,maxDD:p.maxDrawdownPct}}});
+   }
+   for(let i=0;i<trades.length;i++){
+     const t=trades[i];journal.push({id:`${id}:trade:${cursor}:${i}`,runId:id,kind:'trade',seq:cursor,ts:t.ts,
+       side:t.side,qty:t.qty,price:t.fill,fee:t.fee,pnl:t.pnl,reason:t.reason,cashAfter:t.cashAfter,btcAfter:t.btcAfter,
+       paperOnly:true,source:sim.dataSource,scenario:sim.scenario});
+     if(t.side==='SELL')lessons.push({id:`${id}:trade-lesson:${cursor}:${i}`,runId:id,createdAt:stamp(),category:t.pnl<0?'LOSS':'WIN',
+       confidence:'OBSERVATION',appliedToStrategy:false,evidence:{pnl:t.pnl,reason:t.reason,fee:t.fee,scenario:sim.scenario,source:sim.dataSource,tradeStep:cursor},
+       finding:t.pnl<0?'ปิดสถานะขาดทุน ควรตรวจบริบทและต้นทุน':'ปิดสถานะมีกำไร ยังไม่ยืนยันว่ากลยุทธ์ได้เปรียบ'});
+   }
+   for(let i=0;i<ev.length;i++){
+      const x=ev[i];journal.push({id:`${id}:event:${cursor}:${i}`,runId:id,kind:'event',seq:cursor,ts:x.ts,agent:x.role,eventType:x.type,message:String(x.message).slice(0,500)});
+   }
+   journal.push({id:`${id}:snapshot:${cursor}`,runId:id,kind:'state',seq:cursor,ts:p.ts,source:sim.dataSource,
+     cash:p.cash,btc:p.btc,equity:p.equity,fees:p.fees,drawdownPct:p.maxDrawdownPct,totalHalt:p.totalHalt,dailyHalt:p.dailyHalt});
+   queue(()=>txMulti({journal,lessons}));
+   // Keep per-step writes atomic: each completed step is an independently persisted transaction.
+ }
+ function finish(sim,status='COMPLETED'){
+   if(!sim?.__memoryId || sim.__memoryRun.status!=='IN_PROGRESS')return;
+   const p=sim.snapshot(),s=sim.__memoryRun;
+   s.updatedAt=stamp();s.status=status;
+   s.summary={cursor:p.cursor,equity:p.equity,returnPct:p.returnPct,netPnl:p.netPnl,buys:p.buys,sells:p.sells,
+     fees:p.fees,maxDrawdownPct:p.maxDrawdownPct,filteredSignals:p.filteredSignals,blockedEntries:p.blockedEntries};
+   queue(()=>txPut('runs',[s]));
+   const cats=[];
+   if(p.netPnl<0)cats.push(['LOSS','ขาดทุนสุทธิของรอบทดลองนี้']);
+   if(p.fees>Math.abs(p.netPnl))cats.push(['COSTS','ค่าธรรมเนียมสูงเมื่อเทียบกับผลสุทธิ']);
+   if(p.buys===0)cats.push(['NO_ENTRY','ไม่เกิดสัญญาณซื้อในรอบนี้']);
+   if(p.maxDrawdownPct>=3)cats.push(['DRAWDOWN','Drawdown สูงกว่า 3%']);
+   if(cats.length)queue(()=>txPut('lessons',cats.map(([category,finding],i)=>({id:`${s.id}:summary:${i}`,runId:s.id,createdAt:stamp(),
+       category,confidence:'OBSERVATION',appliedToStrategy:false,finding,evidence:{...s.summary,scenario:s.scenario,source:s.source,guard:s.guard}}))));
+   if($m('memoryStatus'))$m('memoryStatus').textContent='บันทึกรอบ '+s.id.slice(0,12)+' · '+status;
+   pending.then(renderMemory).catch(()=>{});
+ }
+ function considerPrevious(){return getAll('runs').then(runs=>{
+   const valid=runs.filter(r=>r.status==='COMPLETED'&&r.summary&&r.source==='SYNTHETIC');
+   const groups=new Map();for(const r of valid){const k=r.scenario+' / '+r.guard; if(!groups.has(k))groups.set(k,new Map());groups.get(k).set(r.fingerprint,r);}
+   const warnings=[];
+   for(const [key,map] of groups){const rows=[...map.values()];if(rows.length>=3){const avg=rows.reduce((a,r)=>a+r.summary.netPnl,0)/rows.length;
+     if(avg<0)warnings.push(`${key}: ทดสอบต่างชุด ${rows.length} ชุด ขาดทุนเฉลี่ย ฿${avg.toFixed(2)} · เสนอให้ทบทวนกรองความเสี่ยง (ยังไม่เปลี่ยนกลยุทธ์อัตโนมัติ)`);
+   }}
+   return {runs:valid.length,advice:warnings};
+ });}
+ async function lessonGuidedAB(){
+   if(dbError)throw dbError;
+   const runs=(await getAll('runs')).filter(r=>r.status==='COMPLETED'&&r.source==='SYNTHETIC'&&r.summary&&Number.isFinite(r.summary.netPnl));
+   const scenarios=[...new Set(runs.map(r=>r.scenario))];
+   const proposals=[];
+   for(const scenario of scenarios){
+     const byGuard={};
+     for(const mode of ['off','balanced','strict']){
+       const arr=runs.filter(r=>r.scenario===scenario&&r.guard===mode);
+       const m=new Map(arr.map(r=>[r.fingerprint,r]));
+       if(m.size<3)continue;
+       const unique=[...m.values()];
+       byGuard[mode]=unique.reduce((a,b)=>a+b.summary.netPnl,0)/unique.length;
+     }
+     if(Object.keys(byGuard).length>=2){
+       const sorted=Object.entries(byGuard).sort((a,b)=>a[1]-b[1]);
+       if(sorted[0][1]<0)proposals.push({scenario,weak:sorted[0],promising:sorted.at(-1),gap:sorted.at(-1)[1]-sorted[0][1]});
+     }
+   }
+   proposals.sort((a,b)=>b.gap-a.gap);
+   if(!proposals.length){$m('memoryABResult').textContent='ข้อมูลยังไม่พอ: ต้องมีผลทดสอบอย่างน้อย 3 ชุดราคาที่ต่างกันต่อกลยุทธ์อย่างน้อย 2 แบบ กรุณานำเข้าบทเรียนหรือทดสอบเพิ่ม';return;}
+   const target=proposals[0];
+   const seed=(Math.floor(Math.random()*700000000)+50000); // Fresh, held-out synthetic dataset, never same seed as seed lab.
+   const bars=PaperSimCore.generateBars(target.scenario,560,seed),res=[];
+   $m('memoryABResult').textContent='กำลังทดสอบสองกลยุทธ์กับข้อมูลใหม่แบบจำลอง...';
+   for(const [name] of [target.weak,target.promising]){
+     const sim=new PaperSimCore.PaperSimulator(target.scenario,{bars,source:'SYNTHETIC',cfg:GUARDS[name]});
+     sim.__seed=seed;sim.__memoryGuard=name;
+     sim.run();res.push({guard:name,net:sim.snapshot().netPnl,buy:sim.snapshot().buys,sell:sim.snapshot().sells,dd:sim.snapshot().maxDrawdownPct});
+   }
+   $m('memoryABResult').textContent=`A/B ข้อมูลใหม่ seed ${seed} · ${target.scenario}\nกฎ ${res[0].guard}: ฿${res[0].net.toFixed(2)} · ซื้อ ${res[0].buy} / ขาย ${res[0].sell} · DD ${res[0].dd.toFixed(2)}%\nกฎ ${res[1].guard}: ฿${res[1].net.toFixed(2)} · ซื้อ ${res[1].buy} / ขาย ${res[1].sell} · DD ${res[1].dd.toFixed(2)}%\nทดสอบครั้งนี้บันทึกเป็น 2 รอบใหม่แล้ว แต่ยังไม่ใช่การยืนยันผลในตลาดจริง`;
+   await pending;
+   await renderMemory();
+ }
+ async function renderMemory(){
+   if(!$m('memoryRunCount'))return;
+   try{
+    await pending.catch(()=>{});
+    const [runs,journal,lessons]=await Promise.all([getAll('runs'),getAll('journal'),getAll('lessons')]);
+    runs.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    $m('memoryRunCount').textContent=runs.length.toLocaleString('th-TH');
+    $m('memoryDecisionCount').textContent=journal.filter(e=>e.kind==='decision').length.toLocaleString('th-TH');
+    $m('memoryTradesCount').textContent=journal.filter(e=>e.kind==='trade').length.toLocaleString('th-TH');
+    $m('memoryLessonsCount').textContent=lessons.length.toLocaleString('th-TH');
+    $m('memoryHistory').innerHTML=runs.slice(0,10).map(r=>`<tr><td>${htmlEscape(r.createdAt.slice(0,16).replace('T',' '))}</td><td>${htmlEscape(r.scenario)}</td><td>${htmlEscape(r.guard)}</td><td>${htmlEscape(r.status)}</td><td>${r.summary?.netPnl?.toLocaleString('th-TH',{maximumFractionDigits:2})??'—'}</td><td>${htmlEscape(r.id)}</td></tr>`).join('')||'<tr><td colspan="6">ยังไม่มีผลทดลอง</td></tr>';
+    const advice=await considerPrevious();
+    $m('memoryAdvice').textContent=advice.advice.length?advice.advice.join('\n'):
+     `ประวัติ ${runs.length} รอบ · ข้อสังเกต ${lessons.length} รายการ · บทเรียนจะใช้เป็นข้อมูลเตือนและเสนอการทดสอบ A/B ไม่เปลี่ยนกฎซื้อขายโดยอัตโนมัติ`; 
+    if(!dbError)$m('memoryStatus').textContent='✅ บันทึกใน IndexedDB ของเบราว์เซอร์ • แนะนำส่งออก JSON สำรองข้อมูล';
+   }catch(e){panic(e);}
+ }
+ async function exportMemory(){
+   await pending;const [runs,journal,lessons]=await Promise.all([getAll('runs'),getAll('journal'),getAll('lessons')]);
+   const exportObject={schema:'BITBOT_PAPER_MEMORY_V4',version:4,exportedAt:stamp(),safety:'PAPER_ONLY',runs,journal,lessons};
+   downloadSim('bitbot-learning-memory-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(exportObject,null,2),'application/json;charset=utf-8');
+ }
+ async function importMemory(event){
+   const file=event.target.files?.[0];if(!file)return;
+   try{
+     if(file.size>30_000_000)throw Error('ไฟล์ใหญ่เกิน 30 MB');
+     const obj=JSON.parse(await file.text());
+     if(obj.schema!=='BITBOT_PAPER_MEMORY_V4'||obj.safety!=='PAPER_ONLY'||!Array.isArray(obj.runs)||!Array.isArray(obj.journal)||!Array.isArray(obj.lessons))throw Error('รูปแบบไฟล์ไม่ถูกต้อง');
+     if(obj.runs.length>20000||obj.journal.length>300000||obj.lessons.length>100000)throw Error('จำนวนรายการเกินขีดจำกัด');
+     for(const item of obj.runs)if(typeof item.id!=='string'||typeof item.scenario!=='string'||item.summary?.netPnl!==undefined&&!Number.isFinite(item.summary.netPnl))throw Error('run data invalid');
+     for(const item of obj.journal)if(typeof item.id!=='string'||typeof item.runId!=='string'||!['decision','trade','event','state'].includes(item.kind))throw Error('journal invalid');
+     for(const item of obj.lessons)if(typeof item.id!=='string'||typeof item.runId!=='string')throw Error('lesson invalid');
+     await pending;
+     await txPut('runs',obj.runs);await txPut('journal',obj.journal);await txPut('lessons',obj.lessons);
+     $m('memoryStatus').textContent=`นำเข้าประวัติ ${obj.runs.length} รอบสำเร็จ`;await renderMemory();
+   }catch(e){$m('memoryStatus').textContent='นำเข้าไม่สำเร็จ: '+e.message;}finally{event.target.value='';}
+ }
+ // Instrument the EXACT engine used by the chart and the BUY/SELL showcase.
+ const p=PaperSimCore.PaperSimulator.prototype;
+ const oldStep=p.step,oldRun=p.run;
+ p.step=function(){
+   if(dbError)throw dbError;
+   const t=this.trades.length,d=this.decisions.length,e=this.events.length;
+   const result=oldStep.apply(this,arguments);
+   if(this.__memoryId)tick(this,t,d,e);
+   if(this.__memoryId && result.done)finish(this);
+   return result;
+ };
+ p.run=function(n=Infinity){
+   if(!this.__memoryId)begin(this,'batch-test');
+   const r=oldRun.apply(this,arguments);
+   finish(this,this.snapshot().done?'COMPLETED':'PARTIAL');return r;
+ };
+ const originalReset=resetSim;
+ resetSim=function(){
+   if(SIM?.__memoryId)finish(SIM,'RESET');
+   originalReset.apply(this,arguments);
+   if(SIM && !SIM.__memoryId){try{begin(SIM);}catch(e){panic(e);}}
+ };
+ const originalQA=qaSim;
+ qaSim=function(){
+   try{originalQA.apply(this,arguments);pending.then(renderMemory).catch(()=>{});}catch(e){panic(e);}
+ };
+ document.addEventListener('DOMContentLoaded',()=>{
+   const section=document.createElement('section');section.className='sim-detail';section.id='memoryLab';
+   section.innerHTML=`<div class="panel-head"><div><h2>🧠 Trading Memory — บทเรียนทุกการทดลอง</h2><p>บันทึกทุกแท่งเทียน / ทุกสัญญาณ / ทุก BUY–SELL / รายงานการทดสอบ เก็บในเบราว์เซอร์เครื่องนี้เท่านั้น</p></div><span class="panel-tag">LOCAL · PAPER ONLY</span></div>
+   <div class="sim-stats"><div><small>รอบทดลองที่เก็บ</small><b id="memoryRunCount">0</b></div><div><small>การตัดสินใจที่บันทึก</small><b id="memoryDecisionCount">0</b></div><div><small>คำสั่งจำลองที่บันทึก</small><b id="memoryTradesCount">0</b></div><div><small>ข้อสังเกต/บทเรียน</small><b id="memoryLessonsCount">0</b></div></div>
+   <div class="sim-table-head"><h3>📚 คลังบทเรียนและประวัติ</h3><div><button id="memoryExport">⬇ สำรองทุกอย่าง JSON</button><button type="button" id="memoryImportBtn">⬆ นำเข้าประวัติ</button><input id="memoryImport" type="file" accept=".json,application/json" hidden><button id="memoryRefresh">↻ ดูประวัติใหม่</button><button id="memoryAB">🧪 ใช้บทเรียนออกแบบ A/B ใหม่</button></div></div>
+   <p id="memoryStatus" role="status" style="font-size:12px;color:#b9e8ef">กำลังเปิดคลังประวัติ...</p>
+   <div id="memoryAdvice" style="white-space:pre-wrap;line-height:1.8;background:#172548;padding:12px;border-radius:12px;font-size:12px;color:#bdeee2">รอข้อมูลการทดลอง...</div>
+   <p id="memoryABResult" style="white-space:pre-wrap;font-size:12px;color:#bceadf"></p><div class="table-scroll"><table><thead><tr><th>เวลา UTC</th><th>ตลาด</th><th>ตัวกรอง</th><th>สถานะ</th><th>สุทธิ THB</th><th>รหัสรอบทดสอบ</th></tr></thead><tbody id="memoryHistory"></tbody></table></div>
+   <small style="color:#bbb5db">ประวัติจะอยู่ในเบราว์เซอร์นี้จนกว่าจะล้างข้อมูลเว็บไซต์ / โหมดไม่ระบุตัวตน / เปลี่ยนอุปกรณ์ กรุณากดสำรอง JSON เก็บเอง ไม่ได้ซิงก์กับ GitHub หรือ Supabase</small>`;
+   document.querySelector('.sim-detail')?.after(section);
+   $m('memoryExport').onclick=()=>exportMemory().catch(panic);
+   $m('memoryImportBtn').onclick=()=>$m('memoryImport').click();
+   $m('memoryImport').onchange=importMemory;
+   $m('memoryRefresh').onclick=renderMemory;
+   $m('memoryAB').onclick=()=>lessonGuidedAB().catch(e=>{$m('memoryABResult').textContent='A/B ไม่สำเร็จ: '+e.message;});
+   ready.then(()=>{inited=true;return renderMemory();}).catch(panic);
+ });
+ window.BitbotMemory={ready,flush:()=>pending,exportMemory,renderMemory};
+})();
+
+</script>
 </body></html>
