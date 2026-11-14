@@ -1,4 +1,4 @@
-# Bitbot Virtual Trading Office v6
+# Bitbot Virtual Trading Office v6.1
 
 [ทดลองใช้งานเว็บไซต์ Bitbot](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/)
 
@@ -16,20 +16,23 @@
 ## Trading Memory — 2 ชั้น
 
 - **IndexedDB (พร้อมใช้):** บันทึกการตัดสินใจแต่ละแท่งเทียน คำสั่งจำลอง บทเรียนและรอบการทดสอบ โดยอยู่ในเครื่องและเบราว์เซอร์ที่ใช้เท่านั้น
-- **Supabase Cloud (รองรับ แต่ยังต้องตั้งค่าโปรเจกต์แยก):** ล็อกอินด้วยอีเมล สำรองและดึงบทเรียนข้ามอุปกรณ์โดยไม่ใช้คีย์ลับบนเว็บ เป็นฟังก์ชันแบบเปิดใช้เมื่อสร้างโปรเจกต์ Supabase ที่ใช้กับ Bitbot โดยเฉพาะ
+- **Supabase Cloud (สร้างแล้ว):** ใช้โปรเจกต์แยก `lrxrigimdaedfemqheug` ในบัญชี Keitaphotocamera · เปิด RLS ทั้ง 3 ตารางแล้ว · บนเว็บลงชื่อเข้าใช้ด้วยอีเมลเพื่อสำรองบทเรียนอัตโนมัติขณะหน้าเว็บเปิดและออนไลน์ รวมถึงสำรอง/กู้คืนด้วยตนเองได้
 
 ห้ามใช้โปรเจกต์ RESTART หรือสหกรณ์เพื่อแยกความเสี่ยงและบัญชีผู้ใช้งาน การเชื่อมผ่าน Data API ใช้เฉพาะ publishable key + Row Level Security (RLS) แบบ user_id = auth.uid().
 
-### เปิด Cloud Sync เมื่อตั้งโปรเจกต์ Bitbot แล้ว
+### ตั้งค่า Auth อีก 1 ขั้นตอนเพื่อเข้าใช้ Cloud Sync
 
-1. สร้างโปรเจกต์ Supabase **ใหม่** สำหรับ Bitbot โดยเฉพาะ
-2. รัน SQL ใน `supabase/bitbot_paper_memory.sql` ผ่านระบบ migration ของ Supabase
-3. ตรวจสอบ RLS, ตาราง และนโยบายผู้ใช้เป็นเจ้าของ พร้อมทดสอบแยกสองบัญชี
-4. ตั้ง Auth → URL Configuration: Site URL และ Redirect URL ให้รองรับ `https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/`
-5. ใส่เฉพาะ **Project URL และ publishable key** ใน `bitbot-v6-cloud-config.js` ห้ามใช้ `service_role` หรือ secret key เด็ดขาด
-6. สำรองจากหน้าเว็บด้วยบัญชี Supabase ที่ลงชื่อเข้าใช้ และตรวจว่าประวัติกลับมาเมื่อเปิดอุปกรณ์อื่น
+1. โปรเจกต์ Supabase แยกสำหรับ Bitbot สร้างสำเร็จแล้ว: [Bitbot Paper Trading Memory](https://supabase.com/dashboard/project/lrxrigimdaedfemqheug)
+2. ตาราง `bitbot_paper_runs`, `bitbot_paper_journal`, `bitbot_paper_lessons` สร้างแล้ว; RLS เปิดทุกตาราง และ `anon` ไม่มีสิทธิ์ SELECT/INSERT; Supabase security advisors ไม่พบรายการเตือนในการตรวจครั้งแรก
+3. **ผู้ดูแลต้องตั้งค่า Auth → URL Configuration ที่ [หน้านี้](https://supabase.com/dashboard/project/lrxrigimdaedfemqheug/auth/url-configuration):**
+   - Site URL = `https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/`
+   - Redirect URLs เพิ่ม `https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/`
+   - ตรวจว่า Email Auth เปิดอยู่ใน Authentication → Providers
+4. เปิด Bitbot แล้วขยายเมนู **☁️ สำรองประวัติข้ามอุปกรณ์**, กรอกอีเมล กดส่งลิงก์ เข้าใช้งานจากอีเมลให้เสร็จบนเว็บไซต์เดิม
+5. เมื่อเข้าสู่ระบบแล้วหน้าเว็บจะสำรองบทเรียนอัตโนมัติหลังคำสั่ง/รอบทดสอบ หรือเมื่อกลับมาออนไลน์ **เฉพาะตอนเปิดหน้าเว็บ** รวมถึงกดสำรองด้วยตนเองได้
+6. ใช้ปุ่มดึงบทเรียนจาก Cloud เพื่อกู้คืนในเครื่องใหม่; ทุกข้อมูลแยกตาม user_id ด้วย RLS และยังมี JSON Backup เผื่อฉุกเฉิน
 
-ปัจจุบัน Cloud Sync **ยังไม่ทำงานจนกว่าจะสร้างโปรเจกต์และทำขั้นตอนตั้งค่า**; การเชื่อมแอป Supabase ให้ ChatGPT ไม่ใช่การเชื่อมฐานข้อมูลเข้าสู่หน้าเว็บโดยอัตโนมัติ
+> การล็อกอินผ่านอีเมลและบันทึกจริงจากเบราว์เซอร์ยังไม่ผ่านการยืนยันแบบ end-to-end ก่อนผู้ดูแลตั้ง Auth redirect เสร็จ การสร้างโปรเจกต์และตรวจ RLS ในฐานข้อมูลผ่านแล้ว ไม่ได้ทดสอบการเข้าใช้ด้วยบัญชีจริงของผู้ใช้
 
 ## สิ่งที่ยังไม่ใช่
 
