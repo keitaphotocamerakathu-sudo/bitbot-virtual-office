@@ -97,6 +97,7 @@
      status(`บันทึกการทดสอบ ${successes}/${total} รอบ (${time} วินาที) · ${failures.length?'มีข้อผิดพลาด '+failures.length+' รายการ':'ไม่มีข้อผิดพลาดที่ตรวจพบ'}`,Boolean(failures.length));
      const out=$('v6Findings');if(out)out.textContent=result+(failures.length?'\nข้อผิดพลาด:\n'+failures.slice(0,4).join('\n'):'');
      await refresh();
+     document.dispatchEvent(new Event('bitbot:memory-saved'));
    }catch(e){status('หยุดการทดสอบเพื่อความปลอดภัย: '+e.message,true);}
    finally{busy=false;if(btn)btn.disabled=false;}
  }
