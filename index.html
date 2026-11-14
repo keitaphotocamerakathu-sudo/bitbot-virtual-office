@@ -802,6 +802,7 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
    journal.push({id:`${id}:snapshot:${cursor}`,runId:id,kind:'state',seq:cursor,ts:p.ts,source:sim.dataSource,
      cash:p.cash,btc:p.btc,equity:p.equity,fees:p.fees,drawdownPct:p.maxDrawdownPct,totalHalt:p.totalHalt,dailyHalt:p.dailyHalt});
    queue(()=>txMulti({journal,lessons}));
+   if(trades.length)pending.then(()=>document.dispatchEvent(new Event('bitbot:memory-saved'))).catch(()=>{});
    // Keep per-step writes atomic: each completed step is an independently persisted transaction.
  }
  function finish(sim,status='COMPLETED'){
@@ -819,7 +820,7 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
    if(cats.length)queue(()=>txPut('lessons',cats.map(([category,finding],i)=>({id:`${s.id}:summary:${i}`,runId:s.id,createdAt:stamp(),
        category,confidence:'OBSERVATION',appliedToStrategy:false,finding,evidence:{...s.summary,scenario:s.scenario,source:s.source,guard:s.guard}}))));
    if($m('memoryStatus'))$m('memoryStatus').textContent='บันทึกรอบ '+s.id.slice(0,12)+' · '+status;
-   pending.then(renderMemory).catch(()=>{});
+   pending.then(()=>{document.dispatchEvent(new Event('bitbot:memory-saved'));return renderMemory();}).catch(()=>{});
  }
  function considerPrevious(){return getAll('runs').then(runs=>{
    const valid=runs.filter(r=>r.status==='COMPLETED'&&r.summary&&r.source==='SYNTHETIC');
@@ -935,7 +936,7 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
    <p id="memoryStatus" role="status" style="font-size:12px;color:#b9e8ef">กำลังเปิดคลังประวัติ...</p>
    <div id="memoryAdvice" style="white-space:pre-wrap;line-height:1.8;background:#172548;padding:12px;border-radius:12px;font-size:12px;color:#bdeee2">รอข้อมูลการทดลอง...</div>
    <p id="memoryABResult" style="white-space:pre-wrap;font-size:12px;color:#bceadf"></p><div class="table-scroll"><table><thead><tr><th>เวลา UTC</th><th>ตลาด</th><th>ตัวกรอง</th><th>สถานะ</th><th>สุทธิ THB</th><th>รหัสรอบทดสอบ</th></tr></thead><tbody id="memoryHistory"></tbody></table></div>
-   <small style="color:#bbb5db">ประวัติจะอยู่ในเบราว์เซอร์นี้จนกว่าจะล้างข้อมูลเว็บไซต์ / โหมดไม่ระบุตัวตน / เปลี่ยนอุปกรณ์ กรุณากดสำรอง JSON เก็บเอง ไม่ได้ซิงก์กับ GitHub หรือ Supabase</small>`;
+   <small style="color:#bbb5db">ประวัติจะอยู่ในเบราว์เซอร์นี้ และสำรองเข้า Supabase เมื่อเข้าสู่ระบบ Cloud · แนะนำสำรอง JSON แยกไว้ด้วย</small>`;
    document.querySelector('.sim-detail')?.after(section);
    $m('memoryExport').onclick=()=>exportMemory().catch(panic);
    $m('memoryImportBtn').onclick=()=>$m('memoryImport').click();
@@ -950,6 +951,6 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
 </script>
   <script src="./simple-v5.js?v=6.0" defer></script>
   <script src="./bitbot-v6-learning.js?v=6.0" defer></script>
-  <script src="./bitbot-v6-cloud-config.js?v=6.0" defer></script>
-  <script src="./bitbot-v6-cloud.js?v=6.0" defer></script>
+  <script src="./bitbot-v6-cloud-config.js?v=6.1" defer></script>
+  <script src="./bitbot-v6-cloud.js?v=6.1" defer></script>
 </body></html>
