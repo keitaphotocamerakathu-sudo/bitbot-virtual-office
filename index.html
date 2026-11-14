@@ -36,6 +36,7 @@
 
 </style>
   <script>window.BITBOT_SIMULATOR=true;</script>
+  <link rel="stylesheet" href="./simple-v5.css">
 </head>
 <body>
 <div class="shell">
@@ -700,7 +701,7 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
     }
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&active) stopTour('หยุดสาธิตแล้ว: หน้าต่างไม่ได้อยู่ด้านหน้า');});
     // A one-round showcase begins automatically for visitors; all transactions come from the PaperSimulator engine.
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (window.BITBOT_AUTOPLAY_SHOWCASE === true && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       pending=setTimeout(()=>{pending=null;if(!document.hidden&&!active&&!simTimer&&SIM)runShowcase()},1200);
     }
   });
@@ -946,4 +947,5 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
 })();
 
 </script>
+  <script src="./simple-v5.js" defer></script>
 </body></html>
