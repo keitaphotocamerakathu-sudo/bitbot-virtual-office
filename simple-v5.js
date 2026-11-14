@@ -76,5 +76,5 @@ function init(){
  const foot=document.querySelector('.main-content footer');
  if(foot)foot.textContent='BITBOT v5 · PAPER TRADING เท่านั้น · ข้อมูลราคาสังเคราะห์ ไม่ใช่ราคาสด Bitkub · บทเรียนเก็บในเบราว์เซอร์นี้ ควรสำรองเป็น JSON';
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+if(document.readyState==='complete')init();else document.addEventListener('DOMContentLoaded',init);
 })();
