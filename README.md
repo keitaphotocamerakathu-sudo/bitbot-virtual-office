@@ -77,3 +77,34 @@
 - ป้องกันการอัปโหลดประวัติจากเบราว์เซอร์ที่ผูกกับบัญชีอื่น โดยแนะนำให้ใช้โปรไฟล์เบราว์เซอร์คนละชุด
 - **การตรวจสำเร็จในหน้าจอ** หมายถึงการเขียนอ่านลบจริงโดยบัญชีผู้ใช้ ไม่ใช่แค่ตรวจ URL; การทดสอบ Auth อีเมลและการใช้งานจริงจากเบราว์เซอร์ยังต้องดำเนินการจากผู้ใช้
 - ไม่มีการเชื่อมต่อคำสั่งซื้อขายจริงกับ Bitkub
+
+
+## Bitkub Real-Market Integration v7 (2026-11-14)
+
+**[เปิดหน้า Bitkub Live](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/bitkub-live.html)**
+
+- Live BTC/THB prices use official Bitkub market ticker API v3, not synthetic data.
+- Dedicated Supabase Edge Function: `bitkub-gateway`, project `lrxrigimdaedfemqheug` (not RESTART, camera, or Sloth Trail).
+- After signing into Bitbot Cloud and operator approval: read THB/BTC wallet through Bitkub API v4, preview manual LIMIT orders, audit and reconcile order status.
+- **Real-money order submission is disabled by default**. The backend requires operator allowlist, private API credentials and all risk-limit secrets, plus explicit confirmation on each request.
+- Manual BUY uses `amt` as spending in THB; manual SELL uses `amt` as BTC quantity. Only `btc_thb` spot LIMIT orders are implemented. No leverage, withdrawal endpoints, autonomous live trading, or secret storage in the browser.
+- The trading strategy's Paper Trading ledger remains entirely separate from actual exchange order records. Live order reconciliation is required before a second order.
+
+### Required one-time setup — never put secrets in GitHub or ChatGPT chat
+
+1. In [Bitkub API Management](https://www.bitkub.com/th/api-management), create a fresh API key. Enable only necessary **Read + Trade** permissions; **never enable Withdraw**. Enable exchange-supported IP restrictions where viable.
+2. In [Supabase Bitbot Edge Function Secrets](https://supabase.com/dashboard/project/lrxrigimdaedfemqheug/functions), set `BITKUB_API_KEY` and `BITKUB_API_SECRET`. Secrets must never be committed to any repo.
+3. Enter the Bitbot Cloud account through the [Bitkub Live page](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/bitkub-live.html). The authenticated owner's `auth.users.id` must be explicitly inserted by the project administrator into `public.bitbot_live_operators`. Do not allow arbitrary accounts to self-enable.
+4. Test Wallet READ-ONLY first. Review exchange limits, symbol status, and risk rules.
+5. Only when ready to authorize real-money trading, set `BITBOT_LIVE_ENABLED=true`, `BITBOT_MAX_ORDER_THB`, `BITBOT_MAX_DAILY_BUY_THB`, `BITBOT_MAX_DAILY_SELL_THB` in Supabase Secrets. Missing/zero caps intentionally block orders. Revert `BITBOT_LIVE_ENABLED=false` for immediate kill switch.
+6. Preview every order. Explicitly type **เทรดเงินจริง** and confirm the browser dialog to send a live order. Never retry an ambiguous order without exchange reconciliation.
+
+### Architecture and safety
+
+- `supabase/functions/bitkub-gateway/index.ts`: HMAC-SHA256 signs Bitkub private requests server-side only; validates the Supabase Auth JWT and a server-owned operator allowlist; enforces per-order and per-day caps.
+- `supabase/bitbot_live_trade.sql`: owners can read only their orders, unauthorized clients have no write rights, SQL RPC reserves capacity atomically and rejects duplicate client request IDs and open/unknown orders.
+- `bitkub-live.html` and `bitkub-live.js`: responsive web UI, frontend contains only the project publishable key. The public market-data endpoint is allowed without trading credentials.
+- **Caveat:** Exchange API credentials have not been supplied/configured here; actual wallet access, real-money order execution, and account-specific status reconciliation are **not yet end-to-end verified**. No live orders have been sent during development.
+- Automated AI live order execution remains intentionally OFF pending separately defined risk policies and real-money authorization. Existing bot is rule-based, not a self-learning exchange trader.
+
+Official documentation: https://api.bitkub.com/docs and https://github.com/bitkub/bitkub-official-api-docs
