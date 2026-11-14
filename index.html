@@ -953,4 +953,147 @@ document.addEventListener('DOMContentLoaded',bootSimulator);
   <script src="./bitbot-v6-learning.js?v=6.0" defer></script>
   <script src="./bitbot-v6-cloud-config.js?v=6.1" defer></script>
   <script src="./bitbot-v6-cloud.js?v=6.1" defer></script>
+<style id="bitbot-daily-style">
+
+.bitbot-daily-report{background:#192541;border:1px solid #435475;color:#ebf3ff;border-radius:18px;padding:18px;margin:16px 0;scroll-margin-top:70px}
+.bitbot-daily-report *{box-sizing:border-box}
+.bitbot-daily-report .daily-head{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}
+.bitbot-daily-report .daily-head small{font-size:10px;color:#a5c4fc;letter-spacing:.7px}
+.bitbot-daily-report h2{margin:4px 0;font-size:clamp(19px,2.6vw,27px)}
+.bitbot-daily-report p{font-size:12px;line-height:1.6;color:#becde4}
+.bitbot-daily-report .daily-head span{border:1px solid #526582;padding:5px 10px;border-radius:50px;white-space:nowrap;font-size:11px}
+.bitbot-daily-report .daily-select{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;align-items:end;gap:9px;margin:16px 0}
+.bitbot-daily-report label{display:grid;gap:6px;font-size:12px;color:#c9d8ee}
+.bitbot-daily-report select{width:100%;min-width:0;border:1px solid #50648b;border-radius:8px;min-height:40px;background:#101c33;color:#fff;padding:6px;font:inherit}
+.bitbot-daily-report button{border:1px solid #5b77a5;background:#31496d;color:#fff;border-radius:9px;padding:9px 12px;min-height:40px;cursor:pointer;font:inherit}
+.bitbot-daily-report .daily-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.bitbot-daily-report article{background:#0e1a32;border:1px solid #334b6e;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.bitbot-daily-report article small{font-size:11px;color:#c1d0e6;line-height:1.4}
+.bitbot-daily-report article strong{font-size:clamp(16px,2.2vw,22px);overflow-wrap:anywhere}
+.bitbot-daily-report .gain{color:#72edc1}.bitbot-daily-report .loss{color:#ff93a2}
+.bitbot-daily-report .daily-all{background:#101c35;border:1px solid #374b6c;border-radius:10px;padding:11px}
+.bitbot-daily-report summary{font-weight:700;cursor:pointer;padding:7px}
+.bitbot-daily-report .daily-scroll{overflow:auto;max-height:340px}
+.bitbot-daily-report table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:12px}
+.bitbot-daily-report td,.bitbot-daily-report th{text-align:right;padding:10px 8px;border-bottom:1px solid #34486c}
+.bitbot-daily-report td:first-child,.bitbot-daily-report th:first-child{text-align:left}
+.bitbot-daily-report th{background:#172845;position:sticky;top:0;color:#c7d9f1}
+.bitbot-daily-report .daily-warning{color:#ecc8a3;margin:13px 0 0}
+@media(max-width:760px){.bitbot-daily-report{padding:12px}.bitbot-daily-report .daily-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.bitbot-daily-report .daily-select{grid-template-columns:1fr 1fr}.bitbot-daily-report .daily-select label:first-child,.bitbot-daily-report .daily-select button{grid-column:1/-1}}
+@media(max-width:350px){.bitbot-daily-report .daily-cards{grid-template-columns:1fr}}
+
+</style>
+<script id="bitbot-daily-script">
+
+(function(){
+"use strict";
+const DB="bitbot-paper-learning-v4", g=id=>document.getElementById(id);
+const money=n=>Number(n).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2});
+const sign=n=>(n>=0?"+":"−")+"฿"+money(Math.abs(n));
+const color=n=>n>0?"gain":n<0?"loss":"";
+const thaiDay=ts=>{let n=Number(ts);return Number.isFinite(n)&&n>946684800?new Date((n+25200)*1000).toISOString().slice(0,10):null;};
+const niceDay=v=>{if(!v)return "—";let p=v.split("-");return p[2]+"/"+p[1]+"/"+(Number(p[0])+543);};
+let dbp,runs=[],days=[],refreshTimer=null;
+function open(){if(!dbp)dbp=new Promise((res,rej)=>{let q=indexedDB.open(DB);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});return dbp;}
+async function read(store,id){let db=await open();return new Promise((res,rej)=>{
+ if(!db.objectStoreNames.contains(store)){res([]);return;}
+ const o=db.transaction(store,"readonly").objectStore(store);
+ const q=store==="journal"&&o.indexNames.contains("run")?o.index("run").getAll(id):o.getAll();
+ q.onsuccess=()=>res(store==="journal"&&!o.indexNames.contains("run")?(q.result||[]).filter(x=>x.runId===id):q.result||[]);
+ q.onerror=()=>rej(q.error);
+});}
+function summarize(run,journal){
+ const map=new Map();
+ for(const x of journal){
+  if(!x||x.runId!==run.id||(x.kind!=="trade"&&x.kind!=="state"))continue;
+  const date=thaiDay(x.ts);if(!date)continue;
+  if(!map.has(date))map.set(date,{date,pnl:0,fees:0,buys:0,sells:0,equity:null,states:0,time:-1});
+  const r=map.get(date);
+  if(x.kind==="trade"){
+   if(x.side==="BUY")r.buys++;
+   if(x.side==="SELL"){r.sells++;if(Number.isFinite(Number(x.pnl)))r.pnl+=Number(x.pnl);}
+   if(Number.isFinite(Number(x.fee)))r.fees+=Number(x.fee);
+  }else if(Number.isFinite(Number(x.equity))&&Number(x.equity)>=0&&Number(x.ts)>=r.time){
+   r.equity=Number(x.equity);r.time=Number(x.ts);r.states++;
+  }
+ }
+ let previous=Number(run.startCash)||100000,contiguous=true;
+ return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(r=>{
+  r.change=r.equity!==null&&contiguous?r.equity-previous:null;
+  if(r.equity===null)contiguous=false;else{previous=r.equity;contiguous=true;}
+  return r;
+ });
+}
+function setMessage(s,bad){let el=g("dailyStatus");if(el){el.textContent=s;el.style.color=bad?"#ff9c9c":"#b7c8e1";}}
+function paintDate(){
+ const r=days.find(x=>x.date===g("dailyDate").value);
+ for(const [id,value] of [["dailyRealized",r?.pnl],["dailyEquityChange",r?.change]]){
+  const el=g(id);el.className="bitbot-daily-number "+(Number.isFinite(value)?color(value):"");
+  el.textContent=Number.isFinite(value)?sign(value):"—";
+ }
+ g("dailyOrders").textContent=r?r.buys+" ซื้อ / "+r.sells+" ขาย":"—";
+ g("dailyFees").textContent=r?"฿"+money(r.fees):"—";
+ g("dailyHelp").textContent=r?.equity===null?"รอบนี้ไม่ได้บันทึกมูลค่าพอร์ตสิ้นวัน จึงไม่สามารถคำนวณการเปลี่ยนแปลงของพอร์ตได้":"กำไรจาก SELL หักค่าธรรมเนียมซื้อและขายแล้ว ส่วนมูลค่าพอร์ตแสดงการเปลี่ยนแปลงรวม BTC ที่ยังถืออยู่";
+}
+function table(){
+ const body=g("dailyTable");body.replaceChildren();
+ if(!days.length){let tr=body.insertRow(),td=tr.insertCell();td.colSpan=5;td.textContent="ยังไม่มีประวัติรายวันในรอบนี้";return;}
+ for(const r of [...days].reverse()){
+  let tr=body.insertRow(),cols=[niceDay(r.date),sign(r.pnl),r.change===null?"—":sign(r.change),r.buys+" / "+r.sells,"฿"+money(r.fees)];
+  cols.forEach((v,i)=>{let td=tr.insertCell();td.textContent=v;if(i===1)td.className=color(r.pnl);if(i===2&&r.change!==null)td.className=color(r.change);});
+ }
+}
+async function choose(){
+ const r=runs.find(x=>x.id===g("dailyRun").value);
+ if(!r){days=[];g("dailyDate").replaceChildren();table();paintDate();setMessage("ยังไม่มีรอบจำลองที่บันทึกไว้ กดเริ่มจำลองการเทรดก่อน");return;}
+ const rows=await read("journal",r.id);
+ days=summarize(r,rows);
+ let sel=g("dailyDate"),old=sel.value;sel.replaceChildren();
+ for(const d of days){let opt=document.createElement("option");opt.value=d.date;opt.textContent=niceDay(d.date);sel.append(opt);}
+ sel.value=days.some(d=>d.date===old)?old:days.at(-1)?.date||"";
+ const source=String(r.source||"");
+ setMessage((source.includes("SYNTHETIC")?"ข้อมูลราคาสังเคราะห์":source.includes("CSV")?"ไฟล์ราคาที่นำเข้า":"ราคาจำลอง")+" · ทุนเริ่มต้น ฿"+money(Number(r.startCash)||100000)+" · "+days.length+" วันตลาด · "+(r.status||""));
+ paintDate();table();
+}
+async function refresh(){
+ try{
+  await window.BitbotMemory?.flush?.();
+  runs=(await read("runs")).filter(r=>r&&typeof r.id==="string").sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
+  let sel=g("dailyRun"),selected=sel.value;sel.replaceChildren();
+  for(const r of runs.slice(0,250)){
+   let opt=document.createElement("option");opt.value=r.id;
+   opt.textContent=String(r.createdAt||"").slice(0,10)+" · "+(r.scenario||r.kind||"ทดลอง")+" · "+(r.guard||"—")+" · "+(r.status||"")+(Number.isFinite(r.summary?.netPnl)?" · "+sign(r.summary.netPnl):"");
+   sel.append(opt);
+  }
+  sel.value=runs.some(r=>r.id===selected)?selected:runs[0]?.id||"";
+  await choose();
+ }catch(e){setMessage("อ่านรายงานไม่สำเร็จ: "+e.message,true);}
+}
+function csv(){
+ const data=[["date_thailand","realized_pnl_thb","equity_change_thb","buy_count","sell_count","fee_thb"],...days.map(r=>[r.date,r.pnl,r.change===null?"":r.change,r.buys,r.sells,r.fees])];
+ let blob=new Blob(["\uFEFF"+data.map(row=>row.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"});
+ let url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="bitbot-daily-pnl.csv";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+}
+function mount(){
+ if(g("bitbotDaily")||!g("simPanel"))return;
+ let root=document.createElement("section");root.id="bitbotDaily";root.className="bitbot-daily-report";
+ root.innerHTML="<div class='daily-head'><div><small>BITBOT · PAPER REPORT</small><h2>📅 กำไร–ขาดทุนรายวัน</h2><p>เลือกรอบทดลองและวันตามเวลาไทย เพื่อดูผลจากประวัติที่บอตบันทึก</p></div><span>เงินจำลอง</span></div>"
+ +"<div class='daily-select'><label>รอบทดลอง<select id='dailyRun'></select></label><label>วันในตลาด (เวลาไทย)<select id='dailyDate'></select></label><button type='button' id='dailyRefresh'>↻ อัปเดต</button></div>"
+ +"<div class='daily-cards'><article><small>กำไร/ขาดทุนที่ขายแล้ว</small><strong id='dailyRealized' class='bitbot-daily-number'>—</strong><small>จากคำสั่ง SELL</small></article><article><small>มูลค่าพอร์ตเปลี่ยนรายวัน</small><strong id='dailyEquityChange' class='bitbot-daily-number'>—</strong><small>รวม BTC ที่ยังถือ</small></article><article><small>คำสั่งรายวัน</small><strong id='dailyOrders'>—</strong></article><article><small>ค่าธรรมเนียม</small><strong id='dailyFees'>—</strong></article></div>"
+ +"<p class='daily-help' id='dailyHelp'></p><p class='daily-help' id='dailyStatus' role='status'>กำลังอ่านประวัติ...</p>"
+ +"<details class='daily-all' open><summary>ดูตารางกำไรทุกวัน</summary><div class='daily-scroll'><table><thead><tr><th>วันที่</th><th>กำไรที่ขายแล้ว</th><th>มูลค่าพอร์ตเปลี่ยน</th><th>ซื้อ / ขาย</th><th>ค่าธรรมเนียม</th></tr></thead><tbody id='dailyTable'></tbody></table></div><button id='dailyExport' type='button'>⬇ ดาวน์โหลด CSV</button></details>"
+ +"<p class='daily-warning'>ไม่ใช่เงินจริง • วันของแท่งเทียนอาจเป็นวันในข้อมูลย้อนหลัง ไม่ใช่วันนี้ • แต่ละรอบจำลองเริ่มทุนใหม่ ห้ามบวกผลต่างรอบเป็นยอดพอร์ตเดียว</p>";
+ const m=g("metrics");if(m)m.after(root);else g("simPanel").after(root);
+ g("dailyRun").addEventListener("change",()=>choose().catch(e=>setMessage(e.message,true)));
+ g("dailyDate").addEventListener("change",paintDate);
+ g("dailyRefresh").addEventListener("click",refresh);
+ g("dailyExport").addEventListener("click",csv);
+ document.addEventListener("bitbot:memory-saved",()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,700);});
+ window.addEventListener("focus",refresh);
+ window.BitbotDailyReport={refresh,summarize};
+ refresh();
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount);else mount();
+})();
+</script>
 </body></html>
