@@ -1,75 +1,132 @@
-/* Optional private cloud memory sync. Never runs without Bitbot-specific Supabase config.
- * IndexedDB remains authoritative offline; RLS is mandatory at the database side.
+/* Bitbot v6.1 PRIVATE cloud memory. Public publishable key + strict RLS only.
+ * The trading simulator never connects to an exchange account and cannot send live orders.
+ * Local IndexedDB is the offline journal; cloud is a user-authorized backup while this page is open.
  */
 (()=>{
  'use strict';
  const $=id=>document.getElementById(id);
- const settings=window.BITBOT_CLOUD_CONFIG||{};
- const enabled=/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(settings.url||'') && /^sb_publishable_[A-Za-z0-9_-]+$|^eyJ[A-Za-z0-9._-]+$/.test(settings.publishableKey||'');
- let client=null,user=null,syncBusy=false;
+ const cfg=window.BITBOT_CLOUD_CONFIG||{};
+ const enabled=/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(cfg.url||'') && /^(sb_publishable_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9._-]+)$/.test(cfg.publishableKey||'');
  const tables=[['runs','bitbot_paper_runs'],['journal','bitbot_paper_journal'],['lessons','bitbot_paper_lessons']];
- function say(text,bad=false){const el=$('v6CloudStatus');if(el){el.textContent=text;el.dataset.error=bad?'true':'false';}}
- async function getClient(){if(!enabled)throw Error('ยังไม่มีโครงการ Supabase Bitbot แยกเป็นของตัวเอง');
-  if(!client){const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm');
-   client=mod.createClient(settings.url.replace(/\/$/,''),settings.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-   client.auth.onAuthStateChange((_event,session)=>{user=session?.user||null;renderAuth();});}
-  return client;
+ const allow={
+   runs:'id kind createdAt updatedAt source scenario guard seed startCash fees slippage fingerprint bars cfg status summary version costTier safety appliedToStrategy'.split(' '),
+   journal:'id runId kind seq ts signal source scenario evidence paperOnly side qty price fee pnl reason cashAfter btcAfter agent eventType message'.split(' '),
+   lessons:'id runId createdAt category confidence appliedToStrategy finding evidence version'.split(' ')
+ };
+ let client=null,user=null,syncBusy=false,syncAgain=false,syncTimer=null,lastSyncTime=0;
+ function say(message,bad=false){const el=$('v6CloudStatus');if(el){el.textContent=message;el.dataset.error=bad?'true':'false';}}
+ function safeRecord(table,r){
+   if(!r||typeof r!=='object'||Array.isArray(r)||typeof r.id!=='string'||r.id.length<1||r.id.length>200)return null;
+   const p={};for(const k of allow[table]||[])if(Object.prototype.hasOwnProperty.call(r,k))p[k]=r[k];
+   // Do not copy any unrecognized fields (especially API keys/passwords) from imported JSON.
+   if(!p.id)return null;
+   if(JSON.stringify(p).length>65000)return null;
+   return p;
  }
- function renderAuth(){const who=$('v6CloudWho');if(who)who.textContent=user?`เชื่อมต่อในชื่อ ${user.email||user.id}`:'ยังไม่ได้เข้าสู่ระบบ';
-  for(const n of ['v6CloudSync','v6CloudRestore','v6CloudLogout']){const b=$(n);if(b)b.disabled=!user||syncBusy;}
-  if($('v6CloudLogin'))$('v6CloudLogin').disabled=!!user;
- }
- async function login(){const email=String($('v6CloudEmail')?.value||'').trim();if(!/^\S+@\S+\.\S+$/.test(email)){say('กรุณากรอกอีเมลให้ถูกต้อง',true);return;}
-  try{const c=await getClient();const {error}=await c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
-   if(error)throw error;say('ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว กรุณากดลิงก์เพื่อกลับมาที่เว็บไซต์');
-  }catch(e){say('ส่งอีเมลไม่สำเร็จ: '+e.message,true);}
- }
- async function pullTable(c,table){const results=[];for(let start=0;start<300000;start+=500){
-  const {data,error}=await c.from(table).select('local_id,payload').order('local_id',{ascending:true}).range(start,start+499);
-  if(error)throw error;
-  for(const row of data||[]){if(row?.payload && typeof row.payload==='object' && row.payload.id===row.local_id)results.push(row.payload);}
-  if((data||[]).length<500)return results;
- }throw Error('ข้อมูลบน Cloud มากกว่า 300,000 รายการ ต้องแบ่งช่วงนำเข้า');}
- async function withLock(fn){if(syncBusy)return;syncBusy=true;renderAuth();try{await fn();}finally{syncBusy=false;renderAuth();}}
- async function sync(){return withLock(async()=>{
-   if(!user)throw Error('กรุณาเข้าสู่ระบบก่อน');
-   const c=await getClient();say('กำลังสำรองประวัติที่ยังมีในเครื่องขึ้น Cloud...');
-   const m=window.BitbotLearningV6;if(!m)throw Error('ไม่พบ Trading Memory');
-   let count=0;
-   await window.BitbotMemory?.flush?.();
-   for(const [local,remote] of tables){
-     const records=await m.getAll(local);
-     for(let i=0;i<records.length;i+=200){
-      // Never send private trading secrets, only simulations; no credentials in data payloads.
-      const batch=records.slice(i,i+200).filter(x=>typeof x?.id==='string'&&x.id.length<=200).map(x=>({user_id:user.id,local_id:x.id,payload:x,updated_at:new Date().toISOString()}));
-      if(!batch.length)continue;
-      const {error}=await c.from(remote).upsert(batch,{onConflict:'user_id,local_id'});
-      if(error)throw error;count+=batch.length;
-      say(`สำรอง Cloud ${count.toLocaleString('th-TH')} รายการ · ${remote}`);
-     }
+ async function getClient(){
+   if(!enabled)throw Error('ยังไม่เปิดใช้โปรเจกต์ Supabase ของ Bitbot');
+   if(!client){
+     const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm');
+     client=mod.createClient(cfg.url.replace(/\/$/,''),cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+     client.auth.onAuthStateChange((_event,session)=>{
+       const old=user?.id;user=session?.user||null;renderAuth();
+       if(user&&old!==user.id)queueAutoSync(5000);
+     });
    }
-   say(`✅ สำรองข้อมูลขึ้น Cloud สำเร็จ ${count.toLocaleString('th-TH')} รายการ · ข้อมูลไม่เป็นเงินจริง`);
- });}
- async function restore(){return withLock(async()=>{
-  if(!user)throw Error('กรุณาเข้าสู่ระบบก่อน');
-  const c=await getClient();const m=window.BitbotLearningV6;if(!m)throw Error('ไม่พบ Trading Memory');
-  say('กำลังนำบทเรียนจาก Cloud กลับเข้า IndexedDB ของเครื่องนี้...');let count=0;
-  for(const [local,remote] of tables){const records=await pullTable(c,remote);await m.batchPut(local,records);count+=records.length;}
-  say(`✅ นำเข้าจาก Cloud ${count.toLocaleString('th-TH')} รายการ (เพิ่ม/อัปเดตตามรหัสเดิม ไม่สร้างรายการซ้ำ)`);
-  await m.refresh();
- });}
- function mount(){const badge=$('v6CloudBadge'),mount=$('v6CloudMount');if(!mount)return;
-  if(!enabled){if(badge)badge.textContent='ยังไม่เชื่อม Supabase';
-   mount.innerHTML='<p>คลังบทเรียนในเครื่องยังทำงานและสำรองเป็น JSON ได้ตามปกติ ส่วนซิงก์ข้ามอุปกรณ์จะเปิดใช้งานหลังสร้างโปรเจกต์ Supabase สำหรับ Bitbot โดยเฉพาะ ไม่ใช้ฐานข้อมูล RESTART หรือสหกรณ์ร่วมกัน</p>';
-   return;}
-  if(badge)badge.textContent='พร้อมลงชื่อเข้าใช้';
-  mount.innerHTML='<p>เข้าสู่ระบบด้วยอีเมลเพื่อสำรองข้อมูลเฉพาะบัญชีของคุณ (ปกป้องด้วย RLS)</p><div class="v6-cloud-auth"><input id="v6CloudEmail" type="email" autocomplete="email" placeholder="อีเมลของคุณ" aria-label="อีเมลสำหรับเข้าสู่ระบบ"><button id="v6CloudLogin" type="button">ส่งลิงก์เข้าใช้</button><button id="v6CloudLogout" type="button">ออกจากระบบ</button></div><p id="v6CloudWho">กำลังตรวจสอบบัญชี...</p><div class="v6-tools"><button id="v6CloudSync" type="button">☁️ สำรองขึ้น Cloud</button><button id="v6CloudRestore" type="button">⬇️ ดึงบทเรียนจาก Cloud</button></div><p id="v6CloudStatus" role="status" aria-live="polite">ข้อมูล Cloud จะเป็นของบัญชีที่ล็อกอินเท่านั้น ไม่เปิดเผยต่อผู้ใช้คนอื่น</p>';
-  $('v6CloudLogin').onclick=login;
-  $('v6CloudLogout').onclick=async()=>{try{(await getClient()).auth.signOut();user=null;renderAuth();say('ออกจากระบบแล้ว');}catch(e){say(e.message,true);}};
-  $('v6CloudSync').onclick=()=>sync().catch(e=>say('สำรอง Cloud ล้มเหลว: '+e.message,true));
-  $('v6CloudRestore').onclick=()=>restore().catch(e=>say('นำเข้าจาก Cloud ล้มเหลว: '+e.message,true));
-  getClient().then(async c=>{const {data,error}=await c.auth.getUser();if(error && error.status!==400)throw error;user=data?.user||null;renderAuth();}).catch(e=>say('เชื่อมต่อ Supabase ไม่สำเร็จ: '+e.message,true));
+   return client;
+ }
+ function renderAuth(){
+   const who=$('v6CloudWho');if(who)who.textContent=user?`บัญชี: ${user.email||user.id}`:'ยังไม่ได้เข้าสู่ระบบ';
+   for(const id of ['v6CloudSync','v6CloudRestore','v6CloudLogout']){const el=$(id);if(el)el.disabled=!user||syncBusy;}
+   const login=$('v6CloudLogin');if(login)login.disabled=!!user||syncBusy;
+   const badge=$('v6CloudBadge');if(badge)badge.textContent=user?(syncBusy?'กำลังบันทึก':'เชื่อมต่อแล้ว'):'รอเข้าสู่ระบบ';
+ }
+ async function login(){
+   const email=String($('v6CloudEmail')?.value||'').trim();
+   if(!/^\S+@\S+\.\S+$/.test(email)){say('กรุณากรอกอีเมลให้ถูกต้อง',true);return;}
+   try{
+     const c=await getClient();const {error}=await c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
+     if(error)throw error;
+     say('ส่งอีเมลเข้าสู่ระบบแล้ว กรุณาเปิดลิงก์ในอีเมล และกลับมาที่ Bitbot เพื่อซิงก์บทเรียน');
+   }catch(e){say('ไม่สามารถส่งอีเมล: '+e.message,true);}
+ }
+ async function withLock(task){if(syncBusy){syncAgain=true;return;}syncBusy=true;renderAuth();
+   try{await task();}finally{syncBusy=false;renderAuth();if(syncAgain){syncAgain=false;queueAutoSync(8000);}}
+ }
+ async function readLocal(name){
+   const lab=window.BitbotLearningV6;if(!lab)throw Error('ไม่พบ Trading Memory v6');
+   await window.BitbotMemory?.flush?.();return lab.getAll(name);
+ }
+ async function sync(isAuto=false){
+   if(!user){if(!isAuto)say('กรุณาเข้าสู่ระบบก่อน',true);return;}
+   if(syncBusy){syncAgain=true;return;}
+   return withLock(async()=>{
+     if(navigator.onLine===false){say('ออฟไลน์อยู่ ข้อมูลยังอยู่ในเครื่อง จะสำรองเมื่อกลับมาออนไลน์',true);return;}
+     const c=await getClient(),owner=user.id;
+     say(isAuto?'กำลังสำรองบทเรียนอัตโนมัติ...':'กำลังสำรองประวัติจากเครื่องขึ้น Cloud...');
+     let count=0,skipped=0;
+     for(const [local,remote] of tables){
+       const records=await readLocal(local);
+       for(let i=0;i<records.length;i+=150){
+         if(!user||user.id!==owner)throw Error('บัญชีเปลี่ยนระหว่างซิงก์ ระบบหยุดเพื่อความปลอดภัย');
+         const batch=[];
+         for(const record of records.slice(i,i+150)){
+           const safe=safeRecord(local,record);if(!safe){skipped++;continue;}
+           batch.push({user_id:owner,local_id:safe.id,payload:safe,updated_at:record.updatedAt||new Date().toISOString()});
+         }
+         if(!batch.length)continue;
+         const {error}=await c.from(remote).upsert(batch,{onConflict:'user_id,local_id'});
+         if(error)throw error;
+         count+=batch.length;
+         if(count%1200<150)say(`กำลังสำรอง Cloud ${count.toLocaleString('th-TH')} รายการ...`);
+       }
+     }
+     lastSyncTime=Date.now();
+     say(`✅ สำรองออนไลน์สำเร็จ ${count.toLocaleString('th-TH')} รายการ${skipped?' · ข้ามรายการผิดรูปแบบ '+skipped+' รายการ':''} · ไม่ใช้เงินจริง`);
+   });
+ }
+ async function pullTable(c,table){const result=[];
+   for(let start=0;start<300000;start+=500){
+     const {data,error}=await c.from(table).select('local_id,payload').order('local_id',{ascending:true}).range(start,start+499);
+     if(error)throw error;
+     for(const row of data||[])if(row?.payload&&typeof row.payload==='object'&&row.payload.id===row.local_id)result.push(row.payload);
+     if((data||[]).length<500)return result;
+   }
+   throw Error('มีข้อมูล Cloud เกิน 300,000 รายการ กรุณาแบ่งช่วงกู้คืน');
+ }
+ async function restore(){if(!user){say('กรุณาเข้าสู่ระบบก่อน',true);return;}
+   return withLock(async()=>{
+     const c=await getClient(),lab=window.BitbotLearningV6;
+     if(!lab)throw Error('ไม่พบ Trading Memory');
+     say('กำลังดึงข้อมูลจาก Cloud...');let count=0;
+     for(const [local,remote] of tables){
+       const records=await pullTable(c,remote);
+       await lab.batchPut(local,records);count+=records.length;
+     }
+     say(`✅ ดึงบทเรียนจาก Cloud ${count.toLocaleString('th-TH')} รายการ · เพิ่ม/อัปเดตตามรหัส ไม่สร้างซ้ำ`);
+     await lab.refresh();
+   });
+ }
+ function queueAutoSync(delay=8000){
+   if(!user||!enabled)return;
+   if(syncTimer)clearTimeout(syncTimer);
+   syncTimer=setTimeout(()=>{syncTimer=null;sync(true).catch(e=>say('Cloud ยังไม่สำเร็จ (ประวัติในเครื่องยังปลอดภัย): '+e.message,true));},delay);
+ }
+ function mount(){const el=$('v6CloudMount'),badge=$('v6CloudBadge');if(!el)return;
+   if(!enabled){if(badge)badge.textContent='ยังไม่เชื่อม Supabase';
+     el.textContent='กำลังใช้ประวัติในเครื่อง คุณยังสามารถสำรองไฟล์ JSON ได้';return;
+   }
+   el.innerHTML='<p>เข้าสู่ระบบด้วยอีเมลครั้งแรก แล้วเว็บไซต์จะสำรองบทเรียนขึ้น Supabase อัตโนมัติขณะเปิดเว็บและมีอินเทอร์เน็ต ข้อมูลเป็นส่วนตัวของบัญชีคุณ</p><div class="v6-cloud-auth"><input id="v6CloudEmail" type="email" autocomplete="email" placeholder="อีเมลสำหรับสำรองบทเรียน" aria-label="อีเมลสำหรับเข้าสู่ระบบ"><button id="v6CloudLogin" type="button">ส่งลิงก์เข้าใช้</button><button id="v6CloudLogout" type="button">ออกจากระบบ</button></div><p id="v6CloudWho">กำลังตรวจสอบบัญชี...</p><div class="v6-tools"><button id="v6CloudSync" type="button">☁️ สำรองขึ้น Cloud ตอนนี้</button><button id="v6CloudRestore" type="button">⬇️ ดึงบทเรียนจาก Cloud</button></div><p id="v6CloudStatus" role="status" aria-live="polite">PAPER ONLY · ข้อมูลจะอยู่ในเครื่องจนกว่าจะลงชื่อเข้าใช้เพื่อสำรองออนไลน์</p>';
+   $('v6CloudLogin').onclick=login;
+   $('v6CloudLogout').onclick=async()=>{try{await (await getClient()).auth.signOut();user=null;if(syncTimer)clearTimeout(syncTimer);renderAuth();say('ออกจากระบบแล้ว ข้อมูลในเครื่องยังอยู่');}catch(e){say(e.message,true);}};
+   $('v6CloudSync').onclick=()=>sync(false).catch(e=>say('สำรอง Cloud ไม่สำเร็จ: '+e.message,true));
+   $('v6CloudRestore').onclick=()=>restore().catch(e=>say('กู้คืน Cloud ไม่สำเร็จ: '+e.message,true));
+   getClient().then(async c=>{const {data,error}=await c.auth.getUser();if(error&&error.status!==400)throw error;
+     user=data?.user||null;renderAuth();if(user)queueAutoSync(4500);
+   }).catch(e=>say('เชื่อมต่อ Supabase ไม่สำเร็จ: '+e.message,true));
+   document.addEventListener('bitbot:memory-saved',()=>queueAutoSync(10000));
+   window.addEventListener('online',()=>queueAutoSync(3500));
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
- window.BitbotCloudV6={configured:enabled};
+ window.BitbotCloudV6={configured:enabled, sync:()=>sync(false), restore};
 })();
