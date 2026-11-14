@@ -1,0 +1,26 @@
+/* Bitbot v6 Learning Lab: simple presentation; no changes to the paper execution logic */
+.v6-panel{margin:14px 0 18px;padding:20px 22px;border:1px solid #526d88;border-radius:18px;background:linear-gradient(135deg,#17283e,#1b2140);color:#ecf3ff;box-shadow:0 10px 35px #080e2424}
+.v6-top{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+.v6-top h2{font-size:20px;line-height:1.35;margin:5px 0 7px;color:#fcfcff}.v6-top p{font-size:12px;color:#b7c9e6;max-width:750px;line-height:1.8;margin:0 0 14px}
+.v6-eyebrow{color:#a7f1da;font-size:10px;font-weight:900;letter-spacing:1px}.v6-chip{background:#2b6354;border:1px solid #58b59d;border-radius:30px;padding:7px 11px;color:#c6ffe3;font-size:10px;white-space:nowrap;font-weight:bold}
+.v6-summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:14px 16px;border-radius:12px;background:#101d34;border:1px solid #3a526a;font-size:13px;font-weight:bold}
+.v6-summary small{color:#9bafcf;font-weight:normal;font-size:11px}
+.v6-more{background:#111e34;border:1px solid #394d6f;border-radius:12px;margin:12px 0 0;overflow:hidden}
+.v6-more>summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:850;font-size:13px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:#eaf2ff}
+.v6-more>summary::after{content:'⌄';margin-left:auto;color:#a8c3e1;font-size:20px}
+.v6-more[open]>summary::after{content:'⌃'}
+.v6-more>summary small{font-weight:normal;color:#a6badd;font-size:11px}
+.v6-more>summary+div,.v6-more>summary~p,.v6-more>summary~h3,.v6-more>summary~pre{margin-left:16px;margin-right:16px}
+.v6-more h3{font-size:13px;color:#d2e3ff;margin-top:19px}
+.v6-tools{display:flex;flex-wrap:wrap;gap:8px;margin:12px 16px}
+.v6-tools button,.v6-cloud-auth button{background:#3a5ea5;border:1px solid #678dd1;color:#f5f9ff;border-radius:10px;padding:10px 13px;font-weight:800;cursor:pointer;font-size:12px}
+.v6-tools button:first-child{background:#3b8473;border-color:#63b6a1}
+.v6-tools button:disabled,.v6-cloud-auth button:disabled{opacity:.45;cursor:not-allowed}
+.v6-more #v6Status,.v6-more #v6CloudStatus{font-size:12px;color:#b2ebd7;line-height:1.6}
+.v6-more #v6Status[data-error="true"],.v6-more #v6CloudStatus[data-error="true"]{color:#ff9ca7}
+.v6-notes{font:inherit;font-size:12px;color:#d3e2f9;white-space:pre-wrap;overflow-wrap:anywhere;background:#1a2e48;border:1px solid #354c67;border-radius:10px;padding:13px;line-height:1.8;max-height:380px;overflow-y:auto;margin-bottom:16px}
+#v6CloudMount{padding:0 16px 17px;color:#afc3db;font-size:12px;line-height:1.7}
+.v6-cloud-auth{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+.v6-cloud-auth input{flex:1;min-width:180px;min-height:41px;border-radius:9px;background:#0d1831;border:1px solid #586a93;padding:9px 11px;font-size:13px;color:white}
+.v6-cloud-auth~.v6-tools{margin-left:0;margin-right:0}
+@media(max-width:600px){.v6-panel{padding:14px 12px}.v6-top h2{font-size:18px}.v6-summary{padding:11px;font-size:11px}.v6-chip{font-size:9px;padding:5px 7px}.v6-more>summary{font-size:12px}.v6-more>summary small{display:block}.v6-tools button{flex:1 1 135px}}
