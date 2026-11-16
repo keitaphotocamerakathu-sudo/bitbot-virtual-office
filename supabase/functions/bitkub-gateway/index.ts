@@ -145,8 +145,8 @@ function riskPreview(order:ReturnType<typeof parseOrder>,quote:Awaited<ReturnTyp
 async function handle(req:Request) {
   const url=new URL(req.url),action=url.searchParams.get('action')||'status';
   if(req.method==='GET'&&action==='ticker')return {ticker:await ticker()};
-  if(req.method==='GET'&&action==='status')return {exchange:'BITKUB',marketData:true,walletConfigured:false,
-    liveTradingEnabled:false,
+  if(req.method==='GET'&&action==='status')return {exchange:'BITKUB',marketData:true,
+    walletConfigured:null,accountStatusRequiresLogin:true,liveTradingEnabled:null,
     tradingMode:'MANUAL_LIMIT_ONLY',orderCapTHB:MAX_ORDER,asOf:new Date().toISOString()};
   if(!['GET','POST'].includes(req.method))fail('Method not supported',405);
   const uid=await authenticate(req);
@@ -223,7 +223,7 @@ async function handle(req:Request) {
       p_notional_thb:order.notional,p_max_order_thb:maxOrder,p_max_daily_buy_thb:maxBuy,p_max_daily_sell_thb:maxSell});
     let submitted=false;
     try {
-      const payload={sym:'btc_thb',amt:order.amount,rat:order.price,typ:'limit',client_id:'bitbot-'+rid.slice(0,30)};
+      const payload={sym:'btc_thb',amt:order.amount,rat:order.price,typ:'limit',client_id:'bitbot-'+rid.replaceAll('-','').slice(0,24)};
       submitted=true; // from here onward any network ambiguity is never retried automatically
       const result=await bitkubSigned('POST',order.side==='BUY'?'/api/v3/market/place-bid':'/api/v3/market/place-ask',payload,pair);
       const exid=String((result as any)?.result?.id||'');
