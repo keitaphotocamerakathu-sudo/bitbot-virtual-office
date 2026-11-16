@@ -5,6 +5,12 @@ const cfg=window.BITBOT_CLOUD_CONFIG||{};
 const endpoint='https://lrxrigimdaedfemqheug.supabase.co/functions/v1/bitkub-gateway';
 let client=null,session=null,busy=false,lastId='';
 function message(id,text,bad=false){const el=$(id);el.textContent=text;el.dataset.error=bad?'true':'false';}
+function readableError(e){
+ const m=String(e?.message||'');
+ if(e?.code==='invalid_credentials'||/invalid login credentials/i.test(m))return 'อีเมลหรือรหัสผ่าน Bitbot ไม่ถูกต้อง กรุณาตรวจสอบว่ากำลังใช้บัญชี Bitbot (ไม่ใช่ Bitkub) หากจำรหัสไม่ได้ให้กด “ตั้งรหัสผ่าน Bitbot ใหม่”';
+ if(e?.status===429||e?.code==='over_email_send_rate_limit')return 'Supabase จำกัดการส่งอีเมลชั่วคราว โปรดรอให้โควตาคืนก่อนส่งคำขอใหม่';
+ return m||'ไม่สามารถดำเนินการได้';
+}
 function controls(){const ok=!!session?.user&&!busy;
 for(const id of ['saveKey','testWallet','saveLimits','refresh','deleteKey','logout'])$(id).disabled=!ok;
 const countdown=window.BitbotOtpGuard?.remaining?.()||0;
@@ -12,6 +18,7 @@ $('login').disabled=busy||!!session?.user||countdown>0;
 $('login').textContent=countdown?'รอ '+Math.ceil(countdown/60)+' นาที ก่อนขออีเมลใหม่':'ส่งลิงก์เข้าสู่ระบบ';
 $('otpWait').textContent=countdown?'ระบบจำกัดการขออีเมลชั่วคราว เหลือประมาณ '+Math.ceil(countdown/60)+' นาที • ใช้รหัสผ่านที่เคยตั้งไว้ได้':'หากอีเมลถูกจำกัด (429) ให้รอครบกำหนด อย่ากดส่งซ้ำ หรือใช้รหัสผ่านที่เคยตั้งไว้';
 $('passwordLogin').disabled=busy||!!session?.user;
+$('resetPassword').disabled=busy||!!session?.user||countdown>0;
 $('savePassword').disabled=busy||!session?.user;
 $('createPasswordArea').classList.toggle('hide',!session?.user);
 $('who').textContent=session?.user?'✅ เข้าสู่ระบบ: '+(session.user.email||session.user.id):'ยังไม่ได้เข้าสู่ระบบ';
@@ -38,7 +45,7 @@ body:body?JSON.stringify(body):undefined});
 const j=await r.json().catch(()=>({}));if(!r.ok||j.ok===false)throw Error(j.error||'เกิดข้อผิดพลาด HTTP '+r.status);return j;
 }finally{clearTimeout(tm);}
 }
-async function run(job){if(busy)return;busy=true;controls();try{await job();}catch(e){message('overall','⚠️ '+(e.message||'ไม่สามารถดำเนินการได้'),true);}finally{busy=false;controls();}}
+async function run(job){if(busy)return;busy=true;controls();try{await job();}catch(e){message('overall','⚠️ '+readableError(e),true);}finally{busy=false;controls();}}
 function wipe(){$('apiKey').value='';$('apiSecret').value='';}
 async function refresh(){
 if(!session?.user)return;
@@ -81,6 +88,13 @@ if(!confirm('ต้องการลบ API Key/Secret ที่เก็บไ
 await api('setup-remove',{method:'POST',body:{confirm:'REMOVE BITKUB KEY'}});
 wipe();await refresh();message('overall','ลบคีย์ออกจาก Supabase Vault แล้ว\nหากต้องการยกเลิกคีย์เดิมทั้งหมด ให้เพิกถอนคีย์ที่ Bitkub ด้วย');});
 
+$('resetPassword').onclick=()=>run(async()=>{
+ const email=$('email').value.trim();
+ if(!/^\S+@\S+\.\S+$/.test(email))throw Error('กรุณากรอกอีเมล Bitbot ที่ลงทะเบียนไว้');
+ const c=await supa();
+ await window.BitbotOtpGuard.send(()=>c.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname}));
+ message('overall','หากอีเมลนี้ลงทะเบียนไว้ Supabase จะส่งลิงก์ตั้งรหัสผ่านใหม่ กรุณาตรวจอีเมลและกลับมาที่หน้า Setup เพื่อตั้งรหัสผ่านใหม่');
+});
 $('passwordLogin').onclick=()=>run(async()=>{
  const email=$('email').value.trim(),password=$('authPassword').value;
  if(!/^\S+@\S+\.\S+$/.test(email)||!password)throw Error('กรอกอีเมลและรหัสผ่าน Bitbot ให้ครบ');
