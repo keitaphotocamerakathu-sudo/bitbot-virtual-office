@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Bitbot — เข้าสู่ระบบครั้งเดียว</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;background:#0d1425;color:#f0f6ff}
+*{box-sizing:border-box}
+body{margin:0;min-height:100svh;display:flex;align-items:center;justify-content:center;padding:20px}
+main{width:min(530px,100%)}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header strong{font-size:20px;letter-spacing:.4px}
+a{color:#b8ddff} .back{font-size:13px}
+section{background:#192842;border:1px solid #345374;border-radius:23px;padding:clamp(18px,4vw,30px);box-shadow:0 18px 50px #03091280}
+h1{font-size:clamp(22px,5vw,30px);margin:0 0 8px} p{line-height:1.65}
+.sub{color:#abc5df;font-size:14px;margin:0 0 22px}
+label{font-size:13px;color:#d3e8ff;display:block;margin:16px 0 6px}
+input{width:100%;border:1px solid #547594;border-radius:12px;padding:14px;background:#0e1c30;color:#fff;font:inherit;min-height:48px}
+input:focus,button:focus-visible,a:focus-visible{outline:2px solid #92d3ff;outline-offset:2px}
+button{width:100%;border:1px solid #82b9ed;border-radius:13px;padding:13px;background:#276cad;color:#fff;font-size:15px;font-weight:750;cursor:pointer;min-height:47px}
+button:disabled{opacity:.55;cursor:not-allowed}
+.secondary{background:#283d58;border-color:#526f8d}
+.panel{margin-top:18px}
+.status{border:1px solid #416a88;border-radius:12px;padding:13px;margin:17px 0;background:#132d42;line-height:1.65;font-size:13px;white-space:pre-line}
+.status.error{background:#442536;border-color:#9b5268}
+.status.ok{background:#133c38;border-color:#347e68}
+details{border-top:1px solid #35516d;margin-top:18px;padding-top:15px}
+summary{font-size:14px;color:#d0e7ff;cursor:pointer;list-style:inside}
+.actions{display:grid;gap:10px;margin-top:16px}
+small{color:#a5b8cd;display:block;line-height:1.6;margin:8px 0}
+.link{display:block;text-align:center;padding:12px;background:#263c59;border:1px solid #466483;border-radius:12px;text-decoration:none;font-size:14px;margin-top:10px}
+.hidden{display:none!important}footer{text-align:center;color:#91a6bf;font-size:12px;line-height:1.75;margin-top:15px}
+</style>
+</head><body>
+<main>
+<header><strong>₿ BITBOT</strong><a class="back" href="./bitkub-live.html">กลับไป Bitkub Live</a></header>
+<section>
+<h1>เข้าใช้งาน Bitbot</h1>
+<p class="sub">เข้าสู่ระบบครั้งเดียว แล้วใช้บัญชีเดียวกันได้ทั้ง Bitbot, Bitkub Setup และ Bitkub Live โดยไม่ต้องกรอกรหัสใหม่ทุกครั้งที่เปลี่ยนหน้า</p>
+<div id="checking" class="status">กำลังตรวจสอบว่าคุณเข้าสู่ระบบไว้แล้วหรือไม่...</div>
+<div id="signedIn" class="hidden">
+<div id="who" class="status ok"></div>
+<div class="actions"><a class="link" id="continueLink" href="./bitkub-live.html">เข้าใช้งาน Bitkub Live</a><a class="link" href="./bitkub-setup.html">ตั้งค่าบัญชี Bitkub</a><button id="logout" class="secondary">ออกจากระบบบนอุปกรณ์นี้</button></div>
+</div>
+<div id="loginBox" class="hidden">
+<label for="email">อีเมลบัญชี Bitbot</label><input id="email" type="email" autocomplete="username" inputmode="email" placeholder="you@example.com" spellcheck="false">
+<details id="emailMethod" open>
+<summary>เข้าสู่ระบบด้วยลิงก์อีเมล (ไม่ต้องจำรหัส)</summary>
+<div class="actions"><button id="emailLink">ส่งลิงก์เข้าสู่ระบบ</button></div>
+<small>Supabase มีข้อจำกัดจำนวนอีเมล หากติด 429 ให้ใช้ลิงก์ล่าสุดที่ได้รับ หรือรอโควตาคืน ไม่ควรกดซ้ำถี่ ๆ</small>
+</details>
+<details id="passwordMethod">
+<summary>เข้าสู่ระบบด้วยรหัสผ่าน Bitbot</summary>
+<label for="password">รหัสผ่าน Bitbot (ไม่ใช่รหัส Bitkub)</label>
+<input id="password" type="password" autocomplete="current-password" placeholder="รหัสผ่าน Bitbot">
+<div class="actions"><button id="passwordLogin">เข้าสู่ระบบด้วยรหัสผ่าน</button></div>
+</details>
+<details id="recoveryMethod">
+<summary>ลืมรหัสผ่าน Bitbot?</summary>
+<p class="sub">ใช้ลิงก์ที่ส่งไปยังอีเมลที่ยืนยันแล้วเพื่อตั้งรหัสใหม่ โดยไม่เปลี่ยน API Key ของ Bitkub</p>
+<button class="secondary" id="reset">ส่งลิงก์ตั้งรหัสผ่านใหม่</button>
+</details>
+</div>
+<div id="status" class="status" role="status" aria-live="polite">ไม่ต้องกรอกรหัสผ่านหากยังมีเซสชันอยู่บนอุปกรณ์นี้</div>
+</section>
+<footer>Bitbot Secure Login · Supabase Auth · ไม่เก็บรหัสผ่านหรือ Bitkub API Secret ในหน้าเว็บ</footer>
+</main>
+<script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitbot-login.js?v=1.0" defer></script>
+</body></html>
