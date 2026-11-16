@@ -145,9 +145,13 @@ function riskPreview(order:ReturnType<typeof parseOrder>,quote:Awaited<ReturnTyp
 async function handle(req:Request) {
   const url=new URL(req.url),action=url.searchParams.get('action')||'status';
   if(req.method==='GET'&&action==='ticker')return {ticker:await ticker()};
-  if(req.method==='GET'&&action==='status')return {exchange:'BITKUB',marketData:true,
-    walletConfigured:null,accountStatusRequiresLogin:true,liveTradingEnabled:null,
-    tradingMode:'MANUAL_LIMIT_ONLY',orderCapTHB:MAX_ORDER,asOf:new Date().toISOString()};
+  if(req.method==='GET'&&action==='status'){
+    const p=await platformLimits();
+    return {exchange:'BITKUB',marketData:true,
+      walletConfigured:null,accountStatusRequiresLogin:true,liveTradingEnabled:null,
+      serverReady:p.enabled,serverMaxOrderTHB:p.maxOrderTHB,
+      tradingMode:'MANUAL_LIMIT_ONLY',orderCapTHB:MAX_ORDER,asOf:new Date().toISOString()};
+  }
   if(!['GET','POST'].includes(req.method))fail('Method not supported',405);
   const uid=await authenticate(req);
   if(req.method==='GET'&&action==='setup-status'){
