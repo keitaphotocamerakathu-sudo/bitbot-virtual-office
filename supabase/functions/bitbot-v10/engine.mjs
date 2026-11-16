@@ -37,20 +37,20 @@ export function riskAgent(m,s,c,proposal,now){
  // Wide spread blocks all new orders, including exits; no fills are invented.
  if((m.ask-m.bid)/m.last>c.maxSpread)action='HOLD';
  let notional=action==='BUY'?Math.min(c.maxOrder,c.dailyBuy-s.bought,s.cash/(1+c.fee),Math.max(0,equity*c.allocation-s.qty*m.ask)/(1+c.fee)):action==='SELL'?Math.min(s.qty*m.bid,c.maxOrder,c.dailySell-s.sold):0;
- if(notional<100){if(action!=='HOLD')reasons.push('วงเงินหรือมูลค่าคงเหลือต่ำกว่าขั้นต่ำ 100 บาท');action='HOLD';notional=0;}
+ if(notional<(action==='SELL'?10:100)){if(action!=='HOLD')reasons.push('วงเงินหรือมูลค่าคงเหลือต่ำกว่าขั้นต่ำ (ซื้อ 100 / ขาย 10 บาท)');action='HOLD';notional=0;}
  return{agent:'risk',action,notional,exit,drawdown,equity,positionPnl,blocked:reasons,reason:exit||reasons.join(' • ')||'ผ่านขีดจำกัดความเสี่ยง'};
 }
 export function executionAgent(m,s,r){
  const side=r.action;if(side==='HOLD')return{agent:'execution',order:null,reason:'ไม่มีคำสั่งส่ง'};
  const price=Math.round((side==='BUY'?m.ask:m.bid)*100)/100;
  const amount=side==='BUY'?Math.floor(r.notional*100)/100:floor8(Math.min(s.qty,r.notional/price));
- if((side==='BUY'?amount:amount*price)<100)return{agent:'execution',order:null,reason:'จำนวนหลังปัดเศษต่ำกว่าขั้นต่ำ'};
+ if((side==='BUY'?amount:amount*price)<(side==='SELL'?10:100))return{agent:'execution',order:null,reason:'จำนวนหลังปัดเศษต่ำกว่าขั้นต่ำ'};
  return{agent:'execution',order:{side,price,amount,notional:side==='BUY'?amount:amount*price,type:'limit'},reason:'LIMIT • ซื้อเป็น THB • ขายเป็น BTC'};
 }
 export function applyFill(state,fill,c){
  const s=structuredClone(state),{side,qty,price,fee=0}=fill;
  if(!['BUY','SELL'].includes(side)||![qty,price,fee].every(Number.isFinite)||qty<=0||price<=0||fee<0)throw Error('ข้อมูลการจับคู่ไม่ถูกต้อง');
- if(side==='BUY'){const debit=qty*price+fee;if(debit>s.cash+0.02)throw Error('ยอดซื้อเกินเงินที่จัดสรร');s.cash-=debit;s.qty+=qty;s.cost+=debit;s.bought+=qty*price;s.entryStrategy=fill.strategy||s.entryStrategy||'trend-pullback';}
+ if(side==='BUY'){const debit=qty*price+fee;if(debit>s.cash+0.02)throw Error('ยอดซื้อเกินเงินที่จัดสรร');s.cash-=debit;s.qty+=qty;s.cost+=debit;s.bought+=debit;s.entryStrategy=fill.strategy||s.entryStrategy||'trend-pullback';}
  else{if(qty>s.qty+1e-10)throw Error('ขายเกินจำนวน BTC ที่บอทถือ');const basis=s.qty? s.cost*Math.min(1,qty/s.qty):0,net=qty*price-fee,pnl=net-basis;s.cash+=net;s.qty=Math.max(0,s.qty-qty);s.cost=Math.max(0,s.cost-basis);s.realized+=pnl;s.dayPnl+=pnl;s.positionRealized=(s.positionRealized||0)+pnl;s.sold+=qty*price;
  if(s.qty<1e-10){s.qty=0;s.cost=0;const key=s.entryStrategy||'trend-pullback',l=s.lessons[key]||{wins:0,losses:0};if(s.positionRealized>0)l.wins++;else l.losses++;s.positionRealized=0;s.lessons[key]=l;s.entryStrategy=null;}}
  s.fees+=fee;s.trades++;return s;
@@ -65,7 +65,8 @@ export function cycle(m,state,c,now=Date.now()){
 }
 export function paperCycle(m,s,c,now=Date.now()){
  const out=cycle(m,s,c,now);if(!out.order)return out;const o=out.order,price=o.side==='BUY'?m.ask*1.0005:m.bid*.9995;
- const qty=o.side==='BUY'?floor8(o.amount/price):Math.min(o.amount,out.state.qty),fee=qty*price*c.fee;
+ const fee=o.side==='BUY'?Math.ceil(o.amount*c.fee*100)/100:Math.ceil(o.amount*price*c.fee*100)/100;
+ const qty=o.side==='BUY'?floor8((o.amount-fee)/price):Math.min(o.amount,out.state.qty);
  try{out.state=applyFill(out.state,{side:o.side,qty,price,fee,strategy:o.strategy},c);out.fill={side:o.side,qty,price,fee,at:now,reason:o.reason};}
  catch(e){out.error=e.message;out.order=null;}return out;
 }

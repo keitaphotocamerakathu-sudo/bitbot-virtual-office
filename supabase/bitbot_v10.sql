@@ -17,7 +17,7 @@ create index on public.bitbot_v10_events(user_id,id desc);
 create table public.bitbot_v10_orders(
  id uuid primary key,user_id uuid not null references auth.users(id) on delete cascade,
  side text not null check(side in ('BUY','SELL')),amount numeric not null check(amount>0),
- price numeric not null check(price>0),notional numeric not null check(notional>=100),
+ price numeric not null check(price>0),notional numeric not null check(notional>=10),
  status text not null check(status in ('RESERVED','OPEN','UNKNOWN','FILLED','CANCELED','REJECTED')),
  exchange_id text, strategy text,reason text,settled boolean not null default false,
  created_at timestamptz not null default now(),updated_at timestamptz not null default now()
@@ -97,7 +97,7 @@ begin
  if not b.running or b.lease is distinct from p_lease or b.lease_until<=now() then raise exception 'บอทหยุดหรือสิทธิ์รอบหมดอายุ';end if;
  if exists(select 1 from public.bitbot_v10_orders where user_id=p_uid and not settled) then raise exception 'มีคำสั่งค้าง ห้ามส่งซ้ำ';end if;
  v_side=p_order->>'side';v=(p_order->>'notional')::numeric;
- if v_side not in ('BUY','SELL') or v<100 or v>least((b.config->>'maxOrder')::numeric,1000) then raise exception 'เกินวงเงินคำสั่ง';end if;
+ if v_side not in ('BUY','SELL') or v<(case when v_side='BUY' then 100 else 10 end) or v>least((b.config->>'maxOrder')::numeric,1000) then raise exception 'เกินวงเงินคำสั่ง';end if;
  if v_side='BUY' and (b.config->>'buyPaused')::boolean then raise exception 'พักซื้ออยู่';end if;
  cap=case when v_side='BUY' then least((b.config->>'dailyBuy')::numeric,5000) else least((b.config->>'dailySell')::numeric,10000) end;
  select coalesce(sum(notional),0) into total from public.bitbot_v10_orders

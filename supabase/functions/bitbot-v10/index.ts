@@ -121,7 +121,7 @@ function filledState(state,order,info,c){
  if(![amount,price,grossFee,credit].every(Number.isFinite)||amount<=0||price<=0||grossFee<0||credit<0)throw Error('ข้อมูลการจับคู่ไม่ครบ');
  const fee=Math.max(0,grossFee-credit);
  // Bitkub: BUY history.amount is THB; SELL history.amount is BTC.
- const qty=order.side==='BUY'?amount/price:amount;
+ const qty=order.side==='BUY'?(amount-fee)/price:amount;
  s=applyFill(s,{side:order.side,qty,price,fee,strategy:order.strategy},c);
  }
  if(Number(info.filled)>0&&info.history.length===0)throw Error('ตลาดรายงานจับคู่แล้วแต่ไม่มีรายการย่อย');

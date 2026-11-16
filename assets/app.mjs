@@ -161,6 +161,9 @@ function render(){
  text('runNote',mode==='paper'?'ราคาตลาดจริง เงินจำลอง · ต้องเปิดหน้านี้ไว้ · ไม่เริ่มใหม่เองเมื่อปิดหรือรีโหลด':'บอททำงานบนเซิร์ฟเวอร์ · การพักซื้อยังตรวจขาย · ปุ่มหยุดทั้งหมดจะหยุดการเฝ้าสถานะด้วย');
  const live=cloud?.bot;$('serverActivity').hidden=!live?.running||mode==='live';
  if(live?.running&&mode==='paper')text('serverActivity','บอทเงินจริงของคุณยังทำงานบนเซิร์ฟเวอร์ สลับไปโหมดเงินจริงเพื่อดูหรือหยุด');
+ if(live?.running&&Date.now()-Date.parse(live.updated_at)>180000){
+ $('serverActivity').hidden=false;$('serverActivity').className='notice bad';text('serverActivity','เซิร์ฟเวอร์ไม่ได้อัปเดตเกิน 3 นาที กรุณาตรวจคำสั่งและสถานะที่ Bitkub');if(mode==='live')text('botStatus','รอตรวจเซิร์ฟเวอร์');
+ }else $('serverActivity').className='notice';
  renderAgents();renderDecision($('decisionFeed'),trace());if(!$('history').hidden)renderHistory();
 }
 function chart(){

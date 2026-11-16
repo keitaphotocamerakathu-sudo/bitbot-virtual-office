@@ -23,3 +23,6 @@ test('unsafe settings are rejected',()=>{for(const x of [NaN,Infinity,'100'])ass
 test('2000 paper cycles conserve accounting and never overspend',()=>{const c=config(),start=initial(c);let s=start;
 for(let j=0;j<2000;j++){const now=NOW+j*300000,m=market();m.observedAt=now;m.candles=m.candles.map((b,i)=>({t:now-(80-i)*300000,c:2800000+Math.sin((j+i)/10)*100000+i*500}));m.last=m.candles.at(-1).c;m.bid=m.last*.9998;m.ask=m.last*1.0002;s=paperCycle(m,s,c,now).state;assert(s.cash>=-.02);assert(s.qty>=0);assert(Number.isFinite(s.realized));assert(s.bought<=c.dailyBuy+.01);assert(s.sold<=c.dailySell+.01);assert(Math.abs((s.cash+s.cost)-(c.budget+s.realized))<.0001);}
 assert.equal(start.cash,c.budget);});
+
+test('a 100 THB entry can exit below 100 THB at its stop loss',()=>{const c=config({maxOrder:100}),m=market(),s={...initial(c),cash:99900,qty:99.75/3200000,cost:100};const out=cycle(m,s,c,NOW);assert.equal(out.order.side,'SELL');assert(out.order.notional<100);assert(out.order.notional>=10);});
+test('paper buy fees are deducted from the spend amount and rounded to satang',()=>{const c=config({maxOrder:101}),out=paperCycle(market(),initial(c),c,NOW);assert.equal(out.fill.fee,.26);assert(out.state.cost<=101);assert(out.state.cost>100.97);});
