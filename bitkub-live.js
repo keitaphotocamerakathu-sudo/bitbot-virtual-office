@@ -91,6 +91,7 @@
    catch(e){show('เข้าสู่ระบบไม่สำเร็จ: '+e.message,true);}
    finally{$('loginPassword').value='';updateLogin();}
  }
+ $('loginPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('passwordLogin').click();});
  $('refreshQuote').onclick=ticker;$('refreshStatus').onclick=status;$('emailLogin').onclick=login;$('passwordLogin').onclick=passwordLogin;$('logout').onclick=logout;$('balanceBtn').onclick=balance;$('ordersBtn').onclick=history;
  $('previewBtn').onclick=preflight;$('submitBtn').onclick=submit;$('reconcileBtn').onclick=reconcile;$('side').onchange=onSide;
  $('confirmPhrase').oninput=()=>{$('submitBtn').disabled=!preview||$('confirmPhrase').value.trim()!=='เทรดเงินจริง';};
