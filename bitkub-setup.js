@@ -55,7 +55,7 @@ if(!session?.user)return;
 const x=await api('setup-status'),s=x.setup||{};
 setupState={...s,serverLiveEnabled:!!x.serverLiveEnabled};
 message('keyStatus',s.configured?'✅ บันทึกคีย์แบบเข้ารหัสแล้ว • ลงท้าย '+(s.keySuffix||'—')+' • ตรวจสอบ Wallet ณ '+new Date(s.verifiedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}):'ยังไม่ได้ตั้ง API Key/Secret');
-$('maxOrder').value=s.maxOrderTHB??500;$('maxBuy').value=s.maxDailyBuyTHB??1000;$('maxSell').value=s.maxDailySellTHB??1000;
+$('maxOrder').value=s.maxOrderTHB??100;$('maxBuy').value=s.maxDailyBuyTHB??300;$('maxSell').value=s.maxDailySellTHB??1000;
 $('tradeState').textContent=x.serverLiveEnabled&&s.tradingEnabled&&s.adminApproved?'⚠️ เปิดสิทธิ์ส่งคำสั่งเงินจริงแล้ว':'🔒 ไม่ส่งคำสั่งเงินจริง';
 const reqs=['API Key: '+(s.configured?'ตรวจแล้ว ✓':'ยังไม่ตั้ง'),'Wallet: '+(s.verifiedAt?'เคยตรวจแล้ว ✓':'ยังไม่ผ่าน'),
 'ผู้ควบคุม: '+(s.adminApproved?'อนุมัติ ✓':'รออนุมัติ'),'สวิตช์เซิร์ฟเวอร์: '+(x.serverLiveEnabled?'พร้อม ✓':'ปิด'),'ตัวเลือกของคุณ: '+(s.tradingEnabled?'เปิด':'ปิด')];
@@ -104,6 +104,7 @@ $('disableTrading').onclick=()=>run(async()=>{
 $('saveLimits').onclick=()=>run(async()=>{
 const b={maxOrderTHB:Number($('maxOrder').value),maxDailyBuyTHB:Number($('maxBuy').value),maxDailySellTHB:Number($('maxSell').value)};
 for(const v of Object.values(b))if(!Number.isFinite(v)||v<100||Math.abs(v*100-Math.round(v*100))>.00001)throw Error('วงเงินต้องตั้งแต่ 100 บาทขึ้นไปและไม่เกิน 2 ตำแหน่ง');
+if(b.maxOrderTHB>100||b.maxDailyBuyTHB>300||b.maxDailySellTHB>1000)throw Error('วงเงินสูงสุดปัจจุบันของระบบ: 100 บาท/คำสั่ง ซื้อ 300 บาท/วัน ขาย 1,000 บาท/วัน');
 if(b.maxOrderTHB>b.maxDailyBuyTHB||b.maxOrderTHB>b.maxDailySellTHB)throw Error('วงเงินต่อคำสั่งต้องไม่เกินรายวัน');
 await api('setup-limits',{method:'POST',body:b});await refresh();message('overall','✅ บันทึกวงเงินบนเซิร์ฟเวอร์แล้ว\nยังไม่เปิดการส่งคำสั่งเงินจริง');});
 $('refresh').onclick=()=>run(refresh);
