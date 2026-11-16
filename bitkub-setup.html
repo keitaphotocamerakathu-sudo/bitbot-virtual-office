@@ -32,8 +32,8 @@
 </section>
 <section class="step"><div class="head"><span class="num">3</span>ตั้งวงเงินความเสี่ยง</div>
 <p class="muted">เป็นขีดจำกัดต่อบัญชีที่บันทึกฝั่งเซิร์ฟเวอร์ แต่ <strong>ยังไม่ใช่การเปิดเทรดเงินจริง</strong></p>
-<div class="grid"><div class="field"><label for="maxOrder">วงเงินต่อคำสั่ง (บาท)</label><input type="number" inputmode="decimal" id="maxOrder" min="100" max="100000" step="0.01" value="500"></div><div class="field"><label for="maxBuy">วงเงินซื้อสูงสุดต่อวัน (บาท)</label><input type="number" inputmode="decimal" id="maxBuy" min="100" max="1000000" step="0.01" value="1000"></div></div>
-<div class="field"><label for="maxSell">มูลค่าขายสูงสุดต่อวัน (บาท)</label><input type="number" inputmode="decimal" id="maxSell" min="100" max="1000000" step="0.01" value="1000"></div>
+<div class="grid"><div class="field"><label for="maxOrder">วงเงินต่อคำสั่ง (บาท)</label><input type="number" inputmode="decimal" id="maxOrder" min="100" max="100" step="0.01" value="100"></div><div class="field"><label for="maxBuy">วงเงินซื้อสูงสุดต่อวัน (บาท)</label><input type="number" inputmode="decimal" id="maxBuy" min="100" max="300" step="0.01" value="300"></div></div>
+<div class="field"><label for="maxSell">มูลค่าขายสูงสุดต่อวัน (บาท)</label><input type="number" inputmode="decimal" id="maxSell" min="100" max="1000" step="0.01" value="1000"></div>
 <div class="row"><button id="saveLimits" disabled>บันทึกวงเงิน</button><span id="tradeState" class="pill">🔒 เทรดเงินจริงยังปิดอยู่</span></div>
 <div class="warning" id="tradeRequirements">สถานะตรวจสอบ: รอเข้าสู่ระบบ • จะไม่ส่งคำสั่งเงินจริงจากหน้า Setup</div>
 <section class="step" style="background:#101d2e;margin:14px 0 0;border-color:#52779e">
@@ -52,4 +52,4 @@
 <div id="overall" class="status">รอเข้าสู่ระบบ</div>
 </section>
 <footer>Bitbot v8 · เก็บคีย์เข้ารหัสบน Supabase Vault · หน้าเว็บไม่บันทึกคีย์ใน localStorage หรือฐานข้อมูลสาธารณะ · ไม่มีฟังก์ชันถอนเงิน และไม่มีการส่งคำสั่งซื้อขายจากหน้าตั้งค่า</footer>
-</main><script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitkub-setup.js?v=9.0" defer></script></body></html>
+</main><script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitkub-setup.js?v=9.1" defer></script></body></html>
