@@ -17,6 +17,11 @@
  function updateLogin(){const user=session?.user;
    $('sessionWho').textContent=user?'ล็อกอิน Bitbot: '+(user.email||'บัญชีที่ยืนยันแล้ว'):'ยังไม่ได้ล็อกอิน Bitbot';
    $('uid').textContent=user?.id||'—';$('logout').disabled=!user;
+   const wait=window.BitbotOtpGuard?.remaining?.()||0;
+   $('emailLogin').disabled=!!user||wait>0;
+   $('emailLogin').textContent=wait?'รอ '+Math.ceil(wait/60)+' นาที ก่อนส่งเมลใหม่':'ส่งลิงก์ล็อกอิน';
+   $('otpWait').textContent=wait?'Supabase จำกัดการส่งอีเมล โปรดรออีกประมาณ '+Math.ceil(wait/60)+' นาที หรือใช้รหัสผ่านที่มีอยู่':'หากขึ้น 429 กรุณาอย่ากดขออีเมลซ้ำ เพราะโควตารวมของโปรเจกต์อาจเต็ม';
+   $('passwordLogin').disabled=!!user;
    $('balanceBtn').disabled=!user;$('ordersBtn').disabled=!user;$('previewBtn').disabled=!user;
    $('reconcileBtn').disabled=!user;
  }
@@ -43,8 +48,11 @@
    show('ข้อมูลราคา: Bitkub API จริง\nเชื่อม Wallet: '+keyInfo+'\nส่งคำสั่งเงินจริง: '+(approved?'ได้รับสิทธิ์แล้ว':'ปิด (ปลอดภัย)')+'\nรูปแบบคำสั่ง: LIMIT เท่านั้น / ยืนยันด้วยตนเอง'+(cap?'\nวงเงินต่อคำสั่งที่ตั้งไว้: ฿'+fmt(cap):''));
  }catch(e){show('Backend ยังไม่พร้อม: '+e.message,true);}}
  async function login(){const email=$('loginEmail').value.trim();if(!/^\S+@\S+\.\S+$/.test(email)){show('กรุณากรอกอีเมล',true);return;}
-   try{const c=await getClient(),{error}=await c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
-     if(error)throw error;show('ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว กรุณาเปิดลิงก์');}catch(e){show(e.message,true);}}
+   try{const c=await getClient();
+     await window.BitbotOtpGuard.send(()=>c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}}));
+     show('ส่งลิงก์เข้าสู่ระบบแล้ว กรุณาตรวจอีเมลและอย่ากดส่งซ้ำ');}
+   catch(e){show(e.message+(e.cooldown?' • โปรดรอให้ Supabase คืนโควตา หรือใช้รหัสผ่าน':'') ,true);}
+   finally{updateLogin();}}
  async function logout(){try{const c=await getClient();await c.auth.signOut();session=null;updateLogin();show('ออกจากระบบแล้ว');}catch(e){show(e.message,true);}}
  async function balance(){try{const x=await api('balance',{auth:true});const a=x.balance;
    $('balanceOutput').textContent='ยอด THB ใช้ได้: ฿'+fmt(a.THB.available)+' • ติดคำสั่ง: ฿'+fmt(a.THB.reserved)+'\nBTC ใช้ได้: '+fmt(a.BTC.available,8)+' • ติดคำสั่ง: '+fmt(a.BTC.reserved,8)+'\nข้อมูลจาก Bitkub Wallet v4';
@@ -75,9 +83,17 @@
  function onSide(){preview=null;$('tradeConfirm').classList.add('hidden');$('previewOutput').textContent='กรุณาตรวจสอบคำสั่งใหม่';
    const sell=$('side').value==='SELL';$('amountLabel').textContent=sell?'จำนวน Bitcoin ที่ต้องการขาย (BTC)':'จำนวนเงินบาทที่ต้องการใช้ซื้อ (THB)';
    $('amount').step=sell?'0.00000001':'0.01';$('amount').placeholder=sell?'0.001':'100';$('amount').value='';}
- $('refreshQuote').onclick=ticker;$('refreshStatus').onclick=status;$('emailLogin').onclick=login;$('logout').onclick=logout;$('balanceBtn').onclick=balance;$('ordersBtn').onclick=history;
+ async function passwordLogin(){
+   const email=$('loginEmail').value.trim(),password=$('loginPassword').value;
+   if(!/^\S+@\S+\.\S+$/.test(email)||!password){show('กรุณากรอกอีเมลและรหัสผ่าน Bitbot',true);return;}
+   try{const c=await getClient();const {error}=await c.auth.signInWithPassword({email,password});if(error)throw error;
+     show('✅ เข้าสู่ระบบสำเร็จโดยไม่ต้องส่งอีเมล');await status();}
+   catch(e){show('เข้าสู่ระบบไม่สำเร็จ: '+e.message,true);}
+   finally{$('loginPassword').value='';updateLogin();}
+ }
+ $('refreshQuote').onclick=ticker;$('refreshStatus').onclick=status;$('emailLogin').onclick=login;$('passwordLogin').onclick=passwordLogin;$('logout').onclick=logout;$('balanceBtn').onclick=balance;$('ordersBtn').onclick=history;
  $('previewBtn').onclick=preflight;$('submitBtn').onclick=submit;$('reconcileBtn').onclick=reconcile;$('side').onchange=onSide;
  $('confirmPhrase').oninput=()=>{$('submitBtn').disabled=!preview||$('confirmPhrase').value.trim()!=='เทรดเงินจริง';};
  for(const key of ['side','amount','limitPrice'])$(key).addEventListener('input',()=>{preview=null;$('tradeConfirm').classList.add('hidden');});
- updateLogin();ticker();status();getClient().catch(e=>show('ระบบล็อกอินมีปัญหา: '+e.message,true));setInterval(()=>{if(!document.hidden)ticker();},20000);
+ updateLogin();ticker();status();getClient().catch(e=>show('ระบบล็อกอินมีปัญหา: '+e.message,true));setInterval(()=>{if(!document.hidden){ticker();updateLogin();}},20000);
 })();
