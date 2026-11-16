@@ -1,32 +1,52 @@
-name: Deploy Bitbot Virtual Office to GitHub Pages
+name: Test and deploy Bitbot 10
 on:
   push:
-    branches: [main]
+    branches: [main, rebuild-v10]
   workflow_dispatch:
 permissions:
   contents: read
   pages: write
   id-token: write
 concurrency:
-  group: github-pages
+  group: bitbot-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Financial engine and server security
+        run: npm test
+      - name: Install browser dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser flows and mobile layout
+        run: npm run test:ui
+      - name: Public backend checks (no trades)
+        run: node tests/backend-smoke.mjs
   deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: test
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Prepare web application
+        run: |
+          mkdir -p public-site/assets
+          cp index.html bitbot-v6-cloud-config.js public-site/
+          cp assets/*.mjs assets/*.css public-site/assets/
+          for file in bitkub-live.html bitkub-setup.html bitbot-login.html; do cp index.html "public-site/$file"; done
+      - uses: actions/upload-pages-artifact@v3
         with:
-          enablement: true
-      - name: Upload website
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - name: Deploy to GitHub Pages
+          path: public-site
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

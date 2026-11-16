@@ -1,110 +1,69 @@
-# Bitbot Virtual Trading Office v6.1
+# BITBOT 10 — Bitkub Multi-Agent Trading
+ระบบใหม่หน้าเดียว: ทดลอง, เชื่อมบัญชี, ตั้งวงเงิน, ดูเหตุผล และตรวจประวัติ
 
-[ทดลองใช้งานเว็บไซต์ Bitbot](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/)
+เว็บไซต์: https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/
 
-**สถานะ:** PAPER TRADING ONLY • NO REAL ORDERS • RULE-BASED AGENTS (not an ML model).
+## เริ่มใช้งาน
+1. ทดลอง: กด **เริ่มทดลองบอท** ใช้ราคาจริงจาก Bitkub และเงินจำลอง 100,000 บาท ไม่ต้องล็อกอิน ต้องเปิดหน้านี้ไว้
+2. จริง: เลือก **เงินจริง** → สมัครชื่อผู้ใช้ (ไม่ส่งอีเมล) หรือใช้อีเมล/รหัสผ่านบัญชีเดิม → เชื่อม API Key/Secret → บันทึกทุนและวงเงิน → เริ่มบอทและยืนยัน
+3. เก็บรหัสกู้บัญชีที่แสดงหลังสมัครไว้ส่วนตัว ใช้ตั้งรหัสใหม่ได้ครั้งเดียว แล้วระบบให้รหัสกู้ใหม่
+4. บัญชีเดิมยังใช้ session และ API Key ที่เข้ารหัสไว้เดิมได้ บัญชีชื่อผู้ใช้ใหม่เป็นอีกบัญชีหนึ่งและต้องเชื่อมคีย์ของตนเอง
 
-## วิธีใช้งาน
+## ทีมทำงานจริง 5 บทบาท
+| เอเจนต์ | หน้าที่ |
+| --- | --- |
+| Coordinator | ตรวจข้อมูลและประสานรอบ พร้อมบันทึกผล |
+| Trend | EMA 9/21 และ RSI 14 จากแท่งปิด 5 นาที |
+| Strategy | เลือก trend-pullback / breakout และจัดอันดับจากผลสุทธิ |
+| Risk | ตรวจวงเงิน, exposure, daily loss, drawdown, spread, candle replay |
+| Execution | สร้าง LIMIT, จองคำสั่งก่อนส่ง, ตรวจผลจริงและ partial fills |
 
-1. เปิดเว็บ แล้วเลือกสถานการณ์ตลาดและกด **เริ่มจำลอง** หรือ **ดูบอตซื้อ–ขาย 1 รอบ**
-2. ดูสถานะ BUY/SELL/HOLD, กำไรขาดทุน, ยอดพอร์ตและรายละเอียด Agent
-3. เปิด **🧠 บอตจดจำอะไรจากการเทรด?** แล้วกด **ทดสอบตลาดยาก 90 รอบ**
-4. การทดลอง 90 รอบประกอบด้วยตลาด 5 แบบ × เมล็ดสุ่มใหม่ 3 ชุด × กลยุทธ์ 3 แบบ × ต้นทุน 2 แบบ ทุกครั้งมีรหัสชุดข้อมูลและการตรวจความเสี่ยง
-5. ดูบทเรียน และกด **สำรองบทเรียน JSON** เพื่อเก็บข้อมูลก่อนล้างเบราว์เซอร์
-6. การทดสอบและประวัติที่เครื่องนี้จะถูกเก็บใน **IndexedDB** ของเบราว์เซอร์
+ระบบเป็น quantitative multi-agent แยกการประเมินและผลลัพธ์ ไม่ใช่หลาย LLM และไม่อ้างว่าเป็นโมเดลที่ฝึกตัวเอง
+ความจำกลยุทธ์ใช้การนับแพ้/ชนะหลังค่าธรรมเนียมด้วย prior แบบ Beta เพื่อจัดอันดับเท่านั้น ไม่รับรองกำไร
 
-## Trading Memory — 2 ชั้น
+## ความหมายของปุ่ม
+- **พักซื้อใหม่**: งดการซื้อ แต่ยังเฝ้าทางออกของสถานะ
+- **หยุดบอท**: หยุดเปิดคำสั่งใหม่ และขอยกเลิกคำสั่งค้างในรอบเซิร์ฟเวอร์ถัดไป เหรียญที่ถือยังอยู่และต้องดูแลเอง
+- **จบรอบ / เริ่มรอบใหม่**: ทดลองสามารถล้างสถานะจำลองโดยเก็บประวัติ จริงทำได้เมื่อหยุดบอท ไม่มีคำสั่งค้าง ไม่มี BTC ใน Wallet และทุน THB เพียงพอ ผลกำไรของธุรกรรมภายนอกไม่ถูกสมมติขึ้น
+- **ตรวจเลขออร์เดอร์ค้าง**: ใส่เลขออร์เดอร์ Bitkub ได้เมื่อเกิด UNKNOWN เซิร์ฟเวอร์ตรวจ client_id ว่าตรงกับคำสั่งบัญชีนี้ก่อนรับข้อมูล
 
-- **IndexedDB (พร้อมใช้):** บันทึกการตัดสินใจแต่ละแท่งเทียน คำสั่งจำลอง บทเรียนและรอบการทดสอบ โดยอยู่ในเครื่องและเบราว์เซอร์ที่ใช้เท่านั้น
-- **Supabase Cloud (สร้างแล้ว):** ใช้โปรเจกต์แยก `lrxrigimdaedfemqheug` ในบัญชี Keitaphotocamera · เปิด RLS ทั้ง 3 ตารางแล้ว · บนเว็บลงชื่อเข้าใช้ด้วยอีเมลเพื่อสำรองบทเรียนอัตโนมัติขณะหน้าเว็บเปิดและออนไลน์ รวมถึงสำรอง/กู้คืนด้วยตนเองได้
+## การควบคุมความเสี่ยง
+- BTC/THB spot, LIMIT เท่านั้น ไม่มี endpoint ถอนเงินหรือ proxy ตาม URL ผู้ใช้
+- ปิดสิทธิ์ Withdraw ที่ Bitkub และใช้ Read + Trade เท่านั้น ระบบไม่สามารถพิสูจน์การตั้งสิทธิ์ของคีย์จาก wallet API ได้
+- คีย์เข้ารหัสใน Supabase Vault ไม่มี secret ใน source, browser storage หรือผลตอบกลับ
+- คำสั่งเงินจริงมี server cap: ต่อครั้ง 1,000 บาท, ซื้อ 5,000 บาท/วัน, ขาย 10,000 บาท/วัน ผู้ใช้ลดเพดานได้ ค่าเริ่มต้นต่อครั้ง 100, ซื้อ 300, ขาย 1,000 บาท/วัน
+- เงินทุนจริงเริ่มตั้งค่า 1,000 บาท ถือ BTC ไม่เกิน 20% ของพอร์ต, SL 2%, TP 4%, daily loss 3%, max drawdown 10%
+- ตรวจทุก 1 นาที สัญญาณจากแท่งปิด 5 นาที Stop Loss ไม่ใช่คำสั่งรับประกันราคา การจำกัดวงเงินขาย/ส่วนต่างราคา/ขั้นต่ำอาจทำให้ขายไม่ครบหรือขายช้า
+- คำสั่งค้างเกิน 2 นาทีจะขอยกเลิก แล้วรอยืนยันผลและนำ partial fills มาคิดบัญชีครั้งเดียว
+- เครือข่ายผิดพลาดหลังส่ง = UNKNOWN หยุดบอท ไม่ส่งซ้ำ ต้องตรวจผลจาก Bitkub
+- lease ในฐานข้อมูลป้องกันหลาย worker ทำงานซ้อน และ server reserve ป้องกันการส่งซ้ำ
+- ป้องกัน gateway รุ่นเดิมทำงานชนกับบอทใหม่
+- ค่ากำไรจริงเป็นประมาณการจาก fill history และค่าธรรมเนียมหลังเครดิต ตรวจ Wallet และรายการ Bitkub เป็นหลัก
+- ข้อมูลเก่าและคีย์เดิมไม่ถูกลบ แยกตาราง v10 และเก็บ backup branch ก่อนเปลี่ยน
 
-ห้ามใช้โปรเจกต์ RESTART หรือสหกรณ์เพื่อแยกความเสี่ยงและบัญชีผู้ใช้งาน การเชื่อมผ่าน Data API ใช้เฉพาะ publishable key + Row Level Security (RLS) แบบ user_id = auth.uid().
+## โครงสร้าง
+- assets/engine.mjs — logic ที่ใช้ร่วมกันระหว่าง browser, server, tests
+- assets/app.mjs, assets/style.css, index.html — เว็บ
+- supabase/functions/bitbot-v10/index.ts — auth, keys, wallet, live execution, scheduler
+- supabase/bitbot_v10.sql — ตาราง, RPC, lease, reservation, Vault scheduler, cron ทุกนาที
+- tests/ — engine invariants, mocked server security, browser flows, public backend checks
+- .github/workflows/deploy-pages.yml — ทดสอบก่อนเผยแพร่ เผยแพร่เฉพาะไฟล์เว็บ
 
-### ตั้งค่า Auth อีก 1 ขั้นตอนเพื่อเข้าใช้ Cloud Sync
+## ดูแลระบบ
+ใช้ Supabase project เดิม lrxrigimdaedfemqheug
+Edge Function ใช้ SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY ที่ระบบจัดให้
+BITBOT_LIVE_ENABLED=false เป็น emergency switch ปิดคำสั่งใหม่ แต่การตรวจและขอยกเลิกคำสั่งค้างยังทำงาน
+กำหนด verify_jwt=false เนื่องจาก market/login เป็น public; ทุก private action ตรวจ JWT กับ Supabase Auth ก่อนเสมอ
+Cron ใช้ token สุ่มใน Vault เท่านั้น ไม่ใช่ bearer ของผู้ใช้ ไม่มี task เริ่มเทรดใครโดยอัตโนมัติหลังติดตั้ง
+หาก Bitkub ตั้ง IP whitelist ต้องอนุญาต IP ออกจาก backend ที่ใช้จริง การตรวจ Wallet จะแสดงข้อผิดพลาดเมื่อคีย์/สิทธิ์/IP ไม่ตรง
 
-1. โปรเจกต์ Supabase แยกสำหรับ Bitbot สร้างสำเร็จแล้ว: [Bitbot Paper Trading Memory](https://supabase.com/dashboard/project/lrxrigimdaedfemqheug)
-2. ตาราง `bitbot_paper_runs`, `bitbot_paper_journal`, `bitbot_paper_lessons` สร้างแล้ว; RLS เปิดทุกตาราง และ `anon` ไม่มีสิทธิ์ SELECT/INSERT; Supabase security advisors ไม่พบรายการเตือนในการตรวจครั้งแรก
-3. **ผู้ดูแลต้องตั้งค่า Auth → URL Configuration ที่ [หน้านี้](https://supabase.com/dashboard/project/lrxrigimdaedfemqheug/auth/url-configuration):**
-   - Site URL = `https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/`
-   - Redirect URLs เพิ่ม `https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/`
-   - ตรวจว่า Email Auth เปิดอยู่ใน Authentication → Providers
-4. เปิด Bitbot แล้วขยายเมนู **☁️ สำรองประวัติข้ามอุปกรณ์**, กรอกอีเมล กดส่งลิงก์ เข้าใช้งานจากอีเมลให้เสร็จบนเว็บไซต์เดิม
-5. เมื่อเข้าสู่ระบบแล้วหน้าเว็บจะสำรองบทเรียนอัตโนมัติหลังคำสั่ง/รอบทดสอบ หรือเมื่อกลับมาออนไลน์ **เฉพาะตอนเปิดหน้าเว็บ** รวมถึงกดสำรองด้วยตนเองได้
-6. ใช้ปุ่มดึงบทเรียนจาก Cloud เพื่อกู้คืนในเครื่องใหม่; ทุกข้อมูลแยกตาม user_id ด้วย RLS และยังมี JSON Backup เผื่อฉุกเฉิน
+## ตรวจสอบ
+npm test
+npm install --ignore-scripts
+npx playwright install --with-deps chromium
+npm run test:ui
+node tests/backend-smoke.mjs
 
-> การล็อกอินผ่านอีเมลและบันทึกจริงจากเบราว์เซอร์ยังไม่ผ่านการยืนยันแบบ end-to-end ก่อนผู้ดูแลตั้ง Auth redirect เสร็จ การสร้างโปรเจกต์และตรวจ RLS ในฐานข้อมูลผ่านแล้ว ไม่ได้ทดสอบการเข้าใช้ด้วยบัญชีจริงของผู้ใช้
-
-## สิ่งที่ยังไม่ใช่
-
-- ไม่ใช่โมเดล AI ที่เรียนรู้ด้วยการปรับน้ำหนักโมเดลหรือปรับกลยุทธ์อัตโนมัติ: ระบบสรุปหลักฐานย้อนหลังและเสนอการทดลองเท่านั้น
-- ไม่ใช่ราคา Bitkub แบบสด: ทดสอบจากข้อมูลสังเคราะห์/CSV ที่เลือกเอง ไม่เชื่อมกระดานซื้อขายจริง
-- ไม่รันต่อเมื่อปิดแท็บ ไม่ใช่ Trading Bot ตลอด 24 ชม.
-- ไม่รับประกันกำไร: กลยุทธ์อาจไม่มีคำสั่งซื้อเลยในบางตลาด
-
-## การทดสอบ
-
-- `node tests/stress-core.test.cjs` — ตรวจ Paper Simulator 90 ชุดจริงจาก engine เดียวกับบนเว็บ
-- `node --check bitbot-v6-learning.js` และสคริปต์อื่น — ตรวจไวยากรณ์
-- การทดสอบ UI ด้วย Chromium/IndexedDB จากสภาพแวดล้อมสร้างไฟล์ **ยังถูกบล็อก** ต้องทดสอบจากเบราว์เซอร์จริงบนเว็บไซต์เพิ่มเติม
-
-## ประวัติเวอร์ชัน
-
-- v3 สำรอง: `backup-v3-before-learning-v4`
-- v4 สำรอง: `backup-v4-before-simple-ui-v5`
-- v5 สำรองก่อนเผยแพร่ v6: `backup-v5-before-learning-v6`
-
-มีเฉพาะการจำลอง ไม่เชื่อม Bitkub API Key หรือทำคำสั่งซื้อขายเงินจริง
-## กำไร–ขาดทุนรายวัน (v6.2)
-
-หน้าเว็บมีบล็อก **📅 กำไร–ขาดทุนรายวัน** อยู่ใต้ตัวเลขพอร์ตหลัก เลือกรอบทดสอบและวันที่ตามเวลาไทย แล้วจะเห็น:
-
-- **กำไร/ขาดทุนที่ขายแล้ว:** ผลรวมกำไรขาดทุนจาก SELL ในวันนั้น (คำนวณ P&L ที่รวมค่าธรรมเนียมฝั่ง BUY และ SELL แล้ว)
-- **มูลค่าพอร์ตเปลี่ยนระหว่างวัน:** ส่วนต่างของมูลค่าพอร์ตสิ้นวันจาก snapshot ของรอบทดสอบเดียวกัน (รวม BTC ที่ยังถืออยู่)
-- จำนวนคำสั่ง BUY/SELL และค่าธรรมเนียมรายวัน
-- ตารางย้อนหลังรายวันพร้อมดาวน์โหลด CSV
-
-**สำคัญ:** ผลรายวันหมายถึงวันที่ในแท่งเทียนของรอบจำลอง ซึ่งอาจเป็นข้อมูลย้อนหลังหรือสังเคราะห์ ไม่ใช่กำไรเงินจริงวันนี้ ระบบทดสอบหลายรอบแยกทุนเริ่มต้น จึงไม่ควรรวมกำไรหลายรอบเป็นพอร์ตเดียว หากชุดทดสอบไม่มี snapshot มูลค่าพอร์ตสิ้นวันจะแสดงเครื่องหมายขีดแทนการเดาผล
-
-คลังประวัติอยู่ใน IndexedDB บนเบราว์เซอร์และสามารถสำรองใน Supabase เมื่อผู้ใช้ล็อกอิน; สำหรับข้อมูลข้ามอุปกรณ์ให้กดดึงประวัติจาก Cloud ก่อนดูรายงาน หากยังไม่ล็อกอินหรือยังไม่ได้สำรอง ข้อมูลอาจไม่มีบนอุปกรณ์อื่น
-
-
-## Supabase Cloud Memory v6.3 — ตรวจสอบการเชื่อมต่อจริง
-- โปรเจกต์แยกต่างหาก: `Bitbot Paper Trading Memory` (`lrxrigimdaedfemqheug`) ในบัญชี Keitaphotocamera
-- การเข้าสู่ระบบ Supabase ด้วยอีเมลเป็นสิ่งจำเป็นก่อนอัปโหลดข้อมูล; การลิงก์กลับจากอีเมลต้องอนุญาต URL ของ GitHub Pages ใน Auth > URL Configuration
-- ในหน้า **Cloud Memory** มีปุ่ม **ทดสอบบันทึกจริง** ซึ่งจะเขียน อ่านกลับ และลบแถวทดสอบจาก `bitbot_cloud_checks` ภายใต้ RLS ของผู้ใช้ที่ล็อกอิน
-- หลังล็อกอิน ระบบซิงก์รายการในเครื่องขึ้น Cloud อัตโนมัติ หรือกู้คืนข้อมูลเมื่อเป็นเบราว์เซอร์ใหม่ที่ไม่มีประวัติ พร้อมตัวนับรายการออนไลน์
-- รายการการเทรดจำลองยังเก็บใน IndexedDB ระหว่างออฟไลน์; เมื่อกลับมาออนไลน์และล็อกอินจึงค่อยซิงก์
-- ป้องกันการอัปโหลดประวัติจากเบราว์เซอร์ที่ผูกกับบัญชีอื่น โดยแนะนำให้ใช้โปรไฟล์เบราว์เซอร์คนละชุด
-- **การตรวจสำเร็จในหน้าจอ** หมายถึงการเขียนอ่านลบจริงโดยบัญชีผู้ใช้ ไม่ใช่แค่ตรวจ URL; การทดสอบ Auth อีเมลและการใช้งานจริงจากเบราว์เซอร์ยังต้องดำเนินการจากผู้ใช้
-- ไม่มีการเชื่อมต่อคำสั่งซื้อขายจริงกับ Bitkub
-
-
-## Bitkub Real-Market Integration v7 (2026-11-14)
-
-**[เปิดหน้า Bitkub Live](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/bitkub-live.html)**
-
-- Live BTC/THB prices use official Bitkub market ticker API v3, not synthetic data.
-- Dedicated Supabase Edge Function: `bitkub-gateway`, project `lrxrigimdaedfemqheug` (not RESTART, camera, or Sloth Trail).
-- After signing into Bitbot Cloud and operator approval: read THB/BTC wallet through Bitkub API v4, preview manual LIMIT orders, audit and reconcile order status.
-- **Real-money order submission is disabled by default**. The backend requires operator allowlist, private API credentials and all risk-limit secrets, plus explicit confirmation on each request.
-- Manual BUY uses `amt` as spending in THB; manual SELL uses `amt` as BTC quantity. Only `btc_thb` spot LIMIT orders are implemented. No leverage, withdrawal endpoints, autonomous live trading, or secret storage in the browser.
-- The trading strategy's Paper Trading ledger remains entirely separate from actual exchange order records. Live order reconciliation is required before a second order.
-
-### Required one-time setup — never put secrets in GitHub or ChatGPT chat
-
-1. In [Bitkub API Management](https://www.bitkub.com/th/api-management), create a fresh API key. Enable only necessary **Read + Trade** permissions; **never enable Withdraw**. Enable exchange-supported IP restrictions where viable.
-2. In [Supabase Bitbot Edge Function Secrets](https://supabase.com/dashboard/project/lrxrigimdaedfemqheug/functions), set `BITKUB_API_KEY` and `BITKUB_API_SECRET`. Secrets must never be committed to any repo.
-3. Enter the Bitbot Cloud account through the [Bitkub Live page](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/bitkub-live.html). The authenticated owner's `auth.users.id` must be explicitly inserted by the project administrator into `public.bitbot_live_operators`. Do not allow arbitrary accounts to self-enable.
-4. Test Wallet READ-ONLY first. Review exchange limits, symbol status, and risk rules.
-5. Only when ready to authorize real-money trading, set `BITBOT_LIVE_ENABLED=true`, `BITBOT_MAX_ORDER_THB`, `BITBOT_MAX_DAILY_BUY_THB`, `BITBOT_MAX_DAILY_SELL_THB` in Supabase Secrets. Missing/zero caps intentionally block orders. Revert `BITBOT_LIVE_ENABLED=false` for immediate kill switch.
-6. Preview every order. Explicitly type **เทรดเงินจริง** and confirm the browser dialog to send a live order. Never retry an ambiguous order without exchange reconciliation.
-
-### Architecture and safety
-
-- `supabase/functions/bitkub-gateway/index.ts`: HMAC-SHA256 signs Bitkub private requests server-side only; validates the Supabase Auth JWT and a server-owned operator allowlist; enforces per-order and per-day caps.
-- `supabase/bitbot_live_trade.sql`: owners can read only their orders, unauthorized clients have no write rights, SQL RPC reserves capacity atomically and rejects duplicate client request IDs and open/unknown orders.
-- `bitkub-live.html` and `bitkub-live.js`: responsive web UI, frontend contains only the project publishable key. The public market-data endpoint is allowed without trading credentials.
-- **Caveat:** Exchange API credentials have not been supplied/configured here; actual wallet access, real-money order execution, and account-specific status reconciliation are **not yet end-to-end verified**. No live orders have been sent during development.
-- Automated AI live order execution remains intentionally OFF pending separately defined risk policies and real-money authorization. Existing bot is rule-based, not a self-learning exchange trader.
-
-Official documentation: https://api.bitkub.com/docs and https://github.com/bitkub/bitkub-official-api-docs
+Browser tests ใช้ราคาจำลองที่ระบุชัดและจำลองการเชื่อมต่อสำหรับ QA เท่านั้น เว็บใช้งานจริงไม่มี fallback ราคาปลอม
+Smoke tests เรียก health, public market, และตรวจ 401 ของ private/scheduler เท่านั้น ไม่ส่งคำสั่งซื้อขาย
+การผ่าน tests ไม่ทดแทนการยืนยัน API ของเจ้าของบัญชีและการทดสอบการจับคู่เงินจริงที่ Bitkub

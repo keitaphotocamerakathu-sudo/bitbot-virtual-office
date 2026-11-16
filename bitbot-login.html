@@ -2,69 +2,82 @@
 <html lang="th">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>Bitbot — เข้าสู่ระบบครั้งเดียว</title>
-<style>
-:root{color-scheme:dark;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;background:#0d1425;color:#f0f6ff}
-*{box-sizing:border-box}
-body{margin:0;min-height:100svh;display:flex;align-items:center;justify-content:center;padding:20px}
-main{width:min(530px,100%)}
-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-header strong{font-size:20px;letter-spacing:.4px}
-a{color:#b8ddff} .back{font-size:13px}
-section{background:#192842;border:1px solid #345374;border-radius:23px;padding:clamp(18px,4vw,30px);box-shadow:0 18px 50px #03091280}
-h1{font-size:clamp(22px,5vw,30px);margin:0 0 8px} p{line-height:1.65}
-.sub{color:#abc5df;font-size:14px;margin:0 0 22px}
-label{font-size:13px;color:#d3e8ff;display:block;margin:16px 0 6px}
-input{width:100%;border:1px solid #547594;border-radius:12px;padding:14px;background:#0e1c30;color:#fff;font:inherit;min-height:48px}
-input:focus,button:focus-visible,a:focus-visible{outline:2px solid #92d3ff;outline-offset:2px}
-button{width:100%;border:1px solid #82b9ed;border-radius:13px;padding:13px;background:#276cad;color:#fff;font-size:15px;font-weight:750;cursor:pointer;min-height:47px}
-button:disabled{opacity:.55;cursor:not-allowed}
-.secondary{background:#283d58;border-color:#526f8d}
-.panel{margin-top:18px}
-.status{border:1px solid #416a88;border-radius:12px;padding:13px;margin:17px 0;background:#132d42;line-height:1.65;font-size:13px;white-space:pre-line}
-.status.error{background:#442536;border-color:#9b5268}
-.status.ok{background:#133c38;border-color:#347e68}
-details{border-top:1px solid #35516d;margin-top:18px;padding-top:15px}
-summary{font-size:14px;color:#d0e7ff;cursor:pointer;list-style:inside}
-.actions{display:grid;gap:10px;margin-top:16px}
-small{color:#a5b8cd;display:block;line-height:1.6;margin:8px 0}
-.link{display:block;text-align:center;padding:12px;background:#263c59;border:1px solid #466483;border-radius:12px;text-decoration:none;font-size:14px;margin-top:10px}
-.hidden{display:none!important}footer{text-align:center;color:#91a6bf;font-size:12px;line-height:1.75;margin-top:15px}
-</style>
-</head><body>
+<meta name="theme-color" content="#0c1018"><meta name="description" content="Bitbot — ทีมบอท Bitkub 5 เอเจนต์ ทดลองก่อน ใช้เงินจริงเมื่อพร้อม">
+<title>BITBOT · Bitkub Trading Team</title>
+<link rel="stylesheet" href="./assets/style.css?v=10.0.0">
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+<a class="brand" href="./"><span class="brand-mark">B<span>•</span></span><span>BITBOT<small>YOUR TRADING TEAM</small></span></a>
+<div class="nav-caption">พื้นที่ทำงาน</div>
+<nav aria-label="เมนูหลัก">
+<button class="nav-item active" data-page="overview"><span>◈</span>ภาพรวมและทีมบอท</button>
+<button class="nav-item" data-page="settings"><span>⚙</span>ตั้งค่าและเชื่อมบัญชี</button>
+<button class="nav-item" data-page="history"><span>≡</span>ประวัติการทำงาน</button>
+</nav>
+<div class="sidebar-foot"><span class="safe-icon">✓</span><strong>ความเสี่ยงมีขีดจำกัด</strong><p>Spot BTC/THB เท่านั้น<br>ไม่มีคำสั่งถอนเงิน</p><button id="helpBtn" class="text-button">วิธีเริ่มใช้งาน ↗</button><small>BITBOT 10.0 · MULTI-AGENT</small></div>
+</aside>
 <main>
-<header><strong>₿ BITBOT</strong><a class="back" href="./bitkub-live.html">กลับไป Bitkub Live</a></header>
-<section>
-<h1>เข้าใช้งาน Bitbot</h1>
-<p class="sub">เข้าสู่ระบบครั้งเดียว แล้วใช้บัญชีเดียวกันได้ทั้ง Bitbot, Bitkub Setup และ Bitkub Live โดยไม่ต้องกรอกรหัสใหม่ทุกครั้งที่เปลี่ยนหน้า</p>
-<div id="checking" class="status">กำลังตรวจสอบว่าคุณเข้าสู่ระบบไว้แล้วหรือไม่...</div>
-<div id="signedIn" class="hidden">
-<div id="who" class="status ok"></div>
-<div class="actions"><a class="link" id="continueLink" href="./bitkub-live.html">เข้าใช้งาน Bitkub Live</a><a class="link" href="./bitkub-setup.html">ตั้งค่าบัญชี Bitkub</a><button id="logout" class="secondary">ออกจากระบบบนอุปกรณ์นี้</button></div>
+<header class="topbar"><span class="breadcrumb">Workspace <span>/</span> Bitkub</span><div class="top-actions"><span id="connection" class="connection">กำลังเชื่อมตลาด</span><button id="accountBtn" class="outline">เข้าสู่ระบบ</button></div></header>
+<div class="content">
+<div id="notice" class="notice" role="status" hidden></div>
+<div class="page-heading"><div><span class="eyebrow">YOUR MONEY. YOUR CONTROL.</span><h1>ทีมเทรดของคุณ<span class="green">.</span></h1><p>ตั้งวงเงินให้ชัดเจน แล้วให้ทีม 5 เอเจนต์ช่วยดูแลการตัดสินใจ</p></div><div class="mode-switch" role="group" aria-label="โหมดซื้อขาย"><button id="paperMode" class="selected">ทดลองเทรด</button><button id="liveMode">เงินจริง</button></div></div>
+<div id="liveNotice" class="live-notice" hidden>คุณอยู่ในโหมดเงินจริง · เปิดบอทแล้วทำงานบนเซิร์ฟเวอร์แม้ปิดเว็บ · การหยุดขาดทุนไม่รับประกันราคาขาย</div>
+<div id="serverActivity" class="notice" hidden></div>
+<section id="overview" class="page">
+<div class="metrics">
+<article class="metric"><span>มูลค่าพอร์ต<span id="portfolioLabel" class="tiny-pill">จำลอง</span></span><strong id="equity">฿100,000.00</strong><small id="cashHint">เงินเริ่มต้นของการทดลอง</small></article>
+<article class="metric"><span>กำไร / ขาดทุนสุทธิ</span><strong id="pnl">฿0.00</strong><small id="pnlHint">รวมมูลค่าเหรียญที่ยังถือ</small></article>
+<article class="metric"><span>BTC / THB<span class="tiny-pill green">BITKUB</span></span><strong id="price">—</strong><small id="priceHint">กำลังอ่านราคาจากตลาด</small></article>
+<article class="metric"><span>สถานะทีม</span><strong id="botStatus" class="status-word">พร้อมเริ่ม</strong><small id="botHint">กดเริ่มเมื่อคุณพร้อม</small></article>
 </div>
-<div id="loginBox" class="hidden">
-<label for="email">อีเมลบัญชี Bitbot</label><input id="email" type="email" autocomplete="username" inputmode="email" placeholder="you@example.com" spellcheck="false">
-<details id="emailMethod" open>
-<summary>เข้าสู่ระบบด้วยลิงก์อีเมล (ไม่ต้องจำรหัส)</summary>
-<div class="actions"><button id="emailLink">ส่งลิงก์เข้าสู่ระบบ</button></div>
-<small>หากส่งอีเมลไม่สำเร็จ สามารถเข้าสู่ระบบด้วยรหัสผ่าน Bitbot ได้โดยไม่ต้องรออีเมล</small>
-</details>
-<details id="passwordMethod">
-<summary>เข้าสู่ระบบด้วยรหัสผ่าน Bitbot</summary>
-<label for="password">รหัสผ่าน Bitbot (ไม่ใช่รหัส Bitkub)</label>
-<input id="password" type="password" autocomplete="current-password" placeholder="รหัสผ่าน Bitbot">
-<div class="actions"><button id="passwordLogin">เข้าสู่ระบบด้วยรหัสผ่าน</button></div>
-</details>
-<details id="recoveryMethod">
-<summary>ลืมรหัสผ่าน Bitbot?</summary>
-<p class="sub">ใช้ลิงก์ที่ส่งไปยังอีเมลที่ยืนยันแล้วเพื่อตั้งรหัสใหม่ โดยไม่เปลี่ยน API Key ของ Bitkub</p>
-<button class="secondary" id="reset">ส่งลิงก์ตั้งรหัสผ่านใหม่</button>
-</details>
+<div class="workspace-grid">
+<section class="panel office-panel">
+<div class="panel-heading"><div><span class="eyebrow">FIVE AGENTS. ONE TEAM.</span><h2>ออฟฟิศทีมบอท</h2></div><span id="teamBadge" class="pill">STANDBY</span></div>
+<p class="muted office-desc">แต่ละตัวมีหน้าที่และผลประเมินของตัวเอง กดดูเหตุผลได้ทุกขั้นตอน</p>
+<div class="office" id="office">
+<div class="office-window"><span>BTC / THB</span><strong id="officePrice">—</strong><small>MARKET OBSERVATORY</small></div>
+<div class="office-grid" id="agentCards"></div>
+<div class="office-floor"><span>BITBOT TRADING FLOOR</span><span>QUANTITATIVE ENGINE</span></div>
 </div>
-<div id="status" class="status" role="status" aria-live="polite">ไม่ต้องกรอกรหัสผ่านหากยังมีเซสชันอยู่บนอุปกรณ์นี้</div>
+<div class="toolbar"><button id="startBtn" class="primary">▶ เริ่มทดลองบอท</button><button id="pauseBtn" class="outline" disabled>พักซื้อใหม่</button><button id="stopBtn" class="danger" disabled>หยุดบอท</button></div>
+<p class="subtle" id="runNote">ทดลองใช้ราคาตลาดจริงและเงินจำลอง ไม่ต้องเข้าสู่ระบบ · บอททดลองทำงานขณะเปิดหน้านี้</p>
 </section>
-<footer>Bitbot Secure Login · Supabase Auth · ไม่เก็บรหัสผ่านหรือ Bitkub API Secret ในหน้าเว็บ</footer>
-</main>
-<script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=9.5"></script><script src="./bitbot-login.js?v=1.1" defer></script>
+<section class="panel chart-panel"><div class="panel-heading"><div><span class="eyebrow">MARKET VIEW</span><h2>จังหวะของตลาด</h2></div><span class="pill">5 MIN</span></div>
+<div class="chart-value"><strong id="chartPrice">—</strong><span id="change">—</span></div>
+<div id="chart" class="chart" aria-label="กราฟราคาปิด 5 นาที"><p>รอข้อมูลแท่งเทียนจริง</p></div>
+<div class="bid-ask"><div><small>ซื้อได้ที่ (Ask)</small><strong id="ask">—</strong></div><div><small>ขายได้ที่ (Bid)</small><strong id="bid">—</strong></div><div><small>ส่วนต่างราคา</small><strong id="spread">—</strong></div></div>
+<div class="position-box"><div><span>BTC ที่บอทถือ</span><strong id="qty">0.00000000 BTC</strong></div><div><span>เงินใช้ได้ในพอร์ตบอท</span><strong id="cash">฿100,000</strong></div><div><span>หยุดขาดทุน / ทำกำไร</span><strong id="targets">2% / 4%</strong></div></div>
+<p class="subtle">ราคาจาก Bitkub · กราฟใช้แท่งปิด · ค่าธรรมเนียมทดลอง 0.25% พร้อมเผื่อราคาคลาดเคลื่อน</p>
+</section></div>
+<section class="panel recent-panel"><div class="panel-heading"><div><span class="eyebrow">DECISIONS YOU CAN SEE</span><h2>เหตุผลของทีมล่าสุด</h2></div><button class="text-button" data-page="history">ดูทั้งหมด ↗</button></div><div id="decisionFeed" class="decision-feed"><p class="muted">เมื่อเริ่มบอท คุณจะเห็นผลการประเมินของทุกเอเจนต์ที่นี่</p></div></section>
+</section>
+<section id="settings" class="page" hidden>
+<div class="settings-grid">
+<section class="panel"><div class="panel-heading"><div><span class="eyebrow">01 / CONNECT</span><h2>บัญชีและการเชื่อมต่อ</h2></div></div>
+<div id="paperConnect"><p>ทดลองบอทได้ทันทีโดยไม่ต้องสมัครบัญชี</p><p class="muted">ข้อมูลการทดลองเก็บในเบราว์เซอร์นี้ ส่งออกสำรองได้จากหน้าประวัติ</p><button id="goLive" class="outline">ตั้งค่าบัญชีเงินจริง</button></div>
+<div id="liveConnect" hidden><div id="accountStatus" class="connection-box">กรุณาเข้าสู่ระบบก่อนเชื่อม API</div><p class="muted">ใช้บัญชีใหม่แบบชื่อผู้ใช้ได้โดยไม่ต้องรออีเมล หรือเข้าสู่บัญชีเดิมด้วยอีเมลและรหัสผ่าน</p>
+<button id="loginSettings" class="outline">เข้าสู่ระบบ / สมัครบัญชี</button>
+<form id="keyForm" hidden><div class="field"><label for="apiKey">Bitkub API Key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false" required maxlength="512"></div><div class="field"><label for="apiSecret">Bitkub API Secret</label><input id="apiSecret" type="password" autocomplete="off" spellcheck="false" required maxlength="1024"></div><label class="check"><input id="keyPermission" type="checkbox" required>ตั้งสิทธิ์ Read + Trade และปิด Withdraw แล้ว</label><button class="primary" type="submit">เชื่อมและทดสอบ Wallet</button><p class="subtle">คีย์ถูกเข้ารหัสที่เซิร์ฟเวอร์ เมื่อบันทึกแล้วหน้าเว็บจะล้างช่องนี้</p></form>
+<div id="walletBox" class="connection-box" hidden></div><div class="toolbar"><button id="walletBtn" class="outline" hidden>ตรวจยอด Wallet</button><button id="removeKey" class="text-button" hidden>ถอดคีย์</button><button id="newRecovery" class="text-button" hidden>สร้างรหัสกู้บัญชี</button><button id="logoutBtn" class="text-button" hidden>ออกจากระบบ</button></div></div>
+</section>
+<section class="panel"><div class="panel-heading"><div><span class="eyebrow">02 / SET YOUR LIMITS</span><h2>เงินทุนและความเสี่ยง</h2></div><span id="settingsMode" class="pill">ทดลอง</span></div>
+<form id="configForm"><div class="form-grid"><div class="field"><label for="budget">เงินทุนที่จัดสรร (บาท)</label><input id="budget" type="number" min="100" max="10000000" step="100" required value="100000"></div><div class="field"><label for="maxOrder">วงเงินต่อคำสั่ง (บาท)</label><input id="maxOrder" type="number" min="100" max="100000" step="1" required value="500"></div><div class="field"><label for="dailyBuy">ซื้อรวมไม่เกิน / วัน (บาท)</label><input id="dailyBuy" type="number" min="100" step="1" required value="1500"></div><div class="field"><label for="dailySell">ขายรวมไม่เกิน / วัน (บาท)</label><input id="dailySell" type="number" min="100" step="1" required value="5000"></div><div class="field"><label for="stopLoss">หยุดขาดทุน (%)</label><input id="stopLoss" type="number" min="0.5" max="10" step="0.1" required value="2"></div><div class="field"><label for="takeProfit">ทำกำไร (%)</label><input id="takeProfit" type="number" min="1" max="30" step="0.1" required value="4"></div></div>
+<details><summary>ขีดจำกัดเพิ่มเติม</summary><div class="form-grid"><div class="field"><label for="allocation">ถือเหรียญไม่เกิน (% ของพอร์ต)</label><input id="allocation" type="number" min="1" max="20" step="1" value="20"></div><div class="field"><label for="dailyLoss">ขาดทุนรายวันไม่เกิน (%)</label><input id="dailyLoss" type="number" min="0.5" max="5" step="0.5" value="3"></div><div class="field"><label for="maxDrawdown">ขาดทุนจากจุดสูงสุดไม่เกิน (%)</label><input id="maxDrawdown" type="number" min="1" max="20" step="1" value="10"></div></div></details>
+<p id="limitHint" class="muted">วงเงินใช้กับทั้งซื้อและขาย · คิดวันตามเวลาไทย · ค่าธรรมเนียมขั้นต่ำที่จำลอง 0.25%</p><button class="primary" type="submit">บันทึกการตั้งค่า</button><p class="subtle">เปลี่ยนทุนได้เมื่อหยุดบอทและไม่มีเหรียญค้าง ประวัติเก่ายังดูได้</p></form>
+</section></div>
+<section class="panel safety-panel"><h2>ควบคุมความเสี่ยงอย่างไร</h2><div class="safety-grid"><div><b>01</b><strong>เริ่มด้วยเงินทดลอง</strong><p>ทดสอบแนวทางก่อนใช้เงินจริง ผลการทดลองไม่ใช่คำรับรองผลในอนาคต</p></div><div><b>02</b><strong>ตรวจคำสั่งก่อนส่ง</strong><p>จำกัดวงเงิน ตรวจยอด และป้องกันคำสั่งซ้ำที่เซิร์ฟเวอร์</p></div><div><b>03</b><strong>หยุดเมื่อข้อมูลไม่ชัด</strong><p>คำสั่งไม่ทราบผลจะหยุดบอทเพื่อให้ตรวจสอบ ปุ่มหยุดไม่ได้ขายเหรียญที่ถือ</p></div></div></section>
+</section>
+<section id="history" class="page" hidden>
+<section class="panel"><div class="panel-heading"><div><span class="eyebrow">TRADING JOURNAL</span><h2>รายการซื้อขาย</h2></div><div class="toolbar"><button id="exportCsv" class="outline">ส่งออก CSV</button><button id="backup" class="outline">สำรองการทดลอง</button><button id="resetSession" class="text-button">จบรอบ / เริ่มรอบใหม่</button><button id="resolveOrder" class="text-button">ตรวจเลขออร์เดอร์ค้าง</button><button id="refreshHistory" class="text-button">อัปเดต</button></div></div><div class="table-scroll"><table><thead><tr><th>เวลาไทย</th><th>โหมด</th><th>ประเภท</th><th>จำนวน</th><th>ราคา</th><th>สถานะ</th></tr></thead><tbody id="tradesBody"><tr><td colspan="6">ยังไม่มีรายการ</td></tr></tbody></table></div></section>
+<section class="panel"><div class="panel-heading"><div><span class="eyebrow">AGENT MEMORY</span><h2>บันทึกการตัดสินใจ</h2></div></div><div id="historyFeed"></div></section>
+<section class="panel"><h2>ความจำของกลยุทธ์</h2><div id="lessons" class="muted">ยังไม่มีรอบซื้อขายที่ปิดสถานะ</div><p class="subtle">บันทึกผลแพ้/ชนะและจัดอันดับกลยุทธ์จากผลสุทธิ เป็นระบบเชิงปริมาณ ไม่ใช่โมเดลภาษาหรือการฝึก AI ขนาดใหญ่</p></section>
+</section>
+<footer>BTC/THB SPOT · 5 quantitative agents · ราคาจริงแยกจากเงินทดลองเสมอ <span>การลงทุนมีความเสี่ยง และอาจสูญเสียเงินทุนได้</span></footer>
+</div></main></div>
+<dialog id="authDialog"><form method="dialog" class="dialog-close"><button aria-label="ปิด">×</button></form><span class="eyebrow">ONE ACCOUNT. YOUR TEAM.</span><h2>เข้าใช้งาน Bitbot</h2><p class="muted">บัญชีใหม่ใช้ชื่อผู้ใช้ได้เลย ไม่ต้องรออีเมล</p><form id="authForm"><div class="field"><label for="identifier">ชื่อผู้ใช้ หรืออีเมลบัญชีเดิม</label><input id="identifier" autocomplete="username" required maxlength="100" placeholder="ชื่อผู้ใช้ภาษาอังกฤษ"></div><div class="field"><label for="password">รหัสผ่าน</label><input id="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="บัญชีใหม่อย่างน้อย 12 ตัวอักษร"></div><div id="recoverField" class="field" hidden><label for="recoveryCode">รหัสกู้บัญชี</label><input id="recoveryCode" autocomplete="off" maxlength="48"></div><p id="authError" class="error-text" role="alert"></p><div class="toolbar"><button class="primary" type="submit" id="loginSubmit">เข้าสู่ระบบ</button><button type="button" id="registerBtn" class="outline">สมัครบัญชีใหม่</button><button type="button" id="recoverBtn" class="text-button">กู้บัญชี</button></div></form><p class="subtle">บัญชีและ API Key เป็นคนละชุดกัน · ระบบจำการเข้าสู่ระบบในเบราว์เซอร์นี้จนกว่าจะออกจากระบบ</p></dialog>
+<dialog id="startDialog"><form method="dialog" class="dialog-close"><button aria-label="ปิด">×</button></form><span class="eyebrow">REAL MONEY CONFIRMATION</span><h2>เริ่มบอทเงินจริง</h2><div id="startSummary" class="connection-box"></div><p>บอทจะซื้อขายอัตโนมัติบนเซิร์ฟเวอร์ทุก 1 นาที อาจจับคู่บางส่วนหรือขายไม่ทันราคา Stop Loss ได้</p><form id="startForm"><label class="check"><input id="riskAccepted" type="checkbox" required>เข้าใจความเสี่ยงและยอมรับการขาดทุนได้</label><label class="check"><input id="withdrawDisabled" type="checkbox" required>API นี้ปิดสิทธิ์ Withdraw แล้ว</label><div class="field"><label for="confirmStart">พิมพ์ “เริ่มบอทเงินจริง”</label><input id="confirmStart" autocomplete="off" required></div><button class="primary" type="submit">ยืนยันและเริ่มบอทเงินจริง</button></form></dialog>
+<dialog id="infoDialog"><form method="dialog" class="dialog-close"><button aria-label="ปิด">×</button></form><h2 id="infoTitle"></h2><div id="infoContent"></div></dialog>
+<script src="./bitbot-v6-cloud-config.js"></script><script type="module" src="./assets/app.mjs?v=10.0.0"></script>
 </body></html>
