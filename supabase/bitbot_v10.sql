@@ -1,7 +1,7 @@
 -- Bitbot 10. Additive migration; previous accounts, encrypted keys and journals remain intact.
 begin;
 create extension if not exists pg_cron;
-create extension if not exists pg_net;
+create extension if not exists pg_net with schema extensions;
 create table public.bitbot_v10_bots(
  user_id uuid primary key references auth.users(id) on delete cascade,
  running boolean not null default false,
