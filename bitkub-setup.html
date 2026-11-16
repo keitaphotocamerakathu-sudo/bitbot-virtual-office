@@ -9,14 +9,15 @@
 <h1>เชื่อมบัญชี Bitkub</h1><p class="muted">ตั้งค่า API บนเว็บไซต์ได้โดยตรง คีย์เข้ารหัสเก็บใน Supabase Vault แยกตามบัญชี · ไม่มีการส่งคำสั่งซื้อขายในหน้าตั้งค่านี้</p>
 <div class="warning">🔒 <strong>โปรดสร้าง API Key โดยไม่เปิดสิทธิ์ถอนเงิน (Withdraw)</strong> และจำกัด IP ที่อนุญาตหาก Bitkub รองรับการตั้งค่าตามรูปแบบการเชื่อมต่อของคุณ ห้ามใส่ API Key ใน GitHub หรือส่งให้ใครผ่านแชต</div>
 <section class="step"><div class="head"><span class="num">1</span>เข้าสู่ระบบ Bitbot</div>
-<p class="muted">ยืนยันด้วยบัญชีอีเมลของ Bitbot เพื่อให้คีย์ผูกกับเจ้าของบัญชีของคุณเท่านั้น</p>
+<p class="muted">เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน Bitbot ที่มีอยู่ ไม่ต้องขอลิงก์ใหม่ทุกครั้ง</p>
 <div class="field"><label for="email">อีเมล Bitbot</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="email@example.com"></div>
-<div class="row"><button id="login">ส่งลิงก์เข้าสู่ระบบ</button><button class="alt" id="logout" disabled>ออกจากระบบ</button></div>
-<p class="muted" id="otpWait" role="status">ส่งอีเมลได้ตามข้อจำกัดของ Supabase หากขึ้น 429 ระบบจะระบุเวลาที่ควรรอก่อนขอใหม่</p>
-<details><summary style="cursor:pointer;color:#b9d9ff;padding:10px 0">มีรหัสผ่านอยู่แล้ว? เข้าสู่ระบบโดยไม่ส่งอีเมล</summary>
-<div class="field"><label for="authPassword">รหัสผ่าน Bitbot ที่เคยตั้งไว้</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="รหัสผ่าน Bitbot"></div>
-<button id="passwordLogin" class="alt" disabled>เข้าสู่ระบบด้วยรหัสผ่าน</button>
-<p class="muted">ใช้ได้เฉพาะบัญชีที่เคยตั้งรหัสผ่าน Bitbot แล้วเท่านั้น ไม่ใช่รหัสผ่านของ Bitkub</p></details>
+<div class="field"><label for="authPassword">รหัสผ่าน Bitbot</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="รหัสผ่าน Bitbot (ไม่ใช่ Bitkub)"></div>
+<div class="row"><button id="passwordLogin" type="button" disabled>🔐 เข้าสู่ระบบ Bitbot</button><button class="alt" id="logout" disabled>ออกจากระบบ</button></div>
+<p class="muted">บัญชีที่ลงทะเบียนและยืนยันอีเมลไว้แล้ว เข้าระบบด้วยรหัสผ่านได้ทันที ไม่ต้องขอลิงก์อีเมล</p>
+<details><summary style="cursor:pointer;color:#b9d9ff;padding:10px 0">🔑 ลืมรหัสผ่าน / ต้องการขอลิงก์เข้าระบบทางอีเมล</summary>
+<p class="muted" id="otpWait" role="status">ระบบอีเมลของ Supabase มีโควตา การขอถี่เกินไปอาจได้รับข้อผิดพลาด 429</p>
+<button class="alt" id="login" type="button">ส่งลิงก์ทางอีเมล (ใช้เฉพาะเมื่อจำเป็น)</button>
+</details>
 <div id="createPasswordArea" class="hide">
 <div class="field"><label for="newPassword">ตั้งรหัสผ่าน Bitbot สำหรับครั้งต่อไป (อย่างน้อย 12 ตัวอักษร)</label><input id="newPassword" type="password" minlength="12" autocomplete="new-password" placeholder="รหัสผ่านใหม่สำหรับ Bitbot"></div>
 <button id="savePassword" class="alt" disabled>บันทึกรหัสผ่าน Bitbot</button>
@@ -41,4 +42,4 @@
 <div id="overall" class="status">รอเข้าสู่ระบบ</div>
 </section>
 <footer>Bitbot v8 · เก็บคีย์เข้ารหัสบน Supabase Vault · หน้าเว็บไม่บันทึกคีย์ใน localStorage หรือฐานข้อมูลสาธารณะ · ไม่มีฟังก์ชันถอนเงิน และไม่มีการส่งคำสั่งซื้อขายจากหน้าตั้งค่า</footer>
-</main><script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitkub-setup.js?v=8.1" defer></script></body></html>
+</main><script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitkub-setup.js?v=8.3" defer></script></body></html>
