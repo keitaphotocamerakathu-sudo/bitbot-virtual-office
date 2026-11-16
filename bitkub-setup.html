@@ -10,14 +10,16 @@
 <div class="warning">🔒 <strong>โปรดสร้าง API Key โดยไม่เปิดสิทธิ์ถอนเงิน (Withdraw)</strong> และจำกัด IP ที่อนุญาตหาก Bitkub รองรับการตั้งค่าตามรูปแบบการเชื่อมต่อของคุณ ห้ามใส่ API Key ใน GitHub หรือส่งให้ใครผ่านแชต</div>
 <section class="step"><div class="head"><span class="num">1</span>เข้าสู่ระบบ Bitbot</div>
 <p class="muted">เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน Bitbot ที่มีอยู่ ไม่ต้องขอลิงก์ใหม่ทุกครั้ง</p>
-<div id="setupLoginPanel"><div class="field"><label for="email">อีเมล Bitbot</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="email@example.com"></div>
+<div id="setupLoginPanel"><a href="./bitbot-login.html?next=%2Fbitbot-virtual-office%2Fbitkub-setup.html" style="display:block;text-align:center;background:#306b9f;border:1px solid #76b8e9;padding:14px;border-radius:12px;color:#fff;text-decoration:none;font-weight:800">🔑 เข้าสู่ระบบ Bitbot ครั้งเดียว</a>
+<p class="muted">หากเคยล็อกอินในเบราว์เซอร์นี้แล้ว ระบบจะกลับมาหน้า Setup อัตโนมัติ ไม่ต้องกรอกรหัสใหม่</p>
+<details><summary style="cursor:pointer;color:#b9d9ff;padding:10px 0">ตัวเลือกอื่น: เข้าสู่ระบบในหน้านี้</summary><div class="field"><label for="email">อีเมล Bitbot</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="email@example.com"></div>
 <div class="field"><label for="authPassword">รหัสผ่าน Bitbot</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="รหัสผ่าน Bitbot (ไม่ใช่ Bitkub)"></div>
 <div class="row"><button id="passwordLogin" type="button" disabled>🔐 เข้าสู่ระบบ Bitbot</button><button class="alt" id="logout" disabled>ออกจากระบบ</button></div>
 <p class="muted">บัญชีที่ลงทะเบียนและยืนยันอีเมลไว้แล้ว เข้าระบบด้วยรหัสผ่านได้ทันที ไม่ต้องขอลิงก์อีเมล</p>
 <details><summary style="cursor:pointer;color:#b9d9ff;padding:10px 0">🔑 ลืมรหัสผ่าน / ต้องการขอลิงก์เข้าระบบทางอีเมล</summary>
 <p class="muted" id="otpWait" role="status">ระบบอีเมลของ Supabase มีโควตา การขอถี่เกินไปอาจได้รับข้อผิดพลาด 429</p>
 <button class="alt" id="login" type="button">ส่งลิงก์เข้าใช้ทางอีเมล</button> <button class="alt" id="resetPassword" type="button">ตั้งรหัสผ่าน Bitbot ใหม่</button><p class="muted">ลิงก์ตั้งรหัสผ่านใหม่จะส่งไปที่อีเมลที่ลงทะเบียนไว้ และอาจติดข้อจำกัดโควตาอีเมลของ Supabase</p>
-</details></div>
+</details></details></div>
 <div id="createPasswordArea" class="hide">
 <div class="field"><label for="newPassword">ตั้งรหัสผ่าน Bitbot สำหรับครั้งต่อไป (อย่างน้อย 12 ตัวอักษร)</label><input id="newPassword" type="password" minlength="12" autocomplete="new-password" placeholder="รหัสผ่านใหม่สำหรับ Bitbot"></div>
 <button id="savePassword" class="alt" disabled>บันทึกรหัสผ่าน Bitbot</button>
