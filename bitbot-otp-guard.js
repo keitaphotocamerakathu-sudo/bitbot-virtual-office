@@ -21,10 +21,10 @@ async function send(sendFn){
  try{
  const result=await sendFn();
  if(result?.error)throw result.error;
- block(65);
+ block(65000);
  return result;
  }catch(err){
- if(is429(err)){const s=limitSeconds(err);block(s);
+ if(is429(err)){const s=limitSeconds(err);block(s*1000);
  throw Object.assign(new Error(s>=3600?'Supabase จำกัดจำนวนอีเมลของโปรเจกต์แล้ว โปรดรอจนโควตากลับมา (อาจประมาณ 1 ชั่วโมง) หรือใช้รหัสผ่าน หากต้องการใช้งานหลายคนควรตั้ง Custom SMTP':'ส่งอีเมลถี่เกินไป โปรดรอประมาณ '+Math.ceil(s/60)+' นาทีแล้วลองอีกครั้ง'),{cooldown:true,originalStatus:429});
  }
  throw err;
