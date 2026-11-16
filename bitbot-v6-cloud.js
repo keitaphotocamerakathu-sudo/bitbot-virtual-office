@@ -58,9 +58,7 @@
    const oldForm=$('v6CloudLegacyLogin');if(oldForm)oldForm.style.display=user?'none':'';
    for(const id of ['v6CloudSync','v6CloudRestore','v6CloudLogout','v6CloudCheck']){const el=$(id);if(el)el.disabled=!user||syncBusy;}
    const login=$('v6CloudLogin');if(login)login.disabled=!!user||syncBusy;
-   const waiting=window.BitbotOtpGuard?.remaining?.()||0;
-   for(const id of ['v6CloudEmailLink','v6CloudReset']){const b=$(id);if(b)b.disabled=!!user||syncBusy||waiting>0;}
-   const note=$('v6CloudEmailWait');if(note)note.textContent=waiting?'ขออีเมลใหม่ได้อีกประมาณ '+Math.ceil(waiting/60)+' นาที':'หากลืมรหัสผ่าน สามารถขอลิงก์กู้คืนไปยังอีเมลที่ลงทะเบียนไว้ (ขึ้นอยู่กับโควตาอีเมล Supabase)';
+   for(const id of ['v6CloudEmailLink','v6CloudReset']){const b=$(id);if(b)b.disabled=!!user||syncBusy;}
    const badge=$('v6CloudBadge');if(badge)badge.textContent=user?(syncBusy?'กำลังบันทึก':cloudVerified?'ยืนยันเขียน–อ่าน Cloud แล้ว':'เข้าสู่ระบบแล้ว'):'รอเข้าสู่ระบบ';
  }
  async function login(){
