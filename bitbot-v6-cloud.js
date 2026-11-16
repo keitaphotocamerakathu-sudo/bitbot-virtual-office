@@ -57,16 +57,37 @@
    const who=$('v6CloudWho');if(who)who.textContent=user?`บัญชี: ${user.email||user.id}`:'ยังไม่ได้เข้าสู่ระบบ';
    for(const id of ['v6CloudSync','v6CloudRestore','v6CloudLogout','v6CloudCheck']){const el=$(id);if(el)el.disabled=!user||syncBusy;}
    const login=$('v6CloudLogin');if(login)login.disabled=!!user||syncBusy;
+   const waiting=window.BitbotOtpGuard?.remaining?.()||0;
+   for(const id of ['v6CloudEmailLink','v6CloudReset']){const b=$(id);if(b)b.disabled=!!user||syncBusy||waiting>0;}
+   const note=$('v6CloudEmailWait');if(note)note.textContent=waiting?'ขออีเมลใหม่ได้อีกประมาณ '+Math.ceil(waiting/60)+' นาที':'หากลืมรหัสผ่าน สามารถขอลิงก์กู้คืนไปยังอีเมลที่ลงทะเบียนไว้ (ขึ้นอยู่กับโควตาอีเมล Supabase)';
    const badge=$('v6CloudBadge');if(badge)badge.textContent=user?(syncBusy?'กำลังบันทึก':cloudVerified?'ยืนยันเขียน–อ่าน Cloud แล้ว':'เข้าสู่ระบบแล้ว'):'รอเข้าสู่ระบบ';
  }
  async function login(){
    const email=String($('v6CloudEmail')?.value||'').trim();
-   if(!/^\S+@\S+\.\S+$/.test(email)){say('กรุณากรอกอีเมลให้ถูกต้อง',true);return;}
+   const password=String($('v6CloudPassword')?.value||'');
+   if(!/^\S+@\S+\.\S+$/.test(email)){say('กรุณากรอกอีเมล Bitbot ให้ถูกต้อง',true);return;}
+   if(!password){say('กรุณากรอกรหัสผ่าน Bitbot',true);return;}
    try{
-     const c=await getClient();const {error}=await c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
+     const c=await getClient();const {error}=await c.auth.signInWithPassword({email,password});
      if(error)throw error;
-     say('ส่งอีเมลเข้าสู่ระบบแล้ว กรุณาเปิดลิงก์ในอีเมล และกลับมาที่ Bitbot เพื่อซิงก์บทเรียน');
-   }catch(e){say('ไม่สามารถส่งอีเมล: '+e.message,true);}
+     say('✅ เข้าสู่ระบบ Bitbot สำเร็จ กำลังตรวจสอบประวัติ Cloud');
+   }catch(e){
+     const invalid=e?.code==='invalid_credentials'||/invalid login credentials/i.test(e?.message||'');
+     say(invalid?'อีเมลหรือรหัสผ่าน Bitbot ไม่ตรงกับบัญชี หากจำรหัสไม่ได้ให้กด “ตั้งรหัสผ่าน Bitbot ใหม่” ใต้ช่องเข้าสู่ระบบ':'เข้าสู่ระบบไม่สำเร็จ: '+e.message,true);
+   }finally{const p=$('v6CloudPassword');if(p)p.value='';}
+ }
+ async function requestEmail(reset=false){
+   const email=String($('v6CloudEmail')?.value||'').trim();
+   if(!/^\S+@\S+\.\S+$/.test(email)){say('กรุณากรอกอีเมล Bitbot ที่ลงทะเบียนไว้',true);return;}
+   try{
+     const c=await getClient();
+     const result=await window.BitbotOtpGuard.send(()=>reset
+       ? c.auth.resetPasswordForEmail(email,{redirectTo:new URL('./bitkub-setup.html',location.href).href})
+       : c.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}}));
+     if(result?.error)throw result.error;
+     say(reset?'หากอีเมลนี้ลงทะเบียนไว้ ระบบจะส่งลิงก์ตั้งรหัสผ่านใหม่ ให้เปิดลิงก์แล้วตั้งรหัสผ่านในหน้า Setup':'ขอลิงก์เข้าสู่ระบบทางอีเมลแล้ว กรุณาตรวจกล่องจดหมาย');
+   }catch(e){say(e?.cooldown?e.message:'ส่งอีเมลไม่ได้: '+(e?.message||'โปรดลองอีกครั้ง'),true);}
+   finally{renderAuth();}
  }
  async function withLock(task){if(syncBusy){syncAgain=true;return;}syncBusy=true;renderAuth();
    try{await task();}finally{syncBusy=false;renderAuth();if(syncAgain){syncAgain=false;queueAutoSync(8000);}}
@@ -178,8 +199,11 @@
    if(!enabled){if(badge)badge.textContent='ยังไม่เชื่อม Supabase';
      el.textContent='กำลังใช้ประวัติในเครื่อง คุณยังสามารถสำรองไฟล์ JSON ได้';return;
    }
-   el.innerHTML='<p>เข้าสู่ระบบด้วยอีเมลครั้งแรก แล้วเว็บไซต์จะสำรองบทเรียนขึ้น Supabase อัตโนมัติขณะเปิดเว็บและมีอินเทอร์เน็ต ข้อมูลเป็นส่วนตัวของบัญชีคุณ</p><div class="v6-cloud-auth"><input id="v6CloudEmail" type="email" autocomplete="email" placeholder="อีเมลสำหรับสำรองบทเรียน" aria-label="อีเมลสำหรับเข้าสู่ระบบ"><button id="v6CloudLogin" type="button">ส่งลิงก์เข้าใช้</button><button id="v6CloudLogout" type="button">ออกจากระบบ</button></div><p id="v6CloudWho">กำลังตรวจสอบบัญชี...</p><div class="v6-tools"><button id="v6CloudSync" type="button">☁️ สำรองขึ้น Cloud ตอนนี้</button><button id="v6CloudRestore" type="button">⬇️ ดึงบทเรียนจาก Cloud</button><button id="v6CloudCheck" type="button">🧪 ทดสอบบันทึกจริง</button></div><p id="v6CloudCounts" aria-live="polite">ยังไม่ได้อ่านจำนวนข้อมูลบน Cloud</p><p id="v6CloudStatus" role="status" aria-live="polite">PAPER ONLY · ข้อมูลจะอยู่ในเครื่องจนกว่าจะลงชื่อเข้าใช้เพื่อสำรองออนไลน์</p>';
+   el.innerHTML="<p>เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน Bitbot เพื่อสำรองบทเรียนบน Supabase ข้อมูลเป็นส่วนตัวของบัญชีคุณ</p>\n<div class=\"v6-cloud-auth\">\n<input id=\"v6CloudEmail\" type=\"email\" autocomplete=\"email\" placeholder=\"อีเมลบัญชี Bitbot\" aria-label=\"อีเมลสำหรับเข้าสู่ระบบ\">\n<input id=\"v6CloudPassword\" type=\"password\" autocomplete=\"current-password\" placeholder=\"รหัสผ่าน Bitbot\" aria-label=\"รหัสผ่าน Bitbot\">\n<button id=\"v6CloudLogin\" type=\"button\">🔐 เข้าสู่ระบบ</button>\n<button id=\"v6CloudLogout\" type=\"button\">ออกจากระบบ</button>\n</div>\n<details style=\"margin:10px 0\"><summary style=\"cursor:pointer\">ลืมรหัสผ่านหรือยังไม่มีรหัสผ่าน Bitbot?</summary>\n<p id=\"v6CloudEmailWait\">กรุณาตรวจสอบอีเมลที่ลงทะเบียนไว้ก่อนส่งคำขอ</p>\n<div class=\"v6-cloud-auth\">\n<button id=\"v6CloudReset\" type=\"button\">ตั้งรหัสผ่าน Bitbot ใหม่</button>\n<button id=\"v6CloudEmailLink\" type=\"button\">ส่งลิงก์เข้าใช้ทางอีเมล</button>\n</div>\n</details>\n<p id=\"v6CloudWho\">กำลังตรวจสอบบัญชี...</p>\n<div class=\"v6-tools\"><button id=\"v6CloudSync\" type=\"button\">☁️ สำรองขึ้น Cloud ตอนนี้</button><button id=\"v6CloudRestore\" type=\"button\">⬇️ ดึงบทเรียนจาก Cloud</button><button id=\"v6CloudCheck\" type=\"button\">🧪 ทดสอบบันทึกจริง</button></div>\n<p id=\"v6CloudCounts\" aria-live=\"polite\">ยังไม่ได้อ่านจำนวนข้อมูลบน Cloud</p><p id=\"v6CloudStatus\" role=\"status\" aria-live=\"polite\">PAPER ONLY · ข้อมูลจะอยู่ในเครื่องจนกว่าจะลงชื่อเข้าใช้เพื่อสำรองออนไลน์</p>";
    $('v6CloudLogin').onclick=login;
+   $('v6CloudEmailLink').onclick=()=>requestEmail(false);
+   $('v6CloudReset').onclick=()=>requestEmail(true);
+   $('v6CloudPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('v6CloudLogin').click();});
    $('v6CloudLogout').onclick=async()=>{try{await (await getClient()).auth.signOut();user=null;if(syncTimer)clearTimeout(syncTimer);renderAuth();say('ออกจากระบบแล้ว ข้อมูลในเครื่องยังอยู่');}catch(e){say(e.message,true);}};
    $('v6CloudSync').onclick=()=>sync(false).catch(e=>say('สำรอง Cloud ไม่สำเร็จ: '+e.message,true));
    $('v6CloudRestore').onclick=()=>restore().catch(e=>say('กู้คืน Cloud ไม่สำเร็จ: '+e.message,true));
