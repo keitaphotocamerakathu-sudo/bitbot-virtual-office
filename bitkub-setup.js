@@ -96,6 +96,7 @@ $('savePassword').onclick=()=>run(async()=>{
  message('overall','✅ ตั้งรหัสผ่าน Bitbot แล้ว ครั้งต่อไปสามารถเข้าสู่ระบบด้วยรหัสผ่านโดยไม่ขอลิงก์อีเมล');}
  finally{$('newPassword').value='';}
 });
+$('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter'){$('passwordLogin').click();}});
 setInterval(()=>{if(!busy)controls();},10000);
 controls();supa().catch(e=>message('overall','ระบบล็อกอินโหลดไม่สำเร็จ: '+e.message,true));
 })();
