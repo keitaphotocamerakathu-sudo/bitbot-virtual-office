@@ -32,9 +32,7 @@ function update(){
  }
  for(const id of ['emailLink','passwordLogin','reset'])$(id).disabled=busy||logged;
  $('logout').disabled=busy||!logged;
- const sec=window.BitbotOtpGuard?.remaining?.()||0;
- $('emailLink').disabled||=sec>0;$('reset').disabled||=sec>0;
- $('emailLink').textContent=sec?'ขออีเมลใหม่ได้ในประมาณ '+Math.ceil(sec/60)+' นาที':'ส่งลิงก์เข้าสู่ระบบ';
+ $('emailLink').textContent='ส่งลิงก์เข้าสู่ระบบ';
 }
 async function supa(){
  if(client)return client;
