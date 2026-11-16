@@ -13,12 +13,10 @@ function readableError(e){
 }
 function controls(){const ok=!!session?.user&&!busy;
 for(const id of ['saveKey','testWallet','saveLimits','refresh','deleteKey','logout'])$(id).disabled=!ok;
-const countdown=window.BitbotOtpGuard?.remaining?.()||0;
-$('login').disabled=busy||!!session?.user||countdown>0;
-$('login').textContent=countdown?'รอ '+Math.ceil(countdown/60)+' นาที ก่อนขออีเมลใหม่':'ส่งลิงก์เข้าสู่ระบบ';
-$('otpWait').textContent=countdown?'ระบบจำกัดการขออีเมลชั่วคราว เหลือประมาณ '+Math.ceil(countdown/60)+' นาที • ใช้รหัสผ่านที่เคยตั้งไว้ได้':'หากอีเมลถูกจำกัด (429) ให้รอครบกำหนด อย่ากดส่งซ้ำ หรือใช้รหัสผ่านที่เคยตั้งไว้';
+$('login').disabled=busy||!!session?.user;
+$('login').textContent='ส่งลิงก์เข้าสู่ระบบ';
 $('passwordLogin').disabled=busy||!!session?.user;
-$('resetPassword').disabled=busy||!!session?.user||countdown>0;
+$('resetPassword').disabled=busy||!!session?.user;
 $('savePassword').disabled=busy||!session?.user;
 $('createPasswordArea').classList.toggle('hide',!session?.user);
 $('who').textContent=session?.user?'✅ เข้าสู่ระบบ: '+(session.user.email||session.user.id)+' • ไม่ต้องล็อกอินใหม่':'ยังไม่ได้เข้าสู่ระบบ';
