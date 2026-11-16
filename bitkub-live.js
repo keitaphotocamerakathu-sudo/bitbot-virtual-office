@@ -7,6 +7,12 @@
  const gateway='https://lrxrigimdaedfemqheug.supabase.co/functions/v1/bitkub-gateway';
  let client=null,session=null,quote=null,settings=null,preview=null,orders=[];
  function show(msg,bad=false){$('gatewayStatus').textContent=msg;$('gatewayStatus').className='status '+(bad?'error':'');}
+ function readableError(e){
+   const m=String(e?.message||'');
+   if(e?.code==='invalid_credentials'||/invalid login credentials/i.test(m))return 'อีเมลหรือรหัสผ่าน Bitbot ไม่ถูกต้อง หากจำไม่ได้ให้ใช้ “ตั้งรหัสผ่าน Bitbot ใหม่” (ไม่ใช่รหัสผ่าน Bitkub)';
+   if(e?.status===429||e?.code==='over_email_send_rate_limit')return 'การส่งอีเมลถึงข้อจำกัด Supabase กรุณารอก่อนขอใหม่';
+   return m||'ไม่สามารถดำเนินการได้';
+ }
  async function getClient(){
    if(!client){const {createClient}=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm');
      client=createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
@@ -22,6 +28,7 @@
    $('emailLogin').textContent=wait?'รอ '+Math.ceil(wait/60)+' นาที ก่อนส่งเมลใหม่':'ส่งลิงก์ล็อกอิน';
    $('otpWait').textContent=wait?'Supabase จำกัดการส่งอีเมล โปรดรออีกประมาณ '+Math.ceil(wait/60)+' นาที หรือใช้รหัสผ่านที่มีอยู่':'หากขึ้น 429 กรุณาอย่ากดขออีเมลซ้ำ เพราะโควตารวมของโปรเจกต์อาจเต็ม';
    $('passwordLogin').disabled=!!user;
+   $('resetPassword').disabled=!!user||wait>0;
    $('balanceBtn').disabled=!user;$('ordersBtn').disabled=!user;$('previewBtn').disabled=!user;
    $('reconcileBtn').disabled=!user;
  }
@@ -88,10 +95,18 @@
    if(!/^\S+@\S+\.\S+$/.test(email)||!password){show('กรุณากรอกอีเมลและรหัสผ่าน Bitbot',true);return;}
    try{const c=await getClient();const {error}=await c.auth.signInWithPassword({email,password});if(error)throw error;
      show('✅ เข้าสู่ระบบสำเร็จโดยไม่ต้องส่งอีเมล');await status();}
-   catch(e){show('เข้าสู่ระบบไม่สำเร็จ: '+e.message,true);}
+   catch(e){show('เข้าสู่ระบบไม่สำเร็จ: '+readableError(e),true);}
    finally{$('loginPassword').value='';updateLogin();}
  }
  $('loginPassword').addEventListener('keydown',e=>{if(e.key==='Enter')$('passwordLogin').click();});
+ $('resetPassword').onclick=async()=>{
+    const email=$('loginEmail').value.trim();
+    if(!/^\S+@\S+\.\S+$/.test(email)){show('กรุณากรอกอีเมล Bitbot ที่ลงทะเบียนไว้',true);return;}
+    try{const c=await getClient();
+      await window.BitbotOtpGuard.send(()=>c.auth.resetPasswordForEmail(email,{redirectTo:new URL('./bitkub-setup.html',location.href).href}));
+      show('หากอีเมลนี้ลงทะเบียนไว้ Supabase จะส่งลิงก์ตั้งรหัสผ่านใหม่ กรุณาตรวจอีเมลและตั้งรหัสผ่านในหน้า Setup');}
+    catch(e){show(readableError(e),true);}finally{updateLogin();}
+  };
  $('refreshQuote').onclick=ticker;$('refreshStatus').onclick=status;$('emailLogin').onclick=login;$('passwordLogin').onclick=passwordLogin;$('logout').onclick=logout;$('balanceBtn').onclick=balance;$('ordersBtn').onclick=history;
  $('previewBtn').onclick=preflight;$('submitBtn').onclick=submit;$('reconcileBtn').onclick=reconcile;$('side').onchange=onSide;
  $('confirmPhrase').oninput=()=>{$('submitBtn').disabled=!preview||$('confirmPhrase').value.trim()!=='เทรดเงินจริง';};
