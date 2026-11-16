@@ -10,14 +10,14 @@
 <div class="warning">🔒 <strong>โปรดสร้าง API Key โดยไม่เปิดสิทธิ์ถอนเงิน (Withdraw)</strong> และจำกัด IP ที่อนุญาตหาก Bitkub รองรับการตั้งค่าตามรูปแบบการเชื่อมต่อของคุณ ห้ามใส่ API Key ใน GitHub หรือส่งให้ใครผ่านแชต</div>
 <section class="step"><div class="head"><span class="num">1</span>เข้าสู่ระบบ Bitbot</div>
 <p class="muted">เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน Bitbot ที่มีอยู่ ไม่ต้องขอลิงก์ใหม่ทุกครั้ง</p>
-<div class="field"><label for="email">อีเมล Bitbot</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="email@example.com"></div>
+<div id="setupLoginPanel"><div class="field"><label for="email">อีเมล Bitbot</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="email@example.com"></div>
 <div class="field"><label for="authPassword">รหัสผ่าน Bitbot</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="รหัสผ่าน Bitbot (ไม่ใช่ Bitkub)"></div>
 <div class="row"><button id="passwordLogin" type="button" disabled>🔐 เข้าสู่ระบบ Bitbot</button><button class="alt" id="logout" disabled>ออกจากระบบ</button></div>
 <p class="muted">บัญชีที่ลงทะเบียนและยืนยันอีเมลไว้แล้ว เข้าระบบด้วยรหัสผ่านได้ทันที ไม่ต้องขอลิงก์อีเมล</p>
 <details><summary style="cursor:pointer;color:#b9d9ff;padding:10px 0">🔑 ลืมรหัสผ่าน / ต้องการขอลิงก์เข้าระบบทางอีเมล</summary>
 <p class="muted" id="otpWait" role="status">ระบบอีเมลของ Supabase มีโควตา การขอถี่เกินไปอาจได้รับข้อผิดพลาด 429</p>
 <button class="alt" id="login" type="button">ส่งลิงก์เข้าใช้ทางอีเมล</button> <button class="alt" id="resetPassword" type="button">ตั้งรหัสผ่าน Bitbot ใหม่</button><p class="muted">ลิงก์ตั้งรหัสผ่านใหม่จะส่งไปที่อีเมลที่ลงทะเบียนไว้ และอาจติดข้อจำกัดโควตาอีเมลของ Supabase</p>
-</details>
+</details></div>
 <div id="createPasswordArea" class="hide">
 <div class="field"><label for="newPassword">ตั้งรหัสผ่าน Bitbot สำหรับครั้งต่อไป (อย่างน้อย 12 ตัวอักษร)</label><input id="newPassword" type="password" minlength="12" autocomplete="new-password" placeholder="รหัสผ่านใหม่สำหรับ Bitbot"></div>
 <button id="savePassword" class="alt" disabled>บันทึกรหัสผ่าน Bitbot</button>
@@ -35,6 +35,16 @@
 <div class="grid"><div class="field"><label for="maxOrder">วงเงินต่อคำสั่ง (บาท)</label><input type="number" inputmode="decimal" id="maxOrder" min="100" max="100000" step="0.01" value="500"></div><div class="field"><label for="maxBuy">วงเงินซื้อสูงสุดต่อวัน (บาท)</label><input type="number" inputmode="decimal" id="maxBuy" min="100" max="1000000" step="0.01" value="1000"></div></div>
 <div class="field"><label for="maxSell">มูลค่าขายสูงสุดต่อวัน (บาท)</label><input type="number" inputmode="decimal" id="maxSell" min="100" max="1000000" step="0.01" value="1000"></div>
 <div class="row"><button id="saveLimits" disabled>บันทึกวงเงิน</button><span id="tradeState" class="pill">🔒 เทรดเงินจริงยังปิดอยู่</span></div>
+<div class="warning" id="tradeRequirements">สถานะตรวจสอบ: รอเข้าสู่ระบบ • จะไม่ส่งคำสั่งเงินจริงจากหน้า Setup</div>
+<section class="step" style="background:#101d2e;margin:14px 0 0;border-color:#52779e">
+  <div class="head"><span class="num">!</span>เปิด–ปิดการส่งคำสั่งเงินจริงด้วยตนเอง</div>
+  <p class="muted">เฉพาะ LIMIT BTC/THB แบบกดยืนยันทีละคำสั่ง ไม่ใช่ AI เทรดอัตโนมัติ ระบบจะเช็กสิทธิ์ Wallet และวงเงินอีกครั้งทุกครั้งที่ส่งคำสั่ง</p>
+  <p class="muted">เพดานเริ่มต้นฝั่งเซิร์ฟเวอร์: สูงสุด 100 บาทต่อคำสั่ง • ซื้อ 300 บาท/วัน • ขายมูลค่า 1,000 บาท/วัน</p>
+  <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px"><input type="checkbox" id="acceptLiveRisk" style="width:auto;min-height:auto;margin-top:4px">ฉันเข้าใจว่าคำสั่งนี้ใช้เงินจริง มีความเสี่ยงขาดทุน และต้องยืนยันคำสั่งซื้อ/ขายแยกอีกครั้ง</label>
+  <div class="field"><label for="liveConfirm">พิมพ์คำว่า <strong>เปิดเทรดเงินจริง</strong> เพื่อเปิดสิทธิ์</label><input id="liveConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="เปิดเทรดเงินจริง"></div>
+  <div class="row"><button id="enableTrading" disabled>เปิดโหมดส่งคำสั่งจริง</button><button id="disableTrading" class="danger" disabled>หยุดส่งคำสั่งจริง</button></div>
+  <p id="tradingModeInfo" class="status" role="status">รอตรวจสอบเงื่อนไข</p>
+</section>
 </section>
 <section class="step"><div class="head"><span class="num">4</span>สถานะและการจัดการความปลอดภัย</div>
 <p class="muted">คุณสามารถลบ API Key ที่บันทึกใน Vault ออกจากระบบได้ทุกเมื่อ โดยไม่ต้องลบบัญชี Bitbot</p>
@@ -42,4 +52,4 @@
 <div id="overall" class="status">รอเข้าสู่ระบบ</div>
 </section>
 <footer>Bitbot v8 · เก็บคีย์เข้ารหัสบน Supabase Vault · หน้าเว็บไม่บันทึกคีย์ใน localStorage หรือฐานข้อมูลสาธารณะ · ไม่มีฟังก์ชันถอนเงิน และไม่มีการส่งคำสั่งซื้อขายจากหน้าตั้งค่า</footer>
-</main><script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitkub-setup.js?v=8.4" defer></script></body></html>
+</main><script src="./bitbot-v6-cloud-config.js"></script><script src="./bitbot-otp-guard.js?v=8.2"></script><script src="./bitkub-setup.js?v=9.0" defer></script></body></html>
