@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id);
 const cfg=window.BITBOT_CLOUD_CONFIG||{};
 const endpoint='https://lrxrigimdaedfemqheug.supabase.co/functions/v1/bitkub-gateway';
-let client=null,session=null,busy=false,lastId='';
+let client=null,session=null,busy=false,lastId='',setupState=null;
 function message(id,text,bad=false){const el=$(id);el.textContent=text;el.dataset.error=bad?'true':'false';}
 function readableError(e){
  const m=String(e?.message||'');
@@ -21,7 +21,10 @@ $('passwordLogin').disabled=busy||!!session?.user;
 $('resetPassword').disabled=busy||!!session?.user||countdown>0;
 $('savePassword').disabled=busy||!session?.user;
 $('createPasswordArea').classList.toggle('hide',!session?.user);
-$('who').textContent=session?.user?'✅ เข้าสู่ระบบ: '+(session.user.email||session.user.id):'ยังไม่ได้เข้าสู่ระบบ';
+$('who').textContent=session?.user?'✅ เข้าสู่ระบบ: '+(session.user.email||session.user.id)+' • ไม่ต้องล็อกอินใหม่':'ยังไม่ได้เข้าสู่ระบบ';
+$('setupLoginPanel').style.display=session?.user?'none':'';
+$('enableTrading').disabled=!ok||!setupState?.configured||!setupState?.adminApproved||!setupState?.serverLiveEnabled||!!setupState?.tradingEnabled;
+$('disableTrading').disabled=!ok||!setupState?.tradingEnabled;
 }
 async function supa(){
 if(client)return client;
@@ -30,7 +33,7 @@ const m=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/
 client=m.createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 client.auth.onAuthStateChange((_event,s)=>{
 session=s;controls();const id=s?.user?.id||'';
-if(id!==lastId){lastId=id;if(id)setTimeout(()=>refresh().catch(e=>message('overall',e.message,true)),0);}
+if(id!==lastId){lastId=id;setupState=null;if(id)setTimeout(()=>refresh().catch(e=>message('overall',e.message,true)),0);}
 });
 const r=await client.auth.getSession();if(r.error)throw r.error;session=r.data.session;controls();return client;
 }
@@ -50,9 +53,16 @@ function wipe(){$('apiKey').value='';$('apiSecret').value='';}
 async function refresh(){
 if(!session?.user)return;
 const x=await api('setup-status'),s=x.setup||{};
+setupState={...s,serverLiveEnabled:!!x.serverLiveEnabled};
 message('keyStatus',s.configured?'✅ บันทึกคีย์แบบเข้ารหัสแล้ว • ลงท้าย '+(s.keySuffix||'—')+' • ตรวจสอบ Wallet ณ '+new Date(s.verifiedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}):'ยังไม่ได้ตั้ง API Key/Secret');
 $('maxOrder').value=s.maxOrderTHB??500;$('maxBuy').value=s.maxDailyBuyTHB??1000;$('maxSell').value=s.maxDailySellTHB??1000;
-$('tradeState').textContent=x.serverLiveEnabled&&s.tradingEnabled&&s.adminApproved?'⚠️ อนุญาตคำสั่งจริง':'🔒 เทรดเงินจริงปิดอยู่';
+$('tradeState').textContent=x.serverLiveEnabled&&s.tradingEnabled&&s.adminApproved?'⚠️ เปิดสิทธิ์ส่งคำสั่งเงินจริงแล้ว':'🔒 ไม่ส่งคำสั่งเงินจริง';
+const reqs=['API Key: '+(s.configured?'ตรวจแล้ว ✓':'ยังไม่ตั้ง'),'Wallet: '+(s.verifiedAt?'เคยตรวจแล้ว ✓':'ยังไม่ผ่าน'),
+'ผู้ควบคุม: '+(s.adminApproved?'อนุมัติ ✓':'รออนุมัติ'),'สวิตช์เซิร์ฟเวอร์: '+(x.serverLiveEnabled?'พร้อม ✓':'ปิด'),'ตัวเลือกของคุณ: '+(s.tradingEnabled?'เปิด':'ปิด')];
+message('tradeRequirements',reqs.join(' • '));
+message('tradingModeInfo',s.tradingEnabled?'⚠️ บัญชีนี้เปิดโหมดส่งคำสั่งจริงแล้ว ต้องยืนยันแต่ละคำสั่งที่หน้า Bitkub Live':'🔒 บัญชีนี้ยังปิดโหมดส่งคำสั่งจริงอยู่ ผู้ใช้ต้องกดยืนยันเพื่อเปิดด้วยตนเอง');
+$('enableTrading').disabled=!s.configured||!s.adminApproved||!x.serverLiveEnabled||s.tradingEnabled;
+$('disableTrading').disabled=!s.tradingEnabled;
 message('overall','ระบบ Bitbot: เชื่อม Supabase สำเร็จ\nAPI Key: '+(s.configured?'เก็บใน Vault แล้ว':'ยังไม่ได้ตั้ง')+
 '\nสิทธิ์ส่งคำสั่ง: '+(s.adminApproved?'ผู้ดูแลอนุมัติแล้ว':'ยังไม่ได้อนุมัติ')+
 '\nKill Switch: '+(x.serverLiveEnabled?'เปิด':'ปิด')+'\nหน้า Setup ไม่มีการส่งคำสั่งซื้อขาย');
@@ -66,7 +76,7 @@ try{
 }catch(e){if(e.cooldown){message('overall','⚠️ '+e.message+'\\nหากต้องการส่งเมลบ่อยขึ้น ผู้ดูแลต้องตั้ง Custom SMTP ใน Supabase',true);return;}throw e;}
 finally{controls();}});
 $('logout').onclick=()=>run(async()=>{const c=await supa();const r=await c.auth.signOut();if(r.error)throw r.error;
-session=null;lastId='';wipe();controls();message('overall','ออกจากระบบแล้ว');});
+session=null;lastId='';setupState=null;wipe();controls();message('overall','ออกจากระบบแล้ว');});
 $('saveKey').onclick=()=>run(async()=>{
 const apiKey=$('apiKey').value.trim(),apiSecret=$('apiSecret').value.trim();
 if(apiKey.length<8||apiSecret.length<8)throw Error('กรุณากรอก API Key/Secret');
@@ -77,6 +87,20 @@ await refresh();});
 $('testWallet').onclick=()=>run(async()=>{
 const x=await api('setup-test',{method:'POST',body:{}});
 message('keyStatus',x.connected?'✅ ทดสอบ Wallet Bitkub สำเร็จ (อ่านอย่างเดียว)':'เชื่อม Wallet ไม่สำเร็จ');await refresh();});
+$('enableTrading').onclick=()=>run(async()=>{
+ if(!session?.user)throw Error('กรุณาเข้าสู่ระบบก่อน');
+ if(!$('acceptLiveRisk').checked||$('liveConfirm').value.trim()!=='เปิดเทรดเงินจริง')throw Error('กรุณาติ๊กยอมรับความเสี่ยงและพิมพ์ เปิดเทรดเงินจริง ให้ตรง');
+ if(!confirm('คุณกำลังเปิดสิทธิ์ส่งคำสั่งซื้อขายเงินจริงบน Bitkub แบบ LIMIT เท่านั้น • แต่ละคำสั่งยังต้องยืนยันอีกครั้ง • ยืนยันเปิดสิทธิ์หรือไม่?'))return;
+ await api('setup-trading',{method:'POST',body:{enabled:true,acceptRisk:true,confirmText:'เปิดเทรดเงินจริง'}});
+ $('liveConfirm').value='';$('acceptLiveRisk').checked=false;await refresh();
+ message('overall','✅ เปิดสิทธิ์ส่งคำสั่งเงินจริงบนบัญชีที่ตรวจสอบแล้ว • ไม่มีการส่งคำสั่งซื้อ/ขายในขั้นตอนนี้');
+});
+$('disableTrading').onclick=()=>run(async()=>{
+ if(!confirm('ยืนยันปิดสิทธิ์ส่งคำสั่งซื้อขายเงินจริงในบัญชีนี้? ออร์เดอร์ที่ส่งไปแล้วจะไม่ถูกยกเลิกโดยอัตโนมัติ'))return;
+ await api('setup-trading',{method:'POST',body:{enabled:false}});
+ $('liveConfirm').value='';$('acceptLiveRisk').checked=false;await refresh();
+ message('overall','🔒 ปิดสิทธิ์ส่งคำสั่งใหม่แล้ว ออร์เดอร์ที่เปิดค้างบน Bitkub ต้องจัดการแยกต่างหาก');
+});
 $('saveLimits').onclick=()=>run(async()=>{
 const b={maxOrderTHB:Number($('maxOrder').value),maxDailyBuyTHB:Number($('maxBuy').value),maxDailySellTHB:Number($('maxSell').value)};
 for(const v of Object.values(b))if(!Number.isFinite(v)||v<100||Math.abs(v*100-Math.round(v*100))>.00001)throw Error('วงเงินต้องตั้งแต่ 100 บาทขึ้นไปและไม่เกิน 2 ตำแหน่ง');
