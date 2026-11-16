@@ -23,6 +23,7 @@
  function updateLogin(){const user=session?.user;
    $('sessionWho').textContent=user?'ล็อกอิน Bitbot: '+(user.email||'บัญชีที่ยืนยันแล้ว'):'ยังไม่ได้ล็อกอิน Bitbot';
    $('uid').textContent=user?.id||'—';$('logout').disabled=!user;
+   $('liveLoginPanel').style.display=user?'none':'';
    const wait=window.BitbotOtpGuard?.remaining?.()||0;
    $('emailLogin').disabled=!!user||wait>0;
    $('emailLogin').textContent=wait?'รอ '+Math.ceil(wait/60)+' นาที ก่อนส่งเมลใหม่':'ส่งลิงก์ล็อกอิน';
@@ -52,7 +53,7 @@
    let keyInfo='กรุณาเข้าสู่ระบบและตั้งค่าผ่าน ⚙ ตั้งค่า Bitkub',cap=x.orderCapTHB,approved=false;
    if(session?.user){const a=await api('setup-status',{auth:true});keyInfo=a.setup?.configured?'บันทึกเข้ารหัสแล้ว • ลงท้าย '+a.setup.keySuffix:'ยังไม่ได้ตั้ง API Key';cap=a.setup?.maxOrderTHB||cap;approved=Boolean(a.setup?.adminApproved&&a.setup?.tradingEnabled&&a.serverLiveEnabled);}
    settings.liveTradingEnabled=approved;
-   show('ข้อมูลราคา: Bitkub API จริง\nเชื่อม Wallet: '+keyInfo+'\nส่งคำสั่งเงินจริง: '+(approved?'ได้รับสิทธิ์แล้ว':'ปิด (ปลอดภัย)')+'\nรูปแบบคำสั่ง: LIMIT เท่านั้น / ยืนยันด้วยตนเอง'+(cap?'\nวงเงินต่อคำสั่งที่ตั้งไว้: ฿'+fmt(cap):''));
+   show('ข้อมูลราคา: Bitkub API จริง\nเชื่อม Wallet: '+keyInfo+'\nส่งคำสั่งเงินจริง: '+(approved?'เปิดสิทธิ์แล้ว — ยังต้องกดยืนยันแต่ละคำสั่ง':session?.user?'ยังปิดอยู่ — เปิดจากหน้า ⚙ ตั้งค่า Bitkub':'กรุณาเข้าสู่ระบบ')+'\nรูปแบบคำสั่ง: LIMIT เท่านั้น / ยืนยันด้วยตนเอง'+(cap?'\nวงเงินต่อคำสั่งที่ตั้งไว้: ฿'+fmt(cap):''));
  }catch(e){show('Backend ยังไม่พร้อม: '+e.message,true);}}
  async function login(){const email=$('loginEmail').value.trim();if(!/^\S+@\S+\.\S+$/.test(email)){show('กรุณากรอกอีเมล',true);return;}
    try{const c=await getClient();
