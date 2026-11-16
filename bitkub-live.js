@@ -24,12 +24,10 @@
    $('sessionWho').textContent=user?'ล็อกอิน Bitbot: '+(user.email||'บัญชีที่ยืนยันแล้ว'):'ยังไม่ได้ล็อกอิน Bitbot';
    $('uid').textContent=user?.id||'—';$('logout').disabled=!user;
    $('liveLoginPanel').style.display=user?'none':'';
-   const wait=window.BitbotOtpGuard?.remaining?.()||0;
-   $('emailLogin').disabled=!!user||wait>0;
-   $('emailLogin').textContent=wait?'รอ '+Math.ceil(wait/60)+' นาที ก่อนส่งเมลใหม่':'ส่งลิงก์ล็อกอิน';
-   $('otpWait').textContent=wait?'Supabase จำกัดการส่งอีเมล โปรดรออีกประมาณ '+Math.ceil(wait/60)+' นาที หรือใช้รหัสผ่านที่มีอยู่':'หากขึ้น 429 กรุณาอย่ากดขออีเมลซ้ำ เพราะโควตารวมของโปรเจกต์อาจเต็ม';
+   $('emailLogin').disabled=!!user;
+   $('emailLogin').textContent='ส่งลิงก์ล็อกอิน';
    $('passwordLogin').disabled=!!user;
-   $('resetPassword').disabled=!!user||wait>0;
+   $('resetPassword').disabled=!!user;
    $('balanceBtn').disabled=!user;$('ordersBtn').disabled=!user;$('previewBtn').disabled=!user;
    $('reconcileBtn').disabled=!user;
  }
