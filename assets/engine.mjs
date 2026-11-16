@@ -50,7 +50,7 @@ export function executionAgent(m,s,r){
 export function applyFill(state,fill,c){
  const s=structuredClone(state),{side,qty,price,fee=0}=fill;
  if(!['BUY','SELL'].includes(side)||![qty,price,fee].every(Number.isFinite)||qty<=0||price<=0||fee<0)throw Error('ข้อมูลการจับคู่ไม่ถูกต้อง');
- if(side==='BUY'){const debit=qty*price+fee;if(debit>s.cash+0.02)throw Error('ยอดซื้อเกินเงินที่จัดสรร');s.cash-=debit;s.qty+=qty;s.cost+=debit;s.bought+=debit;s.entryStrategy=fill.strategy||s.entryStrategy||'trend-pullback';}
+ if(side==='BUY'){const debit=fill.spend??(qty*price+fee);if(!Number.isFinite(debit)||debit<qty*price+fee-0.000001)throw Error('ยอดใช้ซื้อไม่ถูกต้อง');if(debit>s.cash+0.02)throw Error('ยอดซื้อเกินเงินที่จัดสรร');s.cash-=debit;s.qty+=qty;s.cost+=debit;s.bought+=debit;s.entryStrategy=fill.strategy||s.entryStrategy||'trend-pullback';}
  else{if(qty>s.qty+1e-10)throw Error('ขายเกินจำนวน BTC ที่บอทถือ');const basis=s.qty? s.cost*Math.min(1,qty/s.qty):0,net=qty*price-fee,pnl=net-basis;s.cash+=net;s.qty=Math.max(0,s.qty-qty);s.cost=Math.max(0,s.cost-basis);s.realized+=pnl;s.dayPnl+=pnl;s.positionRealized=(s.positionRealized||0)+pnl;s.sold+=qty*price;
  if(s.qty<1e-10){s.qty=0;s.cost=0;const key=s.entryStrategy||'trend-pullback',l=s.lessons[key]||{wins:0,losses:0};if(s.positionRealized>0)l.wins++;else l.losses++;s.positionRealized=0;s.lessons[key]=l;s.entryStrategy=null;}}
  s.fees+=fee;s.trades++;return s;
@@ -67,6 +67,6 @@ export function paperCycle(m,s,c,now=Date.now()){
  const out=cycle(m,s,c,now);if(!out.order)return out;const o=out.order,price=o.side==='BUY'?m.ask*1.0005:m.bid*.9995;
  const fee=o.side==='BUY'?Math.ceil(o.amount*c.fee*100)/100:Math.ceil(o.amount*price*c.fee*100)/100;
  const qty=o.side==='BUY'?floor8((o.amount-fee)/price):Math.min(o.amount,out.state.qty);
- try{out.state=applyFill(out.state,{side:o.side,qty,price,fee,strategy:o.strategy},c);out.fill={side:o.side,qty,price,fee,at:now,reason:o.reason};}
+ try{out.state=applyFill(out.state,{side:o.side,qty,price,fee,strategy:o.strategy,...(o.side==='BUY'?{spend:o.amount}:{})},c);out.fill={side:o.side,qty,price,fee,at:now,reason:o.reason};}
  catch(e){out.error=e.message;out.order=null;}return out;
 }
