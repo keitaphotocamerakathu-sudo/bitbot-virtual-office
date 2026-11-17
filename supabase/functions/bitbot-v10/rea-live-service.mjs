@@ -1,4 +1,4 @@
-import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBody,LIVE_CONFIRM} from './rea-live-core.mjs';
+import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBody,LIVE_CONFIRM,LIMITED_POLICY} from './rea-live-core.mjs';
 const symbols=s=>[...new Set([...(s?.positions||[]).map(p=>p.symbol),...(s?.orders||[]).filter(liveActive).map(o=>o.symbol)])];
 const hash=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const safeError=e=>e.exchangeRejected?'BITKUB_REJECTED_'+String(e.message).slice(0,80):String(e.message||'LIVE_SERVICE_UNAVAILABLE').slice(0,160);
@@ -56,7 +56,8 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,clock=()=>
      pf={...pf,wallet:await wallet(pair),at:clock()};
      const bundle=riskOnly||!prepared?{markets:await quotes(symbols(state))}:prepared;
      const ready=await rpc('rea_live_ready',{p_uid:row.user_id});
-     const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&ready.ready===true,operationalLock:ready.ready!==true||!!scanError});
+     const permitted=state.policy===LIMITED_POLICY?ready.limited?.ready===true:ready.ready===true;
+     const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&permitted,operationalLock:!permitted||!!scanError});
      state=out.state;intents=out.intents;
      latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state),reason:scanError||out.reason,
       ...(riskOnly?{}:{decisions:out.decisions}),accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
@@ -91,14 +92,17 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,clock=()=>
    }finally{await rpc('rea_live_release',{p_uid:row.user_id,p_lease:row.lease});}
   }return{service:'REA_LIVE',lane,processed:rows.length,results};
  }
- async function activate(uid,{confirm,acceptRisk,noWithdraw,budget}){
+ async function activate(uid,{confirm,acceptRisk,noWithdraw,budget,policy='STANDARD',acceptIncomplete=false}){
   if(confirm!==LIVE_CONFIRM||acceptRisk!==true||noWithdraw!==true)throw Error('OWNER_LIVE_CONFIRMATION_REQUIRED');
-  if(!Number.isFinite(budget)||budget<100||budget>10000)throw Error('INVALID_LIVE_BUDGET');
+  const limited=policy===LIMITED_POLICY;
+  if(!['STANDARD',LIMITED_POLICY].includes(policy)||limited&&acceptIncomplete!==true||!Number.isFinite(budget)||budget<10||budget>(limited?100:10000))throw Error('INVALID_LIVE_BUDGET_OR_ACKNOWLEDGEMENT');
   const pair=await keys(uid),pf=await preflight(uid,pair),view=await rpc('rea_live_view',{p_uid:uid});
-  if(!view?.readiness?.ready)return{activated:false,readiness:view?.readiness};
+  if(!(limited?view?.readiness?.limited?.ready:view?.readiness?.ready))return{activated:false,readiness:view?.readiness};
   if(pf.at-clock()>5000||clock()-pf.at>20000||pf.keyFingerprint!==view.preflight.keyFingerprint)throw Error('LIVE_PREFLIGHT_CHANGED');
   if(budget>pf.wallet.THB.available)throw Error('INSUFFICIENT_REAL_THB');
-  return rpc('rea_live_control',{p_uid:uid,p_action:'activate',p_confirm:confirm,p_state:initialLive(budget,clock())});
+  const state=initialLive(budget,clock(),policy);
+  if(limited)state.ownerAcknowledgement={acceptIncomplete:true,noWithdraw:true,acceptRisk:true};
+  return rpc('rea_live_control',{p_uid:uid,p_action:'activate',p_confirm:confirm,p_state:state});
  }
  return{run,activate,view:uid=>rpc('rea_live_view',{p_uid:uid}),control:(uid,action,confirm='')=>rpc('rea_live_control',{p_uid:uid,p_action:action,p_confirm:confirm,p_state:null})};
 }

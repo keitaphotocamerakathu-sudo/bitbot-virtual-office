@@ -153,15 +153,8 @@ async function startPaper(){
  if(!session){openAuth();notice('ทดลองบน Cloud ต้องเข้าสู่ระบบ ข้อมูลจะทำงานต่อได้แม้ปิดคอม');return;}
  await perform(async()=>{if(!cloud?.shadow){await api('paper-config',{method:'POST',auth:true,data:{config:cfg(),capital:cfg().budget}});}await api('shadow-toggle',{method:'POST',auth:true,data:{enabled:true}});await refreshCloud();notice('เริ่มทดลองบน Cloud แล้ว ใช้เงินจำลองเท่านั้น ไม่ต้องเปิดหน้านี้ไว้');});
 }
-$('startBtn').onclick=()=>{if(mode==='paper')return startPaper();notice('PAPER_ONLY: ซื้อขายเงินจริงถูกล็อกระหว่างตรวจรับ ใช้หน้า REA สำหรับพอร์ตจำลอง 10,000 บาท',true);return;
- if(!session){page('settings');openAuth();return;}
- if(!cloud?.key?.configured||!cloud?.bot){page('settings');notice('เชื่อม API และบันทึกวงเงินก่อนเริ่มบอทเงินจริง');return;}
- if(cloud.bot.state.halted){notice('พอร์ตถึงเพดานขาดทุนจากจุดสูงสุดแล้ว ตรวจประวัติและจัดการสถานะก่อนเริ่มรอบใหม่',true);return;}
- const c=cfg();text('startSummary','สูตร '+(c.entryPlanner==='net-v16'?'สุทธิตามเวลาถือ v16 (ยังไม่ยืนยันกำไร)':'เดิม v13')+'\nทุนสูงสุด '+money(c.budget)+'\nสำรองเงิน '+fmt(c.walletReservePct*100,1)+'% + '+money(c.cashReserveTHB)+'\nต่อคำสั่ง '+money(c.maxOrder)+'\nซื้อรวมต่อวัน '+money(c.dailyBuy)+' / ขาย '+money(c.dailySell)+'\nStop Loss '+fmt(c.stopLoss*100,1)+'% / Take Profit '+fmt(c.takeProfit*100,1)+'%');
- $('startForm').reset();const early=cloud.evidence?.allowed!==true;$('unvalidatedWarning').hidden=!early;$('unvalidatedAccepted').required=early&&!(cloud.bot.state.qty>0);$('startDialog').showModal();
-};
-$('startForm').onsubmit=e=>{e.preventDefault();perform(async()=>{if($('confirmStart').value!=='เริ่มบอทเงินจริง')throw Error('กรุณาพิมพ์ เริ่มบอทเงินจริง ให้ตรงกัน');
- await api('start',{method:'POST',auth:true,data:{confirm:$('confirmStart').value,acceptRisk:$('riskAccepted').checked,noWithdraw:$('withdrawDisabled').checked,allowUnvalidated:$('unvalidatedAccepted').checked}});$('startDialog').close();await refreshCloud();notice('เปิดบอทเงินจริงแล้ว ตรวจตลาดภายใน 1 นาที จะซื้อเมื่อผ่านสัญญาณและการตรวจความเสี่ยง');});};
+$('startBtn').onclick=()=>{if(mode==='paper')return startPaper();location.assign('./rea.html#live');};
+$('startForm').onsubmit=e=>{e.preventDefault();location.assign('./rea.html#live');};
 $('pauseBtn').onclick=()=>perform(async()=>{if(mode==='paper'){await api('paper-pause',{method:'POST',auth:true,data:{paused:!cloud?.shadow?.buy_paused}});await refreshCloud();}else{await api(cfg().buyPaused?'resume':'pause',{method:'POST',auth:true,data:{}});await refreshCloud();}render();});
 $('stopBtn').onclick=()=>{if(mode==='paper'){perform(async()=>{await api('shadow-toggle',{method:'POST',auth:true,data:{enabled:false}});await refreshCloud();notice('หยุดการทดลองบน Cloud แล้ว เก็บสถานะและประวัติไว้');});return;}
  if(!confirm('หยุดส่งคำสั่งใหม่และขอยกเลิกคำสั่งค้าง เหรียญที่ถือยังอยู่ใน Bitkub และจะไม่มีบอทเฝ้าขายต่อ ยืนยันหรือไม่?'))return;
@@ -188,7 +181,7 @@ function render(){
  text('botStatus',isRunning?((mode==='paper'?cloud?.shadow?.buy_paused:c.buyPaused)?'พักซื้อใหม่':'กำลังทำงาน'):s.halted?'ล็อกความเสี่ยง':'หยุดอยู่');
  text('botHint',mode==='live'?cloud?.bot?.last_error||'เซิร์ฟเวอร์ตรวจทุก 1 นาที':isRunning?'ทดลองบน Cloud แม้ปิดคอม':'เข้าสู่ระบบเพื่อเริ่มทดลองบน Cloud');
  text('teamBadge',isRunning?'TEAM ACTIVE':'STANDBY');text('startBtn',mode==='paper'?'▶ เริ่มทดลองบอท':'▶ เริ่มบอทเงินจริง');
- $('startBtn').disabled=mode==='live'||actionBusy||isRunning;if(mode==='live')text('startBtn','Live ถูกล็อก · PAPER_ONLY');$('pauseBtn').disabled=actionBusy||!isRunning;$('stopBtn').disabled=actionBusy||!isRunning;
+ $('startBtn').disabled=actionBusy||(mode==='paper'&&isRunning);if(mode==='live')text('startBtn','เปิดใช้งาน Live Trading ↗');$('pauseBtn').disabled=actionBusy||!isRunning;$('stopBtn').disabled=actionBusy||!isRunning;
  text('pauseBtn',(mode==='paper'?cloud?.shadow?.buy_paused:c.buyPaused)?'ซื้อใหม่ต่อ':'พักซื้อใหม่');
  text('runNote',mode==='paper'?'ราคาตลาดจริง เงินจำลอง · ทำงานบน Cloud แม้ปิดเว็บ · การรีโหลดไม่เริ่มหรือหยุดระบบเอง':'บอททำงานบนเซิร์ฟเวอร์ · การพักซื้อยังตรวจขาย · ปุ่มหยุดทั้งหมดจะหยุดการเฝ้าสถานะด้วย');
  const live=cloud?.bot;$('serverActivity').hidden=!live?.running||mode==='live';

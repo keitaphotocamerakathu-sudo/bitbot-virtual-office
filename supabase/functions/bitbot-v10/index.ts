@@ -319,7 +319,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'19.0.1',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
+ if(req.method==='GET'&&a==='health')return{version:'19.1.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);

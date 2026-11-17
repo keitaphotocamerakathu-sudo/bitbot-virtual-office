@@ -22,3 +22,21 @@ test('live key form sends only an explicit authenticated save and clears credent
 test('Live panel fits mobile and guest cannot read a wallet',async({page})=>{await page.setViewportSize({width:390,height:844});const {calls,errors}=await setup(page,{signed:false});await page.locator('[data-rea-page=live]').click();await expect(page.locator('#reaLiveStatus')).toContainText('เข้าสู่ระบบ');expect(calls).toHaveLength(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(errors).toEqual([]);});
 
 test('legacy live and setup URLs both open the current Live page without private calls for guests',async({page})=>{const errors=[];page.on('pageerror',e=>errors.push(e.message));for(const path of ['/bitkub-live.html','/bitkub-setup.html']){const {calls}=await setup(page,{signed:false,path});await expect(page).toHaveURL(/rea\.html#live$/);await expect(page.locator('[data-rea-section=live]')).toBeVisible();await expect(page.locator('#reaLiveStatus')).toContainText('เข้าสู่ระบบ');expect(calls).toHaveLength(0);}expect(errors).toEqual([]);});
+
+test('99.97 THB owner can launch limited real trading without pretending full acceptance passed',async({page})=>{
+ const live={mode:'LIVE_LOCKED',state:null,preflight:{ok:true,wallet:{THB:{available:99.97,reserved:0}}},latest:{at:Date.now()},readiness:{ready:false,checks:[{name:'PAPER_7_DAYS',passed:false,evidence:{daysObserved:.1}},{name:'SECURITY_REVIEW',passed:false}],limited:{ready:true,checks:[{name:'LIMITED_CAPITAL_TESTS',passed:true}]}},orders:[],fills:[]};
+ const {calls,errors}=await setup(page,{live,path:'/rea.html#live'});await expect(page.locator('#reaLiveBudget')).toHaveValue('99.97');await expect(page.locator('#reaLiveActivate')).toBeDisabled();await expect(page.locator('#reaLiveBudgetHint')).toContainText('2.99');
+ await page.locator('#reaLiveAccept').check();await page.locator('#reaLiveNoWithdraw').check();await page.locator('#reaLiveConfirm').fill('เปิดซื้อขายจริง Bitkub');await expect(page.locator('#reaLiveActivate')).toBeDisabled();
+ await page.locator('#reaLiveIncomplete').check();await expect(page.locator('#reaLiveActivate')).toBeEnabled();
+ await page.locator('#reaLiveBudget').fill('100');await expect(page.locator('#reaLiveActivate')).toBeDisabled();await page.locator('#reaLiveBudget').fill('90');await page.locator('#reaLiveRefresh').click();await expect(page.locator('#reaLiveBudget')).toHaveValue('90');
+ await page.locator('#reaLiveBudget').fill('99.97');await page.locator('#reaLiveActivate').click();await expect.poll(()=>calls.filter(c=>c.a==='rea-live-control').length).toBe(1);
+ expect(calls.find(c=>c.a==='rea-live-control').body).toEqual({action:'activate',confirm:'เปิดซื้อขายจริง Bitkub',acceptRisk:true,noWithdraw:true,budget:99.97,policy:'OWNER_LIMITED_LIVE',acceptIncomplete:true});
+ expect(live.readiness.ready).toBe(false);expect(errors).toEqual([]);
+});
+test('full Live remains gated and account changes clear limited consent',async({page})=>{
+ const live={mode:'LIVE_LOCKED',state:null,preflight:{ok:true,wallet:{THB:{available:99.97,reserved:0}}},latest:{at:Date.now()},readiness:{ready:false,checks:[{name:'PAPER_7_DAYS',passed:false}],limited:{ready:true,checks:[]}},orders:[],fills:[]};const {calls}=await setup(page,{live,path:'/rea.html#live'});
+ await page.locator('#reaLiveAccept').check();await page.locator('#reaLiveNoWithdraw').check();await page.locator('#reaLiveIncomplete').check();await page.locator('#reaLiveConfirm').fill('เปิดซื้อขายจริง Bitkub');await expect(page.locator('#reaLiveActivate')).toBeEnabled();
+ await page.locator('#reaLivePolicy').selectOption('STANDARD');await expect(page.locator('#reaLiveIncompleteLabel')).toBeHidden();await expect(page.locator('#reaLiveActivate')).toBeDisabled();await expect(page.locator('#reaLiveActivationNote')).toContainText('7 วัน');
+ await page.locator('#reaLivePolicy').selectOption('OWNER_LIMITED_LIVE');await expect(page.locator('#reaLiveIncomplete')).not.toBeChecked();await expect(page.locator('#reaLiveConfirm')).toHaveValue('');
+ await page.evaluate(()=>{globalThis.__testAuthSession=null;globalThis.__testAuthChange('SIGNED_OUT',null);});await expect(page.locator('#reaLiveActivate')).toBeDisabled();await expect(page.locator('#reaLiveAccept')).not.toBeChecked();expect(calls.some(c=>c.a==='rea-live-control')).toBe(false);
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initialLive,applyExchangeInfo,planLive,markLive,exchangeBody,liveSummary,walletMatches} from '../supabase/functions/bitbot-v10/rea-live-core.mjs';
+import {initialLive,applyExchangeInfo,planLive,markLive,exchangeBody,liveSummary,walletMatches,LIMITED_POLICY,liveLimits,LIVE_CONFIRM} from '../supabase/functions/bitbot-v10/rea-live-core.mjs';
 import {createLiveService} from '../supabase/functions/bitbot-v10/rea-live-service.mjs';
 const now=1794921000000,uid='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
 const market=()=>({symbol:'BTC_THB',last:100,bid:100,ask:100.01,observedAt:now,status:'active',marketSource:'exchange',rules:{qtyScale:8,priceStep:.01,priceScale:2,minQuote:10}});
@@ -9,7 +9,7 @@ function buy(){return{id,clientId:'rea19-test',exchangeId:'ex-1',symbol:'BTC_THB
 function info({status='unfilled',history=[{txn_id:'tx-1',amount:500,rate:100,fee:1.25,credit:0,timestamp:now-100}],filled=500,remaining=500}={}){return{client_id:'rea19-test',status,history,filled,remaining};}
 test('Live starts with an actual bounded allocation and no paper holdings or synthetic fills',()=>{
  const s=initialLive(5000,now);assert.equal(s.mode,'LIVE');assert.equal(s.cash,5000);assert.equal(s.positions.length,0);assert.equal(s.fills.length,0);
- for(const n of [0,99,10001,NaN,Infinity])assert.throws(()=>initialLive(n,now));
+ for(const n of [0,9.99,10001,NaN,Infinity,99.971])assert.throws(()=>initialLive(n,now));
 });
 test('partial BUY uses actual THB receipt and fee, and a repeated receipt is idempotent',()=>{
  const s=initialLive(10000,now);s.orders=[buy()];
@@ -104,4 +104,44 @@ test('a stalled live scanner does not acquire or block the independent risk exec
  let enterScan,release;const entered=new Promise(resolve=>enterScan=resolve),blocked=new Promise(resolve=>release=resolve),claims=[];
  const service=createLiveService({rpc:async(name,args)=>{if(name==='rea_live_scan_targets')return[{state:initialLive(10000,now)}];if(name==='rea_live_claim'){claims.push(args.p_lane);return[];}return true;},scan:async()=>{enterScan();await blocked;return{markets:[]};}});
  const strategy=service.run(false);await entered;assert.deepEqual(claims,[]);await service.run(true);assert.deepEqual(claims,['risk']);release();await strategy;assert.deepEqual(claims,['risk','strategy']);
+});
+
+test('99.97 THB limited live reserves two real orders inside immutable small-capital limits',()=>{
+ const s=initialLive(99.97,now,LIMITED_POLICY),w={at:now,THB:{available:99.97,reserved:0}},markets=[trend(),trend('ETH_THB'),trend('SOL_THB')];let next=0;
+ assert.equal(s.accounting,'EXCHANGE_RECEIPTS');assert.deepEqual(liveLimits(s),{riskBudget:.99,dailyLossLimit:2.99,maxPosition:39.98,maxExposure:79.97});
+ const out=planLive(s,{markets},w,now,{entries:true,id:()=>String(++next)});
+ assert.equal(out.state.orders.length,2);assert(out.decisions.some(d=>d.reason==='MAX_POSITIONS'));
+ for(const o of out.state.orders){assert(o.amount>=10);assert(o.amount<=39.98);assert(o.modeledLoss<=.99);assert(o.modeledLoss>=o.amount*o.riskFraction);}
+ assert(out.state.orders.reduce((v,o)=>v+o.amount,0)<=79.97);assert.equal(out.state.positions.length,0);assert.equal(out.state.fills.length,0);
+ for(const n of [9.99,100.01,1000,99.971])assert.throws(()=>initialLive(n,now,LIMITED_POLICY));
+ const minTooHigh=markets.map(m=>({...m,rules:{...m.rules,minQuote:50}}));assert.equal(planLive(s,{markets:minTooHigh},w,now,{entries:true}).intents.length,0);
+});
+test('limited daily loss locks at 2.99 THB and profits cannot expand approved limits',()=>{
+ let s=initialLive(99.97,now,LIMITED_POLICY);s.cash=96.98;s=markLive(s,[],now).state;assert.equal(s.dailyLocked,true);assert.equal(s.dayPnl,-2.99);
+ s.cash=99.97;s=markLive(s,[],now+1).state;assert.equal(s.dailyLocked,true);
+ s.cash=200;s.equity=200;s.dayStart=200;assert.deepEqual(liveLimits(s),{riskBudget:.99,dailyLossLimit:2.99,maxPosition:39.98,maxExposure:79.97});
+});
+test('limited activation requires all owner acknowledgements before loading credentials',async()=>{
+ const service=createLiveService({rpc:()=>{throw Error('RPC must not run');},keys:()=>{throw Error('keys must not load');}});
+ const args={confirm:LIVE_CONFIRM,acceptRisk:true,noWithdraw:true,budget:99.97,policy:LIMITED_POLICY,acceptIncomplete:true};
+ for(const change of [{acceptIncomplete:false},{noWithdraw:false},{acceptRisk:false},{budget:100.01},{policy:'OVERRIDE_ALL'}])await assert.rejects(service.activate(uid,{...args,...change}),/CONFIRMATION|ACKNOWLEDGEMENT/);
+});
+test('limited activation works with 99.97 THB while full acceptance stays false, without placing orders',async()=>{
+ let saved;const pair={apiKey:'TEST_ONLY_LIMITED',apiSecret:'TEST_ONLY'},fingerprint=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pair.apiKey))).toString('hex');
+ const service=createLiveService({clock:()=>now,keys:async()=>pair,wallet:async()=>({at:now,THB:{available:99.97,reserved:0}}),signed:async(_p,method,path)=>{assert.equal(method,'GET');assert(path.includes('my-open-orders'));return{result:[]};},rpc:async(name,args)=>{
+  if(name==='rea_live_view')return{preflight:{keyFingerprint:fingerprint},readiness:{ready:false,limited:{ready:true}}};
+  assert.equal(name,'rea_live_control');saved=args;return{activated:true};
+ }});
+ assert.equal((await service.activate(uid,{confirm:LIVE_CONFIRM,acceptRisk:true,noWithdraw:true,budget:99.97,policy:LIMITED_POLICY,acceptIncomplete:true})).activated,true);
+ assert.equal(saved.p_state.cash,99.97);assert.equal(saved.p_state.policy,LIMITED_POLICY);assert.deepEqual(saved.p_state.ownerAcknowledgement,{acceptIncomplete:true,noWithdraw:true,acceptRisk:true});assert.equal(saved.p_state.orders.length,0);
+ await assert.rejects(service.activate(uid,{confirm:LIVE_CONFIRM,acceptRisk:true,noWithdraw:true,budget:100,policy:LIMITED_POLICY,acceptIncomplete:true}),/INSUFFICIENT_REAL_THB/);
+});
+test('limited executor uses its own server proof and submits a bounded real bid only after reservation',async()=>{
+ for(const permitted of [false,true]){
+  let row={user_id:uid,mode:'LIVE_ENABLED',state:initialLive(99.97,now,LIMITED_POLICY),preflight:{},latest:{},revision:0,lease:id},stored=null,writes=0;
+  const service=createLiveService({clock:()=>now,keys:async()=>({apiKey:'TEST',apiSecret:'TEST_ONLY'}),wallet:async()=>({at:now,THB:{available:99.97,reserved:0}}),scan:async()=>({markets:[trend()]}),quotes:async()=>[trend()],
+   signed:async(_p,method,path,body,ticket)=>{if(method==='GET')return{result:[]};assert.equal(path,'/api/v3/market/place-bid');assert.equal(stored.orders[0].status,'RESERVED');assert(body.amt<=39.98);writes++;ticket.dispatched=true;ticket.revision=row.revision+1;return{error:0,result:{id:'LIMITED_ACK_TEST_ONLY'}};},
+   rpc:async(name,args)=>{if(name==='rea_live_scan_targets')return[{state:row.state}];if(name==='rea_live_claim')return[row];if(name==='rea_live_ready')return{ready:false,limited:{ready:permitted}};if(name==='rea_live_checkpoint'){stored=structuredClone(args.p_state);row={...row,state:stored,preflight:args.p_preflight,revision:args.p_revision+1};return row;}return true;}});
+  await service.run();assert.equal(writes,permitted?1:0);assert.equal(stored.fills.length,0);assert.equal(stored.positions.length,0);assert.equal(stored.cash,99.97);
+ }
 });

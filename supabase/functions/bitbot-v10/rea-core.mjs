@@ -47,7 +47,7 @@ export function riskSizeREA(s,{stopDistance,minQuote=10},markets,now){
  const heldRisk=s.positions.reduce((a,p)=>a+Math.max(0,p.cost-p.qty*p.stop*(1-REA_LIMITS.fee)),0);
  const pendingRisk=s.orders.filter(o=>active(o)&&o.side==='BUY').reduce((a,o)=>a+o.remaining*o.riskFraction,0);
  const dailyRoom=Math.max(0,Math.min(300,s.dayStart*.03)+s.dayPnl-heldRisk-pendingRisk);
- const budget=Math.min(risk,dailyRoom),fraction=stopDistance+REA_LIMITS.fee*2+REA_LIMITS.slippage;
+ const budget=down(Math.min(risk,dailyRoom)),fraction=stopDistance+REA_LIMITS.fee*2+REA_LIMITS.slippage;
  const exposure=s.positions.reduce((a,p)=>a+p.cost,0)+s.orders.filter(o=>active(o)&&o.side==='BUY').reduce((a,o)=>a+o.reserved,0);
  // At most ten partial fills, reserving a satang for rounding on every fill.
  const netCash=s.cash-reservedCash(s),n=down(Math.min((budget-.10)/fraction,(4000-.10)/(1+REA_LIMITS.fee),(8000-exposure-.10)/(1+REA_LIMITS.fee),(netCash-.10)/(1+REA_LIMITS.fee)));

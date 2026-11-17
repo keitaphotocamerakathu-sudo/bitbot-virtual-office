@@ -47,13 +47,13 @@ language sql security invoker set search_path='' as $$
 $$;
 create function public.rea_live_ready(p_uid uuid) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare a rea.live_accounts%rowtype;e jsonb;c jsonb='[]';n text;x rea.live_checks%rowtype;reviewed boolean;begin
+declare a rea.live_accounts%rowtype;e jsonb;c jsonb='[]';n text;x rea.live_checks%rowtype;reviewed boolean;lc jsonb;begin
  select * into a from rea.live_accounts where user_id=p_uid;
  if not found then return jsonb_build_object('ready',false,'checks','[]'::jsonb,'reason','LIVE_ACCOUNT_NOT_PREPARED');end if;
  e=public.rea_view(p_uid)->'paperEvidence';
  c=c||jsonb_build_array(jsonb_build_object('name','PAPER_7_DAYS','passed',coalesce((e->>'minimum7DaysElapsed')::boolean,false) and coalesce((e->>'samples')::integer,0)>=9500 and coalesce((e->>'maximumGapMs')::bigint,999999999)<=180000,'evidence',e));
  c=c||jsonb_build_array(jsonb_build_object('name','PRIVATE_API_AND_WALLET','passed',coalesce((a.preflight->>'ok')::boolean,false) and coalesce((a.preflight->>'at')::bigint,0)>extract(epoch from now()-interval '120 seconds')*1000,'reason',a.preflight->>'reason'));
- c=c||jsonb_build_array(jsonb_build_object('name','REAL_THB_AVAILABLE','passed',coalesce((a.preflight->'wallet'->'THB'->>'available')::numeric>=100,false),'evidence',jsonb_build_object('minimum',100,'available',a.preflight->'wallet'->'THB'->'available')));
+ c=c||jsonb_build_array(jsonb_build_object('name','REAL_THB_AVAILABLE','passed',coalesce((a.preflight->'wallet'->'THB'->>'available')::numeric>=10,false),'evidence',jsonb_build_object('minimum',10,'available',a.preflight->'wallet'->'THB'->'available')));
  c=c||jsonb_build_array(jsonb_build_object('name','LEGACY_EXECUTOR_STOPPED','passed',not exists(select 1 from public.bitbot_v10_bots where user_id=p_uid and running) and not exists(select 1 from public.bitbot_v10_orders where user_id=p_uid and not settled)));
  c=c||jsonb_build_array(jsonb_build_object('name','INDEPENDENT_LIVE_WATCHDOG','passed',exists(select 1 from rea.live_heartbeats where user_id=p_uid and lane='risk' and status in('OK','IDLE') and at_ms>extract(epoch from now()-interval '180 seconds')*1000)));
  foreach n in array array['EXECUTION_TESTS','RECOVERY_TESTS','RECONCILIATION_REVIEW','SECURITY_REVIEW','NO_WITHDRAW_SCOPE','OWNER_ALERT_DELIVERY'] loop
@@ -62,7 +62,11 @@ declare a rea.live_accounts%rowtype;e jsonb;c jsonb='[]';n text;x rea.live_check
   if n in('NO_WITHDRAW_SCOPE','RECONCILIATION_REVIEW') then reviewed=reviewed and a.preflight ? 'keyFingerprint' and x.evidence->>'keyFingerprint'=a.preflight->>'keyFingerprint';end if;
   c=c||jsonb_build_array(jsonb_build_object('name',n,'passed',coalesce(reviewed,false),'evidence',coalesce(x.evidence,'{}')));
  end loop;
- return jsonb_build_object('ready',not exists(select 1 from jsonb_array_elements(c)v where not coalesce((v->>'passed')::boolean,false)),'checks',c,'spec','REA-LIVE-19.0');
+ select coalesce(jsonb_agg(v),'[]') into lc from jsonb_array_elements(c)v where v->>'name' in('PRIVATE_API_AND_WALLET','REAL_THB_AVAILABLE','LEGACY_EXECUTOR_STOPPED','INDEPENDENT_LIVE_WATCHDOG','EXECUTION_TESTS','RECOVERY_TESTS');
+ select * into x from rea.live_checks where user_id=p_uid and check_name='LIMITED_CAPITAL_TESTS';
+ lc=lc||jsonb_build_array(jsonb_build_object('name','LIMITED_CAPITAL_TESTS','passed',coalesce(x.passed and x.spec='REA-LIMITED-19.1' and (x.expires_at is null or x.expires_at>now()),false),'evidence',coalesce(x.evidence,'{}')));
+ return jsonb_build_object('ready',not exists(select 1 from jsonb_array_elements(c)v where not coalesce((v->>'passed')::boolean,false)),'checks',c,'spec','REA-LIVE-19.0',
+ 'limited',jsonb_build_object('ready',not exists(select 1 from jsonb_array_elements(lc)v where not coalesce((v->>'passed')::boolean,false)),'checks',lc,'spec','REA-LIMITED-19.1','policy','OWNER_LIMITED_LIVE','maxCapital',100,'minimumCapital',10,'requiresOwnerAcknowledgement',true));
 end$$;
 create function public.rea_live_view(p_uid uuid) returns jsonb
 language sql security invoker set search_path='' as $$
@@ -70,7 +74,7 @@ language sql security invoker set search_path='' as $$
  'orders',(select coalesce(jsonb_agg(x order by created_at desc),'[]') from(select client_order_id,client_id,exchange_id,status,payload,created_at from rea.live_orders where user_id=p_uid order by created_at desc limit 100)x),
  'fills',(select coalesce(jsonb_agg(x order by created_at desc),'[]') from(select txn_id,payload,created_at from rea.live_fills where user_id=p_uid order by created_at desc limit 100)x),
  'curve',(select coalesce(jsonb_agg(x order by at_ms),'[]') from(select at_ms,equity,day,pnl from rea.live_equity where user_id=p_uid order by at_ms desc limit 1440)x),
- 'approval',case when approval is null then null else jsonb_build_object('at',approval->'at','spec',approval->'spec','capital',approval->'capital') end)
+ 'approval',case when approval is null then null else jsonb_build_object('at',approval->'at','spec',approval->'spec','capital',approval->'capital','policy',approval->'policy') end)
  from rea.live_accounts where user_id=p_uid;
 $$;
 create function public.rea_live_claim(p_lane text,p_uid uuid default null) returns setof rea.live_accounts
@@ -106,7 +110,8 @@ declare a rea.live_accounts%rowtype;o jsonb;f jsonb;slots integer;begin
  select * into a from rea.live_accounts where user_id=p_uid for update;
  if not found or a.lease is distinct from p_lease or a.lease_until<now() or a.revision<>p_revision then return null;end if;
  if p_state is not null then
-  if p_state->>'mode' is distinct from 'LIVE' or p_state->>'accounting' is distinct from 'EXCHANGE_RECEIPTS' or not coalesce((p_state->>'cash')::numeric>=-.02,false) or not coalesce((p_state->>'allocatedCapital')::numeric between 100 and 10000,false) then raise exception 'INVALID_EXCHANGE_LEDGER';end if;
+  if p_state->>'mode' is distinct from 'LIVE' or p_state->>'accounting' is distinct from 'EXCHANGE_RECEIPTS' or not coalesce((p_state->>'cash')::numeric>=-.02,false) or not coalesce((p_state->>'allocatedCapital')::numeric between 10 and 10000,false) then raise exception 'INVALID_EXCHANGE_LEDGER';end if;
+  if a.approval is not null and (coalesce(p_state->>'policy','STANDARD') is distinct from coalesce(a.approval->>'policy','STANDARD') or p_state->'allocatedCapital' is distinct from coalesce(a.approval->'capital',a.state->'allocatedCapital')) then raise exception 'LIVE_APPROVED_ALLOCATION_IMMUTABLE';end if;
   if p_lane='risk' and exists(select 1 from jsonb_array_elements(p_state->'orders')v where v->>'side'='BUY' and not exists(select 1 from jsonb_array_elements(a.state->'orders')old where old->>'id'=v->>'id')) then raise exception 'LIVE_WATCHDOG_CANNOT_OPEN_BUY';end if;
   select count(distinct symbol) into slots from(
    select value->>'symbol' symbol from jsonb_array_elements(p_state->'positions')
@@ -136,16 +141,20 @@ language plpgsql security invoker set search_path='' as $$begin
 end$$;
 create function public.rea_live_control(p_uid uuid,p_action text,p_confirm text default '',p_state jsonb default null) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare a rea.live_accounts%rowtype;r jsonb;begin
+declare a rea.live_accounts%rowtype;r jsonb;limited boolean;cap numeric;begin
  select * into a from rea.live_accounts where user_id=p_uid for update;
  if not found then raise exception 'LIVE_ACCOUNT_NOT_PREPARED';end if;
  if p_action='activate' then
   if p_confirm<>'เปิดซื้อขายจริง Bitkub' then raise exception 'OWNER_CONFIRMATION_REQUIRED';end if;
   r=public.rea_live_ready(p_uid);
-  if not (r->>'ready')::boolean then return jsonb_build_object('activated',false,'readiness',r);end if;
-  if a.state is not null or p_state is null or p_state->>'mode' is distinct from 'LIVE' or p_state->>'accounting' is distinct from 'EXCHANGE_RECEIPTS' or not coalesce((p_state->>'cash')::numeric between 100 and least(10000,(a.preflight->'wallet'->'THB'->>'available')::numeric),false) or jsonb_array_length(p_state->'positions')<>0 or jsonb_array_length(p_state->'orders')<>0 then raise exception 'INVALID_INITIAL_LIVE_STATE';end if;
+  limited=coalesce(p_state->>'policy','STANDARD')='OWNER_LIMITED_LIVE';
+  if coalesce(p_state->>'policy','STANDARD') not in('STANDARD','OWNER_LIMITED_LIVE') then raise exception 'INVALID_LIVE_POLICY';end if;
+  if not coalesce(case when limited then (r->'limited'->>'ready')::boolean else (r->>'ready')::boolean end,false) then return jsonb_build_object('activated',false,'readiness',r);end if;
+  cap=case when limited then 100 else 10000 end;
+  if limited and (p_state->'ownerAcknowledgement'->>'acceptIncomplete' is distinct from 'true' or p_state->'ownerAcknowledgement'->>'noWithdraw' is distinct from 'true' or p_state->'ownerAcknowledgement'->>'acceptRisk' is distinct from 'true') then raise exception 'LIMITED_OWNER_ACKNOWLEDGEMENT_REQUIRED';end if;
+  if a.state is not null or p_state is null or p_state->>'mode' is distinct from 'LIVE' or p_state->>'accounting' is distinct from 'EXCHANGE_RECEIPTS' or not coalesce((p_state->>'cash')::numeric between 10 and least(cap,(a.preflight->'wallet'->'THB'->>'available')::numeric),false) or p_state->'allocatedCapital' is distinct from p_state->'cash' or jsonb_array_length(p_state->'positions')<>0 or jsonb_array_length(p_state->'orders')<>0 then raise exception 'INVALID_INITIAL_LIVE_STATE';end if;
   a.state=p_state;a.mode='LIVE_ENABLED';
-  a.approval=jsonb_build_object('at',now(),'spec','REA-LIVE-19.0','capital',p_state->'allocatedCapital','keyFingerprint',a.preflight->'keyFingerprint','owner',p_uid);
+  a.approval=jsonb_build_object('at',now(),'spec','REA-LIVE-19.0','capital',p_state->'allocatedCapital','policy',coalesce(p_state->>'policy','STANDARD'),'launchSpec',case when limited then 'REA-LIMITED-19.1' else 'REA-LIVE-19.0' end,'ownerAcknowledgement',p_state->'ownerAcknowledgement','keyFingerprint',a.preflight->'keyFingerprint','owner',p_uid);
  elsif p_action='pause' then a.state=jsonb_set(a.state,'{buyPaused}','true');
  elsif p_action='resume' then a.state=jsonb_set(a.state,'{buyPaused}','false');if a.state->>'kill'='ENTRY' then a.state=jsonb_set(a.state,'{kill}','"NONE"');end if;
  elsif p_action='stop-entry' then a.state=jsonb_set(a.state,'{kill}',to_jsonb(case when a.state->>'kill'='ALL' then 'ALL' else 'ENTRY' end));
@@ -160,7 +169,7 @@ declare a rea.live_accounts%rowtype;r jsonb;begin
 end$$;
 create function public.rea_live_dispatch(p_uid uuid,p_lease uuid,p_revision bigint,p_order uuid,p_action text,p_body jsonb,p_path text) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare a rea.live_accounts%rowtype;o jsonb;expected jsonb;wire_path text;idx integer;r jsonb;exposure numeric;begin
+declare a rea.live_accounts%rowtype;o jsonb;expected jsonb;wire_path text;idx integer;r jsonb;exposure numeric;symbol_exposure numeric;limited boolean;cap numeric;position_cap numeric;exposure_cap numeric;risk_cap numeric;begin
  select * into a from rea.live_accounts where user_id=p_uid for update;
  if not found or a.lease is distinct from p_lease or a.lease_until<now() or a.revision<>p_revision or a.state is null or a.state->>'kill'='ALL' then return jsonb_build_object('allowed',false,'reason','LIVE_EXECUTOR_OR_CONTROL_CHANGED');end if;
  if a.cooldown_until>now() then return jsonb_build_object('allowed',false,'reason','EXCHANGE_RATE_LIMIT_COOLDOWN');end if;
@@ -174,12 +183,27 @@ declare a rea.live_accounts%rowtype;o jsonb;expected jsonb;wire_path text;idx in
   if expected is distinct from p_body or not coalesce((o->>'amount')::numeric>0,false) or not coalesce((o->>'quoteAt')::bigint between extract(epoch from now()-interval '25 seconds')*1000 and extract(epoch from now()+interval '5 seconds')*1000,false) or not coalesce((a.preflight->>'at')::bigint between extract(epoch from now()-interval '20 seconds')*1000 and extract(epoch from now()+interval '5 seconds')*1000,false) or not coalesce((a.preflight->>'ok')::boolean,false) then return jsonb_build_object('allowed',false,'reason','STALE_OR_CHANGED_ORDER');end if;
   if o->>'side'='BUY' then
    r=public.rea_live_ready(p_uid);
-   if not(r->>'ready')::boolean or a.state->>'kill' is distinct from 'NONE' or coalesce((a.state->>'buyPaused')::boolean,true) or coalesce((a.state->>'dailyLocked')::boolean,true) or coalesce((a.state->>'baselinePending')::boolean,true) or a.latest->>'health' is distinct from 'OK' then return jsonb_build_object('allowed',false,'reason','LIVE_RISK_LOCK');end if;
-   if o->>'type' is distinct from 'limit' or not coalesce((o->>'amount')::numeric between 0.01 and 4000,false) or not coalesce((o->>'modeledLoss')::numeric between 0.01 and least(100,(a.state->>'dayStart')::numeric*.01,(a.state->>'equity')::numeric*.01),false) then raise exception 'LIVE_RISK_BUDGET_EXCEEDED';end if;
+   limited=coalesce(a.approval->>'policy','STANDARD')='OWNER_LIMITED_LIVE';
+   if coalesce(a.state->>'policy','STANDARD') is distinct from coalesce(a.approval->>'policy','STANDARD') then raise exception 'LIVE_POLICY_MISMATCH';end if;
+   if limited and (a.approval->>'launchSpec' is distinct from 'REA-LIMITED-19.1' or a.approval->'ownerAcknowledgement'->>'acceptIncomplete' is distinct from 'true') then raise exception 'LIMITED_LIVE_NOT_APPROVED';end if;
+   cap=(a.state->>'allocatedCapital')::numeric;
+   if a.approval ? 'capital' and a.state->'allocatedCapital' is distinct from a.approval->'capital' then raise exception 'LIVE_APPROVED_ALLOCATION_IMMUTABLE';end if;
+   if limited and not(cap between 10 and 100) then raise exception 'LIMITED_LIVE_CAP_EXCEEDED';end if;
+   position_cap=case when limited then floor(cap*.4*100)/100 else 4000 end;
+   exposure_cap=case when limited then floor(cap*.8*100)/100 else 8000 end;
+   risk_cap=floor(least(100,(a.state->>'dayStart')::numeric*.01,(a.state->>'equity')::numeric*.01,case when limited then cap*.01 else 100 end)*100)/100;
+   if not coalesce(case when limited then (r->'limited'->>'ready')::boolean else (r->>'ready')::boolean end,false) or a.state->>'kill' is distinct from 'NONE' or coalesce((a.state->>'buyPaused')::boolean,true) or coalesce((a.state->>'dailyLocked')::boolean,true) or coalesce((a.state->>'baselinePending')::boolean,true) or a.latest->>'health' is distinct from 'OK' then return jsonb_build_object('allowed',false,'reason','LIVE_RISK_LOCK');end if;
+   if o->>'type' is distinct from 'limit' or not coalesce((o->>'amount')::numeric between 0.01 and position_cap,false) or not coalesce((o->>'modeledLoss')::numeric between 0.01 and risk_cap,false) then raise exception 'LIVE_RISK_BUDGET_EXCEEDED';end if;
    select coalesce(sum(v),0) into exposure from(
     select (value->>'cost')::numeric v from jsonb_array_elements(a.state->'positions')
     union all select greatest(0,(value->>'amount')::numeric-coalesce((value->>'executed')::numeric,0)) from jsonb_array_elements(a.state->'orders') where value->>'side'='BUY' and value->>'status' in('RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'))q;
-   if exposure>8000 then raise exception 'LIVE_EXPOSURE_EXCEEDED';end if;
+   if exposure>exposure_cap then raise exception 'LIVE_EXPOSURE_EXCEEDED';end if;
+   if limited then
+    select coalesce(sum(v),0) into symbol_exposure from(
+     select (value->>'cost')::numeric v from jsonb_array_elements(a.state->'positions') where value->>'symbol'=o->>'symbol'
+     union all select greatest(0,(value->>'amount')::numeric-coalesce((value->>'executed')::numeric,0)) from jsonb_array_elements(a.state->'orders') where value->>'symbol'=o->>'symbol' and value->>'side'='BUY' and value->>'status' in('RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'))q;
+    if symbol_exposure>position_cap then raise exception 'LIMITED_POSITION_CAP_EXCEEDED';end if;
+   end if;
   elsif o->>'side'='SELL' then
    if not exists(select 1 from jsonb_array_elements(a.state->'positions')p where p->>'symbol'=o->>'symbol' and (p->>'qty')::numeric>=(o->>'amount')::numeric) then raise exception 'LIVE_OVERSELL';end if;
   else raise exception 'INVALID_ORDER_SIDE';end if;
