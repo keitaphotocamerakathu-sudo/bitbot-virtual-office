@@ -65,7 +65,7 @@ function liveActivationState(){
  const available=Number(liveCurrent?.preflight?.wallet?.THB?.available),budget=Number($('reaLiveBudget').value),typed=$('reaLiveConfirm').value==='เปิดซื้อขายจริง Bitkub';
  const accepted=$('reaLiveAccept').checked&&$('reaLiveNoWithdraw').checked&&(!limited||$('reaLiveIncomplete').checked),ready=proof?.ready===true&&!liveCurrent?.state;
  $('reaLiveBudget').max=String(cap);$('reaLiveIncompleteLabel').hidden=!limited;$('reaLiveActivate').disabled=liveSubmitting||!ready||!typed||!accepted||!Number.isFinite(budget)||budget<10||budget>cap||!Number.isFinite(available)||budget>available;
- $('reaLiveActivationPanel').hidden=!!liveCurrent?.state;
+ $('reaLiveActivationPanel').hidden=!!liveCurrent?.state||!session;
  const failed=proof?.checks?.filter(x=>!x.passed)||[];text('reaLiveActivationNote',liveCurrent?.state?'พอร์ต Live จัดสรรทุนแล้ว ใช้ปุ่มควบคุมด้านบน':ready?(limited?'เปิดเงินจริงวงเงินจำกัดได้เมื่อเจ้าของยืนยัน ผลตรวจรับเต็มยังไม่ครบ':'ตรวจรับเต็มผ่านแล้ว รอเจ้าของยืนยันวงเงิน'):failed.length?'ยังเปิดไม่ได้: '+failed.map(x=>liveCheckNames[x.name]||x.name).join(' · '):'รอผลตรวจจาก Server');
  const floor=n=>Math.floor((n+1e-9)*100)/100;text('reaLiveBudgetHint',Number.isFinite(budget)&&budget>=10?'ใช้เงินจริง '+baht(budget)+' · เสี่ยงตามแบบจำลองไม่เกิน '+baht(floor(Math.min(100,budget*.01)))+' ต่อรายการ · หยุดซื้อเมื่อขาดทุนรายวัน '+baht(floor(Math.min(300,budget*.03)))+(limited?' · ต่อเหรียญไม่เกิน '+baht(floor(budget*.4))+' · รวมไม่เกิน '+baht(floor(budget*.8)):'')+' · ราคากระโดดอาจทำให้ขาดทุนเกินแบบจำลอง':'ระบุวงเงินอย่างน้อย 10 บาท และไม่เกินเงินบาทที่ใช้ได้');
  for(const [id,checks] of [['reaLiveLimitedChecks',liveCurrent?.readiness?.limited?.checks],['reaLiveChecks',liveCurrent?.readiness?.checks]]){
@@ -76,7 +76,7 @@ function renderLive(data){
  liveCurrent=data;const now=Date.now(),s=data?.state,pf=data?.preflight||{},l=data?.latest||{},a=l.summary||{},vm=portfolioView({live:data,now});
  if(keyReceipt&&Number.isFinite(pf.at)&&pf.at>=keyReceipt.at)keyReceipt=null;
  const receipt=keyReceipt&&now-keyReceipt.at<90000?keyReceipt:null,w=receipt?.wallet?.THB||pf.wallet?.THB,status=liveStatus(data,now);
- text('reaLiveHeadline',liveLoadError?'อ่านข้อมูลหน้าเว็บไม่สำเร็จ':status.label);$('reaLiveHeadline').dataset.tone=liveLoadError?'bad':status.tone;
+ text('reaLiveHeadline',!session?'เข้าสู่ระบบเพื่อดูบอท':liveLoadError?'อ่านข้อมูลหน้าเว็บไม่สำเร็จ':status.label);$('reaLiveHeadline').dataset.tone=!session?'waiting':liveLoadError?'bad':status.tone;
  text('reaLiveMode',s?.kill==='ALL'?'EMERGENCY_STOP':s?.dailyLocked?'DAILY_LOSS_LOCK':data?.mode||'รอเข้าสู่ระบบ');text('reaSidebarStatus',status.label);
  text('reaLiveStatus',liveLoadError||(!session?'กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม':receipt?'บันทึก Key และอ่าน Wallet สำเร็จ กำลังรอ Backend ตรวจรอบถัดไป':liveReason(status.description)));
  text('reaConnectionStatus','API · '+(receipt?'บันทึกแล้ว รอ Backend':pf.ok===true&&fresh(pf.at??l.at,now,120000)?'เชื่อมต่อแล้ว':pf.ok===false?'ตรวจการเชื่อมต่อ':'รอข้อมูล'));
@@ -85,7 +85,7 @@ function renderLive(data){
  text('reaLiveWallet',w?baht(w.available):'—');text('reaLiveReserved',w?'Bitkub จองไว้ '+baht(w.reserved):'ยังอ่าน Wallet ไม่สำเร็จ');
  text('reaLiveEquity',s?baht(s.equity):'—');text('reaLiveCapital',s?'จัดสรรให้บอท '+baht(s.allocatedCapital)+(s.policy==='OWNER_LIMITED_LIVE'?' · วงเงินจำกัด':''):'ยังไม่ได้จัดสรรทุนให้บอท');
  text('reaLivePnl',s?baht(s.dayPnl):'—');$('reaLivePnl').classList.toggle('negative',s?.dayPnl<0);text('reaLivePnlDetail',s?'ปิดแล้ว '+baht(a.realized??s.realized)+' · ยังถือ '+baht(a.unrealized):'ยังไม่มีพอร์ต Live');
- text('reaLiveSlots',s?(a.slots??new Set(s.positions.map(p=>p.symbol)).size)+' / 2':'— / 2');text('reaLiveRiskBudget',s?'เสี่ยงต่อรายการ '+baht(a.riskBudget)+' · ขาดทุนรายวัน '+baht(a.dailyLossLimit):'ยังไม่ใช้วงเงิน');text('reaLiveHeartbeat','Backend ล่าสุด '+time(l.at)+(vm.stale?' · ข้อมูลเก่า':''));
+ text('reaLiveSlots',s?(a.slots??new Set(s.positions.map(p=>p.symbol)).size)+' / 2':'— / 2');text('reaLiveRiskBudget',s?'เสี่ยงต่อรายการ '+baht(a.riskBudget)+' · ขาดทุนรายวัน '+baht(a.dailyLossLimit):'ยังไม่ใช้วงเงิน');text('reaLiveHeartbeat',!session?'เข้าสู่ระบบเพื่อดูเวลาทำงานล่าสุด':'Backend ล่าสุด '+time(l.at)+(vm.stale?' · ข้อมูลเก่า':''));$('reaLiveControlsPanel').hidden=!s;
  if(!liveBudgetEdited&&w)$('reaLiveBudget').value=String(s?.allocatedCapital??Math.floor(Math.min(w.available,livePolicy()==='OWNER_LIMITED_LIVE'?100:10000)*100)/100);
  rows('reaLivePositions',vm.positions,[p=>p.symbol,p=>number(p.qty,8),p=>price(p.entry),p=>baht(p.cost),p=>price(p.current),p=>p.unrealized===null?'รอราคาสด':baht(p.unrealized),p=>price(p.stop)+' / '+price(p.target)],s?'ยังไม่มีเหรียญที่บอทถืออยู่':'ยังไม่เปิดพอร์ต Live');
  rows('reaLiveOrders',data?.orders||[],[o=>o.client_id,o=>o.exchange_id||'ยังไม่มีการตอบรับ',o=>o.payload.symbol+' / '+o.payload.side,o=>o.status,o=>number(o.payload.amount,8)+' / '+number(o.payload.limit,6)]);
@@ -110,7 +110,7 @@ function daily(vm){
 }
 function renderShared(){
  const vm=portfolioView({live:liveCurrent,paper:current,scope}),s=vm.state,l=vm.latest,a=vm.summary,label=scope==='LIVE'?'เงินจริง':'Paper';
- $('reaDataScope').value=scope;text('reaScopeNote',(scope==='LIVE'?'จากผลจับคู่จริง':'เงินจำลอง')+' · '+(vm.stale?'ข้อมูลเก่า · ':'อัปเดต ')+time(l.at));$('reaPaperSafety').hidden=scope!=='PAPER';
+ $('reaDataScope').value=scope;text('reaScopeNote',!session?'ยังไม่ได้อ่านข้อมูลบัญชี':(scope==='LIVE'?'จากผลจับคู่จริง':'เงินจำลอง')+' · '+(vm.stale?'ข้อมูลเก่า · ':'อัปเดต ')+time(l.at));$('reaPaperSafety').hidden=scope!=='PAPER';
  text('reaUniverse','ข้อมูล '+label+' · วิเคราะห์ '+vm.decisions.length+' คู่');
  rows('reaScanner',vm.decisions,[r=>r.symbol,r=>number(r.score),r=>r.strategy||'รอสัญญาณ',r=>age(r.priceAt),r=>explainReason(r.reason)],scope==='LIVE'?'รอผลสแกนของพอร์ตเงินจริงจาก Backend':'รอผลสแกน Paper');
  text('reaPositionsTitle','สถานะที่ถือ · '+label);text('reaOrdersTitle','ประวัติคำสั่ง · '+label);text('reaFillTitle','รายการจับคู่ · '+label);text('reaCurveTitle','มูลค่าพอร์ตตามเวลา · '+label);
