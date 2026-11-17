@@ -1,0 +1,184 @@
+{
+  "status": "RESEARCH_ONLY",
+  "version": "12.0.0",
+  "generatedAt": "2026-11-17T02:01:19.618Z",
+  "from": "2026-10-28",
+  "to": "2026-11-17",
+  "symbols": [
+    "BTC_THB",
+    "ETH_THB",
+    "XRP_THB",
+    "ADA_THB",
+    "SOL_THB",
+    "KUB_THB"
+  ],
+  "capitalPerFold": 10000,
+  "totalNet": -48.57704377710497,
+  "folds": [
+    {
+      "from": "2026-11-11",
+      "to": "2026-11-13",
+      "trainFrom": "2026-10-28",
+      "trainTo": "2026-11-11",
+      "maxHoldMinutes": 120,
+      "trainNet": -45.68415312789594,
+      "training": [
+        {
+          "maxHoldMinutes": 60,
+          "net": -51.45678705188506
+        },
+        {
+          "maxHoldMinutes": 30,
+          "net": -48.27845620727266
+        },
+        {
+          "maxHoldMinutes": 120,
+          "net": -45.68415312789594
+        }
+      ],
+      "status": "QUALIFIED",
+      "coverage": 0.9565972222222222,
+      "net": -13.175082060581246,
+      "realized": -13.175082060581246,
+      "unrealized": 0,
+      "fees": 7.5,
+      "rounds": 3,
+      "profitableDays": 0,
+      "days": 3,
+      "intervalDays": 2,
+      "maxDrawdown": 0.0013175082060582488,
+      "openPosition": null,
+      "validSteps": 551,
+      "skippedSteps": 25
+    },
+    {
+      "from": "2026-11-13",
+      "to": "2026-11-15",
+      "trainFrom": "2026-10-30",
+      "trainTo": "2026-11-13",
+      "maxHoldMinutes": 120,
+      "trainNet": -48.94625199632125,
+      "training": [
+        {
+          "maxHoldMinutes": 60,
+          "net": -57.49102639164172
+        },
+        {
+          "maxHoldMinutes": 30,
+          "net": -53.37326689072717
+        },
+        {
+          "maxHoldMinutes": 120,
+          "net": -48.94625199632125
+        }
+      ],
+      "status": "QUALIFIED",
+      "coverage": 1,
+      "net": -17.078783123546145,
+      "realized": -17.078783123546145,
+      "unrealized": 0,
+      "fees": 9.99,
+      "rounds": 4,
+      "profitableDays": 0,
+      "days": 3,
+      "intervalDays": 2,
+      "maxDrawdown": 0.0017078783123546382,
+      "openPosition": null,
+      "validSteps": 576,
+      "skippedSteps": 0
+    },
+    {
+      "from": "2026-11-15",
+      "to": "2026-11-17",
+      "trainFrom": "2026-11-01",
+      "trainTo": "2026-11-15",
+      "maxHoldMinutes": 30,
+      "trainNet": -72.37434096530569,
+      "training": [
+        {
+          "maxHoldMinutes": 60,
+          "net": -78.00716834947792
+        },
+        {
+          "maxHoldMinutes": 30,
+          "net": -72.37434096530569
+        },
+        {
+          "maxHoldMinutes": 120,
+          "net": -78.00716834947792
+        }
+      ],
+      "status": "QUALIFIED",
+      "coverage": 1,
+      "net": -18.323178592977577,
+      "realized": -18.323178592977577,
+      "unrealized": 0,
+      "fees": 9.99,
+      "rounds": 4,
+      "profitableDays": 0,
+      "days": 3,
+      "intervalDays": 2,
+      "maxDrawdown": 0.00242690651386146,
+      "openPosition": null,
+      "validSteps": 576,
+      "skippedSteps": 0
+    }
+  ],
+  "dataDigest": "13c88b8ba1ccffa683da148fa2dc34ef5f2bafa25cc80c79f81133341bb0ab4e",
+  "coverage": {
+    "BTC_THB": {
+      "bars": 5745,
+      "expected": 5760,
+      "coverage": 0.9973958333333334
+    },
+    "ETH_THB": {
+      "bars": 5432,
+      "expected": 5760,
+      "coverage": 0.9430555555555555
+    },
+    "XRP_THB": {
+      "bars": 5508,
+      "expected": 5760,
+      "coverage": 0.95625
+    },
+    "ADA_THB": {
+      "bars": 3956,
+      "expected": 5760,
+      "coverage": 0.6868055555555556
+    },
+    "SOL_THB": {
+      "bars": 4920,
+      "expected": 5760,
+      "coverage": 0.8541666666666666
+    },
+    "KUB_THB": {
+      "bars": 3806,
+      "expected": 5760,
+      "coverage": 0.6607638888888889
+    }
+  },
+  "source": "https://api.bitkub.com/tradingview/history",
+  "assumptions": {
+    "feePerSide": 0.0025,
+    "spread": 0.001,
+    "slippagePerSide": 0.0005,
+    "fill": "Next five-minute open after closed-candle signal; immediate fill proxy",
+    "depth": "Simulated ample depth; no historical book",
+    "news": "Neutral bypass; historical news unavailable",
+    "rules": "Current symbol rules, not point-in-time historical rules",
+    "universe": "Six coins fixed before the run; excludes delisted assets; not full dynamic universe",
+    "evaluation": "Three consecutive two-day holdouts, each after 14-day training; choose holding time only on training",
+    "dailyTimezone": "Asia/Bangkok",
+    "boundary": "UTC fold boundaries; realized-day counts use Bangkok dates",
+    "net": "Includes estimated exit fee for any open position at fold end; no fabricated forced trade"
+  },
+  "limitations": [
+    "Missing candles are never fabricated: assets with gaps in the last two hours are excluded at that step; any held missing quote pauses the step. At least 75% of each simulation interval must remain usable.",
+    "No queue position or partial fills; immediate simulated executions may overestimate fill availability",
+    "Five-minute stop checks may miss intra-candle adverse moves; live engine checks each minute",
+    "Six-asset survivor universe, current rules and synthetic depth do not validate the full production system",
+    "Holdout results are never used to retune parameters or to activate live trading"
+  ],
+  "sourceCommit": "846a61cc85b46fddfe743e2ec8c121991aba5c31",
+  "verificationRun": "https://github.com/keitaphotocamerakathu-sudo/bitbot-virtual-office/actions/runs/43999820144"
+}
