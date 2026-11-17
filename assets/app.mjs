@@ -1,4 +1,4 @@
-import {attachCompanyUI} from './company-ui.mjs?v=14.1.0';
+import {attachCompanyUI} from './company-ui.mjs?v=14.2.0';
 import {performance,dayKey} from './intraday.mjs?v=13.0.0';
 import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=13.0.0';
 const $=id=>document.getElementById(id);

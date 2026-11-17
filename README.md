@@ -1,4 +1,4 @@
-# BITBOT 14.1 — AI Trading Company
+# BITBOT 14.2 — AI Trading Company
 เว็บ: https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/
 
 ## การทำงานใหม่
@@ -112,3 +112,12 @@ The 14-day/20-round progress display uses actual continuous paper records, and s
 ## Owner live consent v14.1
 
 At the owner's explicit request, incomplete historical/forward research can now be acknowledged in the existing real-start dialog. A server-stored, configuration-bound session consent permits new buys through the company and final buy gates while retaining all signal, wallet, market, daily, loss, reservation and reconciliation checks. Research continues to display its actual failed/pending result. The upgrade starts no account and does not change capital or keys. See [owner live consent](docs/OWNER_LIVE_CONSENT.md) for scope and deployment.
+
+
+## Animated office v14.2 (presentation only)
+
+The office now runs an autonomous visual scene: ten furnished departments, glass partitions, shared meeting table, coffee bar and lounge. Characters follow collision-aware tile paths, visit each other, carry reports, take turns speaking from archived task summaries and return to their desks. New completed job archives are picked up automatically; repeated playback is labeled with the original source time. Ambient walks are explicitly cosmetic, and a guest scene is explicitly a demo. No LLM conversation is invented.
+
+The same page now shows the real bot heartbeat, scan decision and HOLD/error reason independently from the animation. It provides camera pan/zoom, fit/follow, speed, pause and optional browser Thai voice. Pausing or replaying the scene cannot start, stop or send an order. The scene sleeps when hidden and is capped around 30 FPS. This release changes no Edge Function, research gate, account flags, risk settings or trade state.
+
+Validation adds path reachability/obstacle tests and browser checks for automatic movement, actual-record dialogue, identical frames while paused, mobile controls and absence of trading actions from scene controls.
