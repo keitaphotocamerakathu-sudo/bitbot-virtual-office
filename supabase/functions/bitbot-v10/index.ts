@@ -200,7 +200,7 @@ async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
  if(req.method==='GET'&&a==='health')return{version:'11.0.0',serverTime:Date.now(),engine:'6 agents / multi-asset / news / wallet sizing',liveEnabled:LIVE};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
- if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');if(hold&&!validSymbol(hold))fail('คู่เหรียญไม่ถูกต้อง');return{scan:await markets.scan(hold?[hold]:[])};}
+ if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');return{scan:await markets.scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
  if(a==='run'){
  if(req.method!=='POST'||!await rpc('bitbot_v10_runner_allowed',{p_token:req.headers.get('x-bitbot-runner')||''}))fail('ไม่อนุญาต',401);

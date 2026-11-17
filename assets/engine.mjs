@@ -13,6 +13,12 @@ export const floor8=v=>Math.floor((v+Number.EPSILON)*1e8)/1e8;
 export const validSymbol=s=>typeof s==='string'&&/^[A-Z0-9]{1,16}_THB$/.test(s);
 export const assetOf=s=>validSymbol(s)?s.slice(0,-4):'';
 export const heldSymbol=s=>s.qty>0?(s.symbol||'BTC_THB'):null;
+export function portfolioValue(s,markets=[]){
+ if(!(s.qty>0))return s.cash;
+ const quote=markets.find(m=>m.symbol===heldSymbol(s)&&Number.isFinite(m.bid)&&m.bid>0);
+ return quote?s.cash+s.qty*quote.bid:null;
+}
+
 export function rules(m){const r=m.rules||{};return{minQuote:Number(r.minQuote)||10,priceStep:Number(r.priceStep)||.01,priceScale:Number.isInteger(r.priceScale)?r.priceScale:2,qtyScale:Number.isInteger(r.qtyScale)?r.qtyScale:8};}
 export function roundUnit(v,scale=8){const p=10**scale;return Math.floor(v*p+1e-8)/p;}
 export function tickPrice(v,r,buy){const q=v/r.priceStep;return Number(((buy?Math.ceil(q-1e-8):Math.floor(q+1e-8))*r.priceStep).toFixed(r.priceScale));}

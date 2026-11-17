@@ -1,4 +1,4 @@
-import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing} from './engine.mjs?v=11.0.0';
+import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=11.0.0';
 import {portfolioCycle} from './selection.mjs?v=11.0.0';
 const $=id=>document.getElementById(id);
 const CFG=window.BITBOT_CLOUD_CONFIG;
@@ -154,8 +154,8 @@ function renderDecision(container,rows){
  for(const a of agents){const x=rows.find(t=>t.agent===a.id);if(!x)continue;const d=document.createElement('div');d.className='decision';d.style.setProperty('--accent',a.color);const b=document.createElement('b');b.textContent=a.name;const p=document.createElement('p');p.textContent=x.reason||'ตรวจข้อมูลแล้ว';d.append(b,p);container.append(d);}
 }
 function render(){
- const c=cfg(),s=state(),isRunning=running(),held=heldSymbol(s),positionMarket=bundle?.markets.find(x=>x.symbol===held),equity=s.cash+s.qty*(positionMarket?.bid||market?.bid||0),pnl=equity-(s.startCapital??c.budget);
- text('portfolioLabel',mode==='paper'?'จำลอง':'พอร์ตบอท');text('equity',s.qty&&!market?'รอราคาตลาด':money(equity));text('pnl',s.qty&&!market?'—':(pnl>=0?'+':'−')+money(Math.abs(pnl)));$('pnl').className=pnl<0?'negative':'green';
+ const c=cfg(),s=state(),isRunning=running(),held=heldSymbol(s),equity=portfolioValue(s,[...(bundle?.markets||[]),...(bundle?.watchlist||[])]),pnl=equity===null?null:equity-(s.startCapital??c.budget);
+ text('portfolioLabel',mode==='paper'?'จำลอง':'พอร์ตบอท');text('equity',equity===null?'รอราคาเหรียญที่ถือ':money(equity));text('pnl',pnl===null?'—':(pnl>=0?'+':'−')+money(Math.abs(pnl)));$('pnl').className=pnl<0?'negative':'green';
  text('cashHint',mode==='paper'?'ทุนจำลอง '+money(c.budget):'เงินทุนที่จัดสรร ไม่ใช่ Wallet ทั้งหมด');
  text('pnlHint',mode==='paper'?'สุทธิค่าธรรมเนียมทดลอง':'ประมาณการจากประวัติจับคู่ ไม่รวมเครดิตที่ปรับภายหลัง');
  text('qty',fmt(s.qty,s.qtyScale??8)+' '+(assetOf(held)||'เหรียญ'));text('cash',money(s.cash));text('targets',fmt(c.stopLoss*100,1)+'% / '+fmt(c.takeProfit*100,1)+'%');
@@ -214,7 +214,7 @@ function renderScanner(){
 let marketBusy=false;
 async function updateMarket(){
  if(marketBusy)return;marketBusy=true;
- try{const held=heldSymbol(state()),x=await api('scan',{query:held?{held}: {}});bundle=x.scan;
+ try{const holds=[...new Set([heldSymbol(paperState),heldSymbol(cloud?.bot?.state||{qty:0})].filter(Boolean))],x=await api('scan',{query:holds.length?{held:holds.join(',')}: {}});bundle=x.scan;
  const chosen=portfolioCycle(bundle,state(),cfg(),Date.now());market=chosen.market||bundle.markets[0];if(!market)throw Error('ไม่มีข้อมูลตลาดพร้อมแสดง');
  text('pairLabel',market.symbol.replace('_',' / '));text('officePair',market.symbol.replace('_',' / '));
  text('connection','BITKUB LIVE');$('connection').classList.remove('negative');text('price',priceFmt(market.last));text('chartPrice',priceFmt(market.last));text('officePrice',priceFmt(market.last));text('priceHint','ตรวจล่าสุด '+time(market.observedAt));
@@ -247,7 +247,7 @@ $('resetSession').onclick=()=>perform(async()=>{
  if(mode==='paper'){
  if(paperRunning)throw Error('หยุดบอทก่อนเริ่มรอบใหม่');
  if(!confirm('เริ่มทดลองรอบใหม่ด้วยทุนที่ตั้งไว้หรือไม่? สถานะเหรียญจำลองจะถูกล้าง ประวัติซื้อขายเดิมยังดูได้'))return;
- paperJournal=[...paperJournal,{at:Date.now(),trace:[{agent:'coordinator',reason:'จบรอบทดลองเดิม มูลค่าพอร์ต '+money(paperState.cash+paperState.qty*(market?.bid||0))}]}].slice(-300);
+ paperJournal=[...paperJournal,{at:Date.now(),trace:[{agent:'coordinator',reason:'จบรอบทดลองเดิม มูลค่าพอร์ต '+(portfolioValue(paperState,bundle?.watchlist||[])===null?'รอราคา':money(portfolioValue(paperState,bundle?.watchlist||[])))}]}].slice(-300);
  paperState=initial(paperConfig);checkpoint();render();notice('เริ่มรอบทดลองใหม่ได้แล้ว');
  }else{
  if(!confirm('ยืนยันว่าจัดการ BTC ที่ Bitkub แล้ว ระบบจะตรวจว่าไม่มี BTC และคำสั่งค้างก่อนจบรอบ ผลกำไรของการขายภายนอกจะไม่ถูกแต่งขึ้น'))return;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {config,initial,cycle,applyFill,sizing,executionAgent} from '../assets/engine.mjs';
+import {config,initial,cycle,applyFill,sizing,executionAgent,portfolioValue} from '../assets/engine.mjs';
 import {parseRSS,assessNews,matchesAsset,rankUniverse,portfolioCycle} from '../assets/selection.mjs';
 import {normalizeSymbols,mergeTickers,candlesFrom,shortlist} from '../supabase/functions/bitbot-v10/market.mjs';
 const NOW=1800000000000,feed={ready:true,fetchedAt:NOW,items:[],sources:[{name:'QA',ok:true}]};
@@ -30,3 +30,5 @@ test('foreign quote pairs can never enter the THB universe',()=>{const c=config(
 test('bankruptcy and hacked variants veto new buys for the named asset',()=>{const m=market('ETH_THB',.001);for(const title of ['Ethereum project bankruptcy','Ethereum protocol hacks reported','Ethereum insolvency concern'])assert.equal(assessNews(m,{...feed,items:[{title,publishedAt:NOW-1000}]},NOW).blocked,true);});
 test('shortlist rotates beyond the first twelve assets while preserving core liquidity leaders',()=>{const list=Array.from({length:30},(_,i)=>({symbol:'A'+i+'_THB',status:'active',eligible:true}));const first=shortlist(list,[],NOW),next=shortlist(list,[],NOW+60000);assert(first.slice(0,8).every((x,i)=>x.symbol===list[i].symbol));assert.notDeepEqual(first.map(x=>x.symbol),next.map(x=>x.symbol));assert.equal(first.length,12);});
 test('inconsistent tick metadata can never inflate a limit price tenfold',()=>{const m={...market('BONK_THB',1e-10),ask:.000000001,bid:.000000001,rules:{minQuote:10,priceStep:.00000001,priceScale:8,qtyScale:1}};assert.equal(executionAgent(m,initial(),{action:'BUY',notional:20}).order,null);});
+
+test('mark-to-market never substitutes BTC price for a missing altcoin quote',()=>{const s={...initial(),cash:100,qty:2,cost:1000,symbol:'ETH_THB'};assert.equal(portfolioValue(s,[market()]),null);assert.equal(portfolioValue(s,[market('ETH_THB',.001)]),100+2*2999);});
