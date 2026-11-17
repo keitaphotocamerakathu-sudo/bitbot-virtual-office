@@ -1,3 +1,5 @@
+import {createVerifiedMarketService} from '../supabase/functions/bitbot-v10/market-verified.mjs';
+import {runtimeConfig,dataUpgradeBlock} from '../supabase/functions/bitbot-v10/data-policy.mjs';
 import * as adaptive from '../assets/adaptive.mjs';
 import * as technical from '../assets/technical.mjs';
 import * as permission from '../assets/live-permission.mjs';
@@ -16,10 +18,10 @@ import * as evidence from '../assets/evidence.mjs';
 import {portfolioCycle} from '../assets/selection.mjs';
 import {createMarketService} from '../supabase/functions/bitbot-v10/market.mjs';
 const source=fs.readFileSync(new URL('../supabase/functions/bitbot-v10/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
-function harness(fetchImpl){let handler;const sandbox={...engine,...shadow,...evidence,...company,...archives,...readiness,...reporting,...permission,...adaptive,...technical,structuredClone,portfolioCycle,createMarketService,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
+function harness(fetchImpl){let handler;const sandbox={...engine,...shadow,...evidence,...company,...archives,...readiness,...reporting,...permission,...adaptive,...technical,structuredClone,portfolioCycle,createMarketService,createVerifiedMarketService,runtimeConfig,dataUpgradeBlock,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
 const ok=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
-test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.version,'16.0.0');assert.equal(x.wallet,undefined);});
-test('all private operations require a verified JWT',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});for(const a of ['state','wallet','keys','start','save','stop','tick','remove-key','shadow-toggle','observe','company','analysis','report','paper-config','paper-pause','close-positions','planning']){const r=await h.handler(new Request('https://api.test/?action='+a,{method:'POST',body:'{}'}));assert.equal(r.status,401,a);}});
+test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.version,'17.0.0');assert.equal(x.wallet,undefined);});
+test('all private operations require a verified JWT',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});for(const a of ['state','wallet','keys','start','save','stop','tick','remove-key','shadow-toggle','observe','company','analysis','report','paper-config','paper-pause','close-positions','planning','data-upgrade']){const r=await h.handler(new Request('https://api.test/?action='+a,{method:'POST',body:'{}'}));assert.equal(r.status,401,a);}});
 test('untrusted origins are blocked',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health',{headers:{Origin:'https://attacker.invalid'}}));assert.equal(r.status,403);});
 test('scheduler needs its Vault token',async()=>{const h=harness(url=>{assert(String(url).includes('bitbot_v10_runner_allowed'));return ok(false);});const r=await h.handler(new Request('https://api.test/?action=run',{method:'POST',body:'{}'}));assert.equal(r.status,401);});
 test('expired bearer tokens cannot read private data',async()=>{const h=harness(()=>new Response('{}',{status:401}));const r=await h.handler(new Request('https://api.test/?action=state',{headers:{Authorization:'Bearer expired'}}));assert.equal(r.status,401);});
@@ -65,3 +67,53 @@ test('explicit early consent validates wallet then records a config-bound start 
 test('fee-credit read signs a bodyless POST, validates balance and defaults conservatively',async()=>{const calls=[],h=harness((url,opts)=>{calls.push({url:String(url),opts});return String(url).endsWith('/servertime')?ok(1800000000000):ok({error:0,result:12.34});});const p=await h.eval("feeCredits({apiKey:'test-key',apiSecret:'test-secret'})"),req=calls.at(-1);assert.equal(p.available,12.34);assert.equal(p.ready,true);assert.equal(req.opts.body,undefined);assert.equal(req.opts.headers['X-BTK-SIGN'],createHmac('sha256','test-secret').update('1800000000000POST/api/v3/user/trading-credits').digest('hex'));for(const result of [null,'',{},-1]){const h2=harness(url=>String(url).endsWith('/servertime')?ok(1800000000000):ok({error:0,result}));assert.equal((await h2.eval("feeCredits({apiKey:'k',apiSecret:'s'})")).ready,false);}});
 test('planning endpoint only reads account-scoped data and never checkpoints or submits',async()=>{const uid='11111111-1111-4111-8111-111111111111',calls=[],c=engine.config({budget:100,maxOrder:100,dailyBuy:100,dailySell:100}),h=harness((url,opts={})=>{const path=String(url);calls.push({path,method:opts.method});if(path.includes('/auth/v1/user'))return ok({id:uid});if(path.includes('bitbot_v10_rate'))return ok(true);if(path.includes('bitbot_v10_bots')){assert(path.includes('user_id=eq.'+uid));assert.equal(opts.method,'GET');return ok([{config:c,state:engine.initial(c),running:true}]);}if(path.includes('bitbot_load_exchange_key'))return ok({apiKey:'TEST',apiSecret:'TEST'});if(path.endsWith('/servertime'))return ok(Date.now());if(path.includes('/wallet/balances'))return ok({data:[{currency:'THB',available:99.97,reserved:0}]});if(path.includes('/user/trading-credits'))return ok({error:0,result:10});throw Error('Unexpected mutation or order: '+path);});h.eval('markets.scan=async()=>({markets:[{symbol:"ETH_THB"}],watchlist:[]});markets.analysis=async()=>({frames:{}})');const r=await h.handler(new Request('https://api.test/?action=planning',{headers:{Authorization:'Bearer valid'}})),out=await r.json();assert.equal(r.status,200,JSON.stringify(out));assert.equal(out.readOnly,true);assert.equal(out.rows.length,2);assert.equal(out.credits.available,10);assert(!calls.some(x=>/place-bid|place-ask|reserve|finish|control|claim/.test(x.path)));});
 test('new planner evidence cannot inherit qualification from archived old planner',()=>{const h=harness(()=>{throw Error('no network');});const e=h.eval("liveEvidence('trend-confirmed',null,'net-v16')");assert.equal(e.allowed,false);assert(e.reasons[0].includes('v16'));});
+
+test('data upgrade requires explicit acknowledgements before reading state or changing settings',async()=>{
+ const h=harness(url=>{if(String(url).includes('/auth/v1/user'))return ok({id:'11111111-1111-4111-8111-111111111111'});if(String(url).includes('bitbot_v10_rate'))return ok(true);throw Error('Unexpected mutation or account read');});
+ for(const data of [{},{confirm:'อัปเดตข้อมูลตลาด',acceptRisk:true}]){const r=await h.handler(new Request('https://api.test/?action=data-upgrade',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify(data)}));assert.equal(r.status,400);}
+});
+
+test('data upgrade binds to the displayed config and never submits an exchange order',async()=>{
+ const c=engine.config({budget:100,maxOrder:100,dailyBuy:100,dailySell:100}),uid='11111111-1111-4111-8111-111111111111',calls=[];
+ const h=harness((url,options)=>{const u=String(url);calls.push({url:u,body:options?.body?JSON.parse(options.body):null});
+ if(u.includes('/auth/v1/user'))return ok({id:uid});if(u.includes('bitbot_v10_rate'))return ok(true);if(u.includes('bitbot_exchange_setup_status'))return ok({configured:true});if(u.includes('bitbot_v10_bots?'))return ok([{running:true,config:c,state:{qty:0},evidence_consent:null}]);if(u.includes('bitbot_v17_data_upgrade'))return ok({updated:true,running:true});if(u.includes('/rest/v1/'))return ok([]);throw Error('Unexpected exchange call '+u);
+ });
+ const body={confirm:'อัปเดตข้อมูลตลาด',acceptRisk:true,allowUnvalidated:true,expectedConfig:{...c,budget:200}};
+ let r=await h.handler(new Request('https://api.test/?action=data-upgrade',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify(body)}));assert.equal(r.status,409);assert(!calls.some(x=>x.url.includes('bitbot_v17_data_upgrade')));
+ body.expectedConfig=c;r=await h.handler(new Request('https://api.test/?action=data-upgrade',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify(body)}));assert.equal(r.status,200);const mutation=calls.filter(x=>x.url.includes('bitbot_v17_data_upgrade'));assert.equal(mutation.length,1);assert.deepEqual(mutation[0].body,{p_uid:uid,p_expected_config:c,p_ack:true});assert(!calls.some(x=>/place-bid|place-ask|bitbot_v15_start|bitbot_v10_control/.test(x.url)));
+});
+
+test('legacy accounts retain the legacy feed and verified decisions omit unresolved data',()=>{
+ const h=harness(()=>{throw Error('No network allowed');});assert.equal(h.eval("marketServiceFor({})===markets"),true);assert.equal(h.eval("marketServiceFor({marketDataPolicy:'verified-v17'})===verifiedMarkets"),true);
+ const result=h.eval("decide({markets:[],readyCount:0},initial(config()),runtimeConfig({marketDataPolicy:'verified-v17'}),Date.now())");assert.equal(result.order,null);assert.equal(result.trace[0].policy,'verified-v17');
+});
+
+test('verified unattended cycle buys, reconciles, sells and records both fills without a duplicate order',async()=>{
+ const now=Date.now(),aligned=Math.floor(now/300000)*300000,uid='11111111-1111-4111-8111-111111111111';
+ const c=engine.config({entryPlanner:'net-v16',strategyProfile:'trend-confirmed',marketDataPolicy:'verified-v17',budget:100,maxOrder:100,dailyBuy:100,dailySell:100});
+ const candles=Array.from({length:180},(_,i)=>{const close=100+i*.003+Math.sin(i*.8+3.25)*.05;return{t:aligned-(180-i)*300000,o:close,h:close*(i<150?1.012:1.0002),l:close*(i<150?.988:.9998),c:close,v:i===179?150:100};});
+ const last=candles.at(-1).c,market={symbol:'ETH_THB',candles,last,ask:last,bid:last-.01,observedAt:now,volumeTHB:1e7,rules:{minQuote:10,qtyScale:8,priceScale:2,priceStep:.01},depth:{at:now,asks:[[last,1000]],bids:[[last-.01,1000]]},news:{ready:true,fetchedAt:now,blocked:false,headlines:[]},dataQuality:{ready:true}};
+ let state=engine.initial(c),order=null;const orders=[],writes=[],fills=[];
+ const h=harness((url,opts={})=>{const u=String(url),body=opts.body?JSON.parse(opts.body):{};
+  if(u.endsWith('/bitbot_load_exchange_key'))return ok({apiKey:'TEST',apiSecret:'TEST'});
+  if(u.includes('bitbot_v10_orders?')&&opts.method==='PATCH'){Object.assign(order,body);return ok([order]);}
+  if(u.includes('bitbot_v10_orders?'))return ok(order&&!order.settled?[order]:[]);
+  if(u.includes('bitbot_v13_shadow?'))return ok([]);
+  if(u.endsWith('/servertime'))return ok(Date.now());
+  if(u.endsWith('/wallet/balances'))return ok({data:[{currency:'THB',available:100,reserved:0},{currency:'ETH',available:state.qty,reserved:0}]});
+  if(u.endsWith('/user/trading-credits'))return ok({error:0,result:100});
+  if(u.endsWith('/bitbot_v10_reserve')){order={...body.p_order,id:body.p_id,user_id:uid,created_at:new Date().toISOString(),settled:false,status:'RESERVED',entry_policy:body.p_order.entryPolicy,qty_scale:8};orders.push(order);return ok(null);}
+  if(u.includes('/market/place-')){writes.push({url:u,body});return ok({error:0,result:{id:'MOCK-'+writes.length}});}
+  if(u.includes('/market/order-info?'))return ok({error:0,result:{status:'filled',filled:order.amount,history:[{amount:order.amount,rate:order.price,fee:.05,credit:order.side==='BUY'?.05:0,timestamp:Date.now()}]}});
+  if(u.endsWith('/bitbot_v12_finish')){state=body.p_state;if(body.p_settle){order.settled=true;order.status=body.p_status;}fills.push(...body.p_fills);return ok(true);}
+  throw Error('Unexpected network path in isolated test '+u);
+ });
+ h.eval('companyClaim=async()=>null');h.eval('globalThis.testConfig='+JSON.stringify(c));
+ const hourly=Array.from({length:60},(_,i)=>({t:Math.floor(now/3600000)*3600000-(60-i)*3600000,o:99+i*.02,c:99+i*.02,h:100+i*.02,l:98+i*.02,v:100}));h.eval('verifiedMarkets.analysis=async()=>({frames:{60:'+JSON.stringify(hourly)+'},errors:{}})');
+ async function step(m){const bot={user_id:uid,running:true,config:c,state,lease:'22222222-2222-4222-8222-222222222222',evidence_consent:{method:'OWNER_START_ACK',allowUnvalidated:true,at:new Date(now).toISOString(),config:c}},bundle={markets:[m],watchlist:[m],readyCount:1,universeCount:1};h.eval('globalThis.testBot='+JSON.stringify(bot)+';globalThis.testBundle='+JSON.stringify(bundle));await h.eval('tickBot(testBot,testBundle)');}
+ await step(market);assert.equal(writes.length,1);assert(writes[0].url.endsWith('/place-bid'));assert.equal(order.status,'OPEN');
+ await step(market);assert(state.qty>0);assert.equal(order.status,'FILLED');assert.equal(fills.length,1);
+ const exit={...market,last:last*1.02,bid:last*1.02,ask:last*1.02+.01,observedAt:Date.now()};await step(exit);assert.equal(writes.length,2);assert(writes[1].url.endsWith('/place-ask'));await step(exit);
+ assert.equal(state.qty,0);assert.equal(fills.length,2);assert.equal(state.daily[engine.bangkokDay(now)].rounds,1);assert(state.realized>0);
+ await step(market);assert.equal(writes.length,2);assert(orders.every(o=>o.status==='FILLED'));
+});

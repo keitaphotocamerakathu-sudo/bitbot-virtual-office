@@ -18,7 +18,7 @@ const agents=[
 {id:'risk',name:'RISK',role:'คุมความเสี่ยง',color:'#9af5c7'},
 {id:'execution',name:'EXECUTION',role:'ส่งและตรวจคำสั่ง',color:'#ffacbe'}];
 let bundle=null,liveWallet=null,walletError='',lastWalletAttempt=0;
-let plannerUI=null;
+let plannerUI=null;let upgradeSnapshot=null;
 let mode='paper',market=null,session=null,client=null,cloud=null,cloudBusy=false,authBusy=false,actionBusy=false;
 let paperConfig=config({strategyProfile:'trend-confirmed',riskPerTrade:.005,dailyLoss:.02}),paperState=initial(paperConfig),paperTrades=[],paperJournal=[],paperRunning=false,lastCycle=0,releaseLock=null,cycleBusy=false;
 const text=(id,v)=>$(id).textContent=v;
@@ -100,6 +100,25 @@ $('keyForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
  finally{$('apiKey').value='';$('apiSecret').value='';$('keyPermission').checked=false;}
 });};
 $('walletBtn').onclick=()=>perform(async()=>{const x=await api('wallet',{auth:true});$('walletBox').hidden=false;liveWallet=x.wallet;text('walletBox','ยอดเงินจริงจาก Bitkub\nTHB ใช้ได้ '+money(x.wallet.THB.available)+' / ติดคำสั่ง '+money(x.wallet.THB.reserved)+'\n'+Object.entries(x.wallet).filter(([k,v])=>k!=='THB'&&typeof v==='object'&&v.available+v.reserved>0).slice(0,20).map(([k,v])=>k+' ใช้ได้ '+fmt(v.available,8)+' / ติดคำสั่ง '+fmt(v.reserved,8)).join('\n')+'\nตรวจเมื่อ '+time(x.wallet.at));render();});
+function renderDataUpgrade(){
+ const b=cloud?.bot,active=b?.config?.marketDataPolicy==='verified-v17';
+ $('dataUpgradePanel').hidden=mode!=='live'||!b;$('dataUpgradeBtn').hidden=active;
+ text('dataPolicyState',active?'ข้อมูลตลาดใหม่พร้อมใช้งาน':'มีอัปเดตระบบข้อมูลตลาด');
+ text('dataPolicyHint',active?'ตรวจช่วงแท่งราคาขาดกับรายการซื้อขายจริง และคัดเลือกคู่ที่ข้อมูลพร้อมอัตโนมัติ':'อัปเดตการตรวจข้อมูลแท่งราคาและการคัดเลือกเหรียญ โดยใช้วงเงินและกฎซื้อขายที่คุณตั้งไว้');
+ const blocked=Number(b?.state?.qty)>0?'รอปิดสถานะของบอทก่อนอัปเดต':cloud?.orders?.some(o=>!o.settled)?'รอตรวจผลคำสั่งค้างก่อนอัปเดต':b?.state?.halted?'พอร์ตล็อกความเสี่ยง กรุณาตรวจสถานะ':'';
+ $('dataUpgradeBtn').disabled=actionBusy||!!blocked;text('dataUpgradeBlock',blocked);
+}
+$('dataUpgradeBtn').onclick=()=>{
+ const b=cloud?.bot;if(!b||mode!=='live')return;
+ upgradeSnapshot=structuredClone(b.config);$('dataUpgradeForm').reset();
+ text('dataUpgradeSummary',(b.running?'บอทจะใช้ข้อมูลใหม่และซื้อขายอัตโนมัติต่อ':'อัปเดตข้อมูลก่อน แล้วกดเริ่มบอทเพื่อซื้อขายอัตโนมัติ')+'\nทุนสูงสุด '+money(b.config.budget)+' · ต่อคำสั่งไม่เกิน '+money(b.config.maxOrder)+'\nซื้อรวมต่อวัน '+money(b.config.dailyBuy)+' · จำนวนเข้าไม่เกิน '+b.config.maxEntries+' ครั้ง/วัน\nหยุดขาดทุน '+fmt(b.config.stopLoss*100,1)+'% · เงินสำรอง '+fmt(b.config.walletReservePct*100,1)+'%');
+ $('dataUpgradeDialog').showModal();
+};
+$('dataUpgradeForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
+ if(!$('dataUpgradeAccepted').checked||!upgradeSnapshot)throw Error('กรุณายืนยันการใช้ข้อมูลใหม่');
+ const result=await api('data-upgrade',{method:'POST',auth:true,data:{confirm:'อัปเดตข้อมูลตลาด',acceptRisk:true,allowUnvalidated:true,expectedConfig:upgradeSnapshot}});
+ $('dataUpgradeDialog').close();upgradeSnapshot=null;await refreshCloud();await updateMarket();notice(result.note);
+});};
 $('removeKey').onclick=()=>{if(!confirm('ถอดคีย์ Bitkub ออกจากบัญชีนี้หรือไม่?'))return;perform(async()=>{await api('remove-key',{method:'POST',auth:true,data:{}});await refreshCloud();notice('ถอดคีย์แล้ว');});};
 const fields=['budget','maxOrder','dailyBuy','dailySell','stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','cashReserveTHB','riskPerTrade','minVolumeTHB','maxVolatility','maxHoldMinutes','dailyProfitTarget','maxEntries','lossStreakLimit','cooldownMinutes'];
 const percentage=new Set(['stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','riskPerTrade','maxVolatility','dailyProfitTarget']);
@@ -145,6 +164,7 @@ function renderDecision(container,rows){
  for(const a of agents){const x=rows.find(t=>t.agent===a.id);if(!x)continue;const d=document.createElement('div');d.className='decision';d.style.setProperty('--accent',a.color);const b=document.createElement('b');b.textContent=a.name;const p=document.createElement('p');p.textContent=x.reason||'ตรวจข้อมูลแล้ว';d.append(b,p);container.append(d);}
 }
 function render(){
+ renderDataUpgrade();
  plannerUI?.update();
  const c=cfg(),s=state(),isRunning=running(),held=heldSymbol(s),equity=portfolioValue(s,[...(bundle?.markets||[]),...(bundle?.watchlist||[])]),pnl=performance(s,bundle?.watchlist||[],c).totalNet;
  text('portfolioLabel',mode==='paper'?'จำลอง Cloud':'พอร์ตบอท');text('equity',equity===null?'รอราคาเหรียญที่ถือ':money(equity));text('pnl',pnl===null?'—':(pnl>=0?'+':'−')+money(Math.abs(pnl)));$('pnl').className=pnl<0?'negative':'green';
@@ -190,14 +210,14 @@ function renderScanner(){
  if(!bundle)return;
  const c=cfg(),s=state(),w=mode==='live'?liveWallet:null;
  const coord=trace().find(x=>x.agent==='coordinator'),out={market:bundle.markets.find(m=>m.symbol===coord?.selected),ranking:coord?.ranking||[]};
- text('scanCount',bundle.universeCount+' คู่ / วิเคราะห์ '+bundle.markets.length+' คู่');
+ text('scanCount',bundle.universeCount+' คู่ / วิเคราะห์ '+bundle.markets.length+' คู่'+(bundle.policy==='verified-v17'?' / ข้อมูลพร้อม '+bundle.readyCount+' คู่':''));
  text('selectedCoin',heldSymbol(s)||out.market?.symbol||'รอจังหวะ');
  $('scannerBody').replaceChildren();
  const detailed=new Map((out.ranking||[]).map(x=>[x.symbol,x]));
  const sorted=[...bundle.watchlist].sort((a,b)=>(detailed.get(b.symbol)?.score??-1)-(detailed.get(a.symbol)?.score??-1));
  for(const row of sorted.slice(0,30)){
  const result=detailed.get(row.symbol),tr=document.createElement('tr');
- const values=[row.symbol,priceFmt(row.last),money(row.volumeTHB),fmt((row.ask-row.bid)/row.last*100,3)+'%',result?.score??'—',result?.signal||'รอคัดรอบถัดไป',(result?.reasons?.join(' • ')||row.reasons?.join(' • ')||'ผ่านคัดกรองเบื้องต้น')];
+ const values=[row.symbol,priceFmt(row.last),money(row.volumeTHB),fmt((row.ask-row.bid)/row.last*100,3)+'%',result?.score??'—',result?.signal||'รอคัดรอบถัดไป',(row.dataQuality?.ready===false?row.dataQuality.reason:result?.reasons?.join(' • ')||row.reasons?.join(' • ')||'ผ่านคัดกรองเบื้องต้น')];
  for(const value of values){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}$('scannerBody').append(tr);
  }
  const n=bundle.news;$('newsFeed').replaceChildren();
@@ -208,7 +228,7 @@ function renderScanner(){
 let marketBusy=false;
 async function updateMarket(){
  if(marketBusy)return;marketBusy=true;
- try{const holds=[...new Set([heldSymbol(paperState),heldSymbol(cloud?.bot?.state||{qty:0})].filter(Boolean))],x=await api('scan',{query:holds.length?{held:holds.join(',')}: {}});bundle=x.scan;
+ try{const holds=[...new Set([heldSymbol(paperState),heldSymbol(cloud?.bot?.state||{qty:0})].filter(Boolean))],x=await api('scan',{query:{...(holds.length?{held:holds.join(',')}:{}),dataPolicy:cfg().marketDataPolicy||'legacy'}});bundle=x.scan;
  const selected=heldSymbol(state())||trace().find(x=>x.agent==='coordinator')?.selected;market=bundle.markets.find(m=>m.symbol===selected)||bundle.markets[0];if(!market)throw Error('ไม่มีข้อมูลตลาดพร้อมแสดง');
  text('pairLabel',market.symbol.replace('_',' / '));text('officePair',market.symbol.replace('_',' / '));
  text('connection','BITKUB LIVE');$('connection').classList.remove('negative');text('price',priceFmt(market.last));text('chartPrice',priceFmt(market.last));text('officePrice',priceFmt(market.last));text('priceHint','ตรวจล่าสุด '+time(market.observedAt));

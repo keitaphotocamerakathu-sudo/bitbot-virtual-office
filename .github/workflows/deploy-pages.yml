@@ -1,7 +1,7 @@
-name: Test and deploy Bitbot 16.0
+name: Test and deploy Bitbot 17.0
 on:
   push:
-    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16]
+    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]
   workflow_dispatch:
 permissions:
   contents: read
