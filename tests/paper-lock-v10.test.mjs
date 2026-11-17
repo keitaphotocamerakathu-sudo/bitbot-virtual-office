@@ -6,7 +6,7 @@ import {stripTypeScriptTypes} from 'node:module';
 import {webcrypto} from 'node:crypto';
 import {livePermission} from '../assets/live-permission.mjs';
 function sandbox(file){
- let calls=0;const context={TextEncoder,TextDecoder,URL,Request,Response,AbortSignal,crypto:webcrypto,console,createMarketService:()=>({}),createVerifiedMarketService:()=>({}),createREAService:()=>({}),createLiveService:()=>({}),createRiskWatchdog:()=>({}),createRiskQuotes:()=>()=>[],createAdvisory:()=>()=>null,fetch:()=>{calls++;throw Error('network forbidden');},Deno:{env:{get:n=>n==='BITBOT_LIVE_ENABLED'?'true':undefined},serve:()=>{}}};
+ let calls=0;const context={TextEncoder,TextDecoder,URL,Request,Response,AbortSignal,crypto:webcrypto,console,createMarketService:()=>({}),createVerifiedMarketService:()=>({}),createCodexService:()=>({}),createREAService:()=>({}),createLiveService:()=>({}),createRiskWatchdog:()=>({}),createRiskQuotes:()=>()=>[],createAdvisory:()=>()=>null,fetch:()=>{calls++;throw Error('network forbidden');},Deno:{env:{get:n=>n==='BITBOT_LIVE_ENABLED'?'true':undefined},serve:()=>{}}};
  vm.createContext(context);let src=fs.readFileSync(new URL(file,import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
  vm.runInContext(stripTypeScriptTypes(src),context);return{eval:s=>vm.runInContext(s,context),calls:()=>calls};
 }

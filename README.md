@@ -1,5 +1,8 @@
 # REA AI Trading Bot · Bitkub · 20.0
 
+เพิ่มหน้า [สมอง Codex AI](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#codex) ใน REA 21.0: OpenAI managed Codex harness วิเคราะห์ข้อมูลพอร์ตและเสนอแผนพร้อมหลักฐาน ต้องเชื่อม OpenAI Key และยินยอมค่า API ก่อนเริ่ม ใช้อัตโนมัติปิดไว้เริ่มต้น รายละเอียดใน [คู่มือ Codex 21.0](docs/REA-21.0-CODEX-TH.md)
+
+
 [เปิดพอร์ตเงินจริงและออฟฟิศ AI](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#live) · [หน้าเว็บและออฟฟิศ 20.0](docs/REA-20.0-DASHBOARD-TH.md) · [เปิด Live วงเงินจำกัด 19.1](docs/REA-19.1-LIMITED-LIVE-TH.md) · [Live Execution 19.0](docs/REA-19.0-LIVE-TH.md) · [เปิด Dashboard](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html) · [SRS v1.0](docs/REA-SRS-v1.0.md) · [ผลส่งมอบและหลักฐาน 18.1](docs/REA-18.1-DELIVERY-TH.md) · [คู่มือใช้งาน](docs/REA-OPERATIONS-TH.md)
 
 ระบบเลือกคู่ THB และจำลองการซื้อขายด้วยข้อมูลตลาดจริงที่ Backend เริ่มต้น `PAPER_ONLY` เพิ่ม Live Execution ที่ใช้ผลจับคู่จริงแยกจาก Paper แล้ว บัญชี Live เริ่ม `LIVE_LOCKED` รุ่น 19.1 เพิ่มการเปิดเงินจริงวงเงินจำกัดสูงสุด 100 บาทเมื่อเจ้าของยืนยันและรับทราบผลตรวจรับเต็มที่ยังไม่ครบ ส่วน STANDARD ยังต้องผ่านการตรวจรับเต็ม การอนุมัติและการบังคับวงเงินอยู่ที่ Server

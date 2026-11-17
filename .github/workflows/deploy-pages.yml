@@ -1,4 +1,4 @@
-name: Test and deploy REA 20.0 Trading Dashboard
+name: Test and deploy REA 21.0 Codex Analysis
 on:
   push:
     branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]
