@@ -31,7 +31,7 @@ export function attachCompanyUI({api,getContext,info,notice,openAuth,refresh}){
  $('companyMode').textContent=archive?archive.mode==='OBSERVE'?'วิเคราะห์อย่างเดียว • ไม่ส่งคำสั่ง':archive.mode==='PAPER'?'เงินจำลอง':'แผนเงินจริง':'ยังไม่มีบันทึกงาน';
  $('companyMessages').replaceChildren();for(const message of archive?.messages||[]){const div=document.createElement('div');div.className='history-entry';paragraph(div,time(message.at)+' · '+message.from+' → '+message.to);paragraph(div,message.text);paragraph(div,'หลักฐานงาน #'+message.taskId+' · '+message.kind);$('companyMessages').append(div);}
  if(!archive)paragraph($('companyMessages'),'ยังไม่มีข้อความจากงานจริง กดวิเคราะห์รอบนี้หลังเข้าสู่ระบบ');
- const ready=readinessProgress(ctx.config.strategyProfile,cloud?.shadow);$('readinessPolicy').textContent=ready.profile+' · การอนุมัติใช้ผลวิจัยและข้อมูลทดลองจริง แยกจากการทดสอบซอฟต์แวร์';$('readinessChecks').replaceChildren();
+ const ready=readinessProgress(ctx.config.strategyProfile,cloud?.shadow);$('readinessPolicy').textContent=ready.profile+' · ผลวิจัยแสดงตามข้อมูลจริง เจ้าของเลือกยืนยันเริ่มก่อนครบได้ที่ปุ่มเริ่มบอทเงินจริง';$('readinessChecks').replaceChildren();
  for(const check of ready.checks){const d=document.createElement('div');d.className='connection-box';paragraph(d,(check.passed?'✓ ':'○ ')+check.label);paragraph(d,check.value);$('readinessChecks').append(d);}
  $('systemHealth').replaceChildren();paragraph($('systemHealth'),cloud?'เงินจริง: '+(cloud.bot?.running?'เปิดอยู่':'หยุดอยู่')+' · Paper: '+(cloud.shadow?.enabled?'เปิดอยู่':'พักอยู่'):'เข้าสู่ระบบเพื่ออ่านสถานะ Cloud');
  if(cloud?.shadow){paragraph($('systemHealth'),'Paper ตรวจล่าสุด '+time(cloud.shadow.updated_at)+(cloud.shadow.last_error?' · '+cloud.shadow.last_error:''));}

@@ -1,3 +1,4 @@
+import * as permission from '../assets/live-permission.mjs';
 import * as company from '../assets/company.mjs';
 import * as archives from '../assets/archive.mjs';
 import * as readiness from '../assets/readiness.mjs';
@@ -13,9 +14,9 @@ import * as evidence from '../assets/evidence.mjs';
 import {portfolioCycle} from '../assets/selection.mjs';
 import {createMarketService} from '../supabase/functions/bitbot-v10/market.mjs';
 const source=fs.readFileSync(new URL('../supabase/functions/bitbot-v10/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
-function harness(fetchImpl){let handler;const sandbox={...engine,...shadow,...evidence,...company,...archives,...readiness,...reporting,portfolioCycle,createMarketService,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
+function harness(fetchImpl){let handler;const sandbox={...engine,...shadow,...evidence,...company,...archives,...readiness,...reporting,...permission,portfolioCycle,createMarketService,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
 const ok=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
-test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.version,'14.0.0');assert.equal(x.wallet,undefined);});
+test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.version,'14.1.0');assert.equal(x.wallet,undefined);});
 test('all private operations require a verified JWT',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});for(const a of ['state','wallet','keys','start','save','stop','tick','remove-key','shadow-toggle','observe','company','analysis','report','paper-config','paper-pause','close-positions']){const r=await h.handler(new Request('https://api.test/?action='+a,{method:'POST',body:'{}'}));assert.equal(r.status,401,a);}});
 test('untrusted origins are blocked',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health',{headers:{Origin:'https://attacker.invalid'}}));assert.equal(r.status,403);});
 test('scheduler needs its Vault token',async()=>{const h=harness(url=>{assert(String(url).includes('bitbot_v10_runner_allowed'));return ok(false);});const r=await h.handler(new Request('https://api.test/?action=run',{method:'POST',body:'{}'}));assert.equal(r.status,401);});
@@ -37,10 +38,24 @@ test('paper scheduler never reaches authenticated exchange paths',async()=>{
 
 test('real start with valid consent is refused when strategy evidence is missing',async()=>{
  const h=harness(url=>{const path=String(url);if(path.includes('/auth/v1/user'))return ok({id:'11111111-1111-4111-8111-111111111111'});if(path.includes('bitbot_v10_rate'))return ok(true);if(path.includes('bitbot_v10_bots'))return ok([{running:false,config:engine.config(),state:engine.initial()}]);if(path.includes('bitbot_exchange_setup_status'))return ok({configured:true});if(path.includes('bitbot_v10_orders')||path.includes('bitbot_v10_events')||path.includes('bitbot_v13_shadow')||path.includes('bitbot_v14_'))return ok([]);throw Error('Unexpected key or exchange access '+path);});
- const r=await h.handler(new Request('https://api.test/?action=start',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify({confirm:'เริ่มบอทเงินจริง',acceptRisk:true,noWithdraw:true})}));assert.equal(r.status,409);assert((await r.json()).error.includes('ยังพักเงินจริง'));
+ const r=await h.handler(new Request('https://api.test/?action=start',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify({confirm:'เริ่มบอทเงินจริง',acceptRisk:true,noWithdraw:true})}));assert.equal(r.status,409);assert((await r.json()).error.includes('ผลทดสอบยังไม่ครบ'));
 });
 test('nonempty paper scheduler checkpoints six portfolios without reading exchange keys',async()=>{
  let checkpoint;
  const h=harness((url,opts)=>{const path=String(url);if(path.includes('rpc/bitbot_v10_claim'))return ok([]);if(path.includes('bitbot_v14_company_jobs'))return ok([]);if(path.includes('rpc/bitbot_v14_company_claim'))return ok(null);if(path.includes('rpc/bitbot_v13_shadow_claim'))return ok([{user_id:'11111111-1111-4111-8111-111111111111',lease:'test',capital:80,states:{}}]);if(path.includes('bitbot_v10_bots'))return ok([{config:engine.config({budget:100,maxOrder:100,dailyBuy:100,dailySell:100})}]);if(path.includes('bitbot_v13_shadow_finish')){checkpoint=JSON.parse(opts.body);return ok(true);}throw Error('Paper attempted private access '+path);});
  h.eval('markets.scan=async()=>({markets:[{symbol:"ETH_THB"}]})');const result=await h.eval('run()');assert.equal(result.researchProcessed,1);assert.equal(Object.keys(checkpoint.p_states).length,6);assert.equal(checkpoint.p_events.length,0);
+});
+test('explicit early consent validates wallet then records a config-bound start without placing an order',async()=>{
+ const uid='11111111-1111-4111-8111-111111111111',c=engine.config({budget:100,maxOrder:100,dailyBuy:100,dailySell:100}),calls=[];
+ const h=harness((url,opts={})=>{const path=String(url);calls.push({path,method:opts.method,body:opts.body&&JSON.parse(opts.body)});
+ if(path.includes('/auth/v1/user'))return ok({id:uid});if(path.includes('bitbot_v10_rate'))return ok(true);
+ if(path.includes('bitbot_v10_bots'))return ok([{running:false,config:c,state:engine.initial(c)}]);
+ if(path.includes('bitbot_exchange_setup_status'))return ok({configured:true});
+ if(path.includes('bitbot_v10_orders')||path.includes('bitbot_v10_events')||path.includes('bitbot_v13_shadow')||path.includes('bitbot_v14_'))return ok([]);
+ if(path.includes('bitbot_load_exchange_key'))return ok({apiKey:'TEST_KEY',apiSecret:'TEST_SECRET'});
+ if(path.endsWith('/servertime'))return ok(Date.now());if(path.includes('/api/v4/wallet/balances'))return ok({data:[{currency:'THB',available:100,reserved:0}]});
+ if(path.includes('bitbot_v11_fund')||path.includes('bitbot_v15_start'))return ok({ok:true});throw Error('Unexpected network '+path);
+ });h.eval('markets.scan=async()=>({markets:[{symbol:"ETH_THB"}]})');
+ const r=await h.handler(new Request('https://api.test/?action=start',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify({confirm:'เริ่มบอทเงินจริง',acceptRisk:true,noWithdraw:true,allowUnvalidated:true})}));assert.equal(r.status,200,JSON.stringify(await r.json()));
+ const start=calls.find(x=>x.path.includes('bitbot_v15_start'));assert.equal(start.body.p_uid,uid);assert.equal(start.body.p_unvalidated,true);assert.deepEqual(start.body.p_expected_config,c);assert.equal(calls.filter(x=>x.path.includes('api.bitkub.com')&&x.method==='POST').length,0);
 });

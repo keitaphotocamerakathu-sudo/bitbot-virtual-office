@@ -1,4 +1,4 @@
-import {attachCompanyUI} from './company-ui.mjs?v=14.0.0';
+import {attachCompanyUI} from './company-ui.mjs?v=14.1.0';
 import {performance,dayKey} from './intraday.mjs?v=13.0.0';
 import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=13.0.0';
 const $=id=>document.getElementById(id);
@@ -122,14 +122,13 @@ async function startPaper(){
  await perform(async()=>{if(!cloud?.shadow){await api('paper-config',{method:'POST',auth:true,data:{config:cfg(),capital:cfg().budget}});}await api('shadow-toggle',{method:'POST',auth:true,data:{enabled:true}});await refreshCloud();notice('เริ่มทดลองบน Cloud แล้ว ใช้เงินจำลองเท่านั้น ไม่ต้องเปิดหน้านี้ไว้');});
 }
 $('startBtn').onclick=()=>{if(mode==='paper')return startPaper();if(!session){page('settings');openAuth();return;}
- if(cloud?.evidence&&!cloud.evidence.allowed&&!(cloud.bot?.state?.qty>0)){page('health');notice('พักเงินจริง: ดูความคืบหน้าและรายการที่ยังไม่ผ่านในหน้านี้',true);return;}
  if(!cloud?.key?.configured||!cloud?.bot){page('settings');notice('เชื่อม API และบันทึกวงเงินก่อนเริ่มบอทเงินจริง');return;}
  if(cloud.bot.state.halted){notice('พอร์ตถึงเพดานขาดทุนจากจุดสูงสุดแล้ว ตรวจประวัติและจัดการสถานะก่อนเริ่มรอบใหม่',true);return;}
  const c=cfg();text('startSummary','ทุนสูงสุด '+money(c.budget)+'\nสำรองเงิน '+fmt(c.walletReservePct*100,1)+'% + '+money(c.cashReserveTHB)+'\nต่อคำสั่ง '+money(c.maxOrder)+'\nซื้อรวมต่อวัน '+money(c.dailyBuy)+' / ขาย '+money(c.dailySell)+'\nStop Loss '+fmt(c.stopLoss*100,1)+'% / Take Profit '+fmt(c.takeProfit*100,1)+'%');
- $('startForm').reset();$('startDialog').showModal();
+ $('startForm').reset();const early=cloud.evidence?.allowed!==true;$('unvalidatedWarning').hidden=!early;$('unvalidatedAccepted').required=early&&!(cloud.bot.state.qty>0);$('startDialog').showModal();
 };
 $('startForm').onsubmit=e=>{e.preventDefault();perform(async()=>{if($('confirmStart').value!=='เริ่มบอทเงินจริง')throw Error('กรุณาพิมพ์ เริ่มบอทเงินจริง ให้ตรงกัน');
- await api('start',{method:'POST',auth:true,data:{confirm:$('confirmStart').value,acceptRisk:$('riskAccepted').checked,noWithdraw:$('withdrawDisabled').checked}});$('startDialog').close();await refreshCloud();notice('เปิดบอทเงินจริงแล้ว เซิร์ฟเวอร์จะเริ่มตรวจตลาดภายใน 1 นาที');});};
+ await api('start',{method:'POST',auth:true,data:{confirm:$('confirmStart').value,acceptRisk:$('riskAccepted').checked,noWithdraw:$('withdrawDisabled').checked,allowUnvalidated:$('unvalidatedAccepted').checked}});$('startDialog').close();await refreshCloud();notice('เปิดบอทเงินจริงแล้ว ตรวจตลาดภายใน 1 นาที จะซื้อเมื่อผ่านสัญญาณและการตรวจความเสี่ยง');});};
 $('pauseBtn').onclick=()=>perform(async()=>{if(mode==='paper'){await api('paper-pause',{method:'POST',auth:true,data:{paused:!cloud?.shadow?.buy_paused}});await refreshCloud();}else{await api(cfg().buyPaused?'resume':'pause',{method:'POST',auth:true,data:{}});await refreshCloud();}render();});
 $('stopBtn').onclick=()=>{if(mode==='paper'){perform(async()=>{await api('shadow-toggle',{method:'POST',auth:true,data:{enabled:false}});await refreshCloud();notice('หยุดการทดลองบน Cloud แล้ว เก็บสถานะและประวัติไว้');});return;}
  if(!confirm('หยุดส่งคำสั่งใหม่และขอยกเลิกคำสั่งค้าง เหรียญที่ถือยังอยู่ใน Bitkub และจะไม่มีบอทเฝ้าขายต่อ ยืนยันหรือไม่?'))return;
@@ -231,7 +230,7 @@ function download(name,data,type){const a=document.createElement('a'),url=URL.cr
 $('exportCsv').onclick=()=>{const cells=v=>'"'+String(v).replaceAll('"','""')+'"';download('bitbot-'+mode+'-'+new Date().toISOString().slice(0,10)+'.csv','\uFEFF'+[['เวลาไทย','โหมด','เหรียญ','ประเภท','จำนวน','ราคา','สถานะ'],...rows().map(r=>[time(r.at),r.mode,r.symbol,r.side,r.amount,r.price,r.status])].map(a=>a.map(cells).join(',')).join('\r\n'),'text/csv;charset=utf-8');};
 $('backup').onclick=()=>perform(async()=>{const result=session?await api('paper-export',{auth:true}):{events:[],coverage:{}};download('bitbot-paper-backup.json',JSON.stringify({version:14,exportedAt:new Date().toISOString(),cloudPaper:cloud?.shadow||null,...result,legacyLocal:{config:paperConfig,state:paperState,trades:paperTrades,journal:paperJournal}},null,2),'application/json');notice(result.coverage?.possiblyTruncated?'สำรองสถานะและ 10,000 เหตุการณ์ล่าสุดแล้ว ข้อมูลเก่ากว่านี้ยังอยู่ในฐานข้อมูล':'สำรองสถานะและประวัติทดลองแล้ว');});
 $('refreshHistory').onclick=()=>perform(async()=>{if(mode==='live'){await api('tick',{method:'POST',auth:true,data:{}});await refreshCloud();}renderHistory();});
-$('helpBtn').onclick=()=>info('เริ่มใช้งาน','ทดลอง: เข้าสู่ระบบ ตั้งทุนจำลองใน Risk Control แล้วกดเริ่มทดลองบอท ระบบทำงานบน Cloud แม้ปิดคอม แยกพอร์ต 6 ชุดและไม่ส่งคำสั่งเงินจริง\n\nเงินจริง: เชื่อม Bitkub API และบันทึกวงเงิน ตรวจความคืบหน้าใน System Health ก่อนยืนยันเริ่มด้วยตนเอง ผลวิจัยและผลทดลองต้องผ่านเกณฑ์ก่อนซื้อใหม่\n\nระบบคัดเหรียญคู่ THB จากสภาพคล่อง ข่าว แนวโน้ม และความผันผวน ถือทีละเหรียญต่อพอร์ต ใช้เงินบาทหลังสำรอง และไม่เกินเพดานทุน\n\nพักซื้อ: งดซื้อใหม่แต่ยังเฝ้าขาย\nหยุดบอท: หยุดส่งใหม่และขอยกเลิกออร์เดอร์ค้าง เหรียญที่ถือยังอยู่ ต้องดูแลเอง\nปิดสถานะ: ต้องยืนยันแยก ขายเฉพาะเหรียญที่บอทถือ\n\nStop Loss ตรวจทุก 1 นาที อาจขายไม่ทันราคาที่กำหนดได้ ไม่มีการรับประกันกำไร');
+$('helpBtn').onclick=()=>info('เริ่มใช้งาน','ทดลอง: เข้าสู่ระบบ ตั้งทุนจำลองใน Risk Control แล้วกดเริ่มทดลองบอท ระบบทำงานบน Cloud แม้ปิดคอม แยกพอร์ต 6 ชุดและไม่ส่งคำสั่งเงินจริง\n\nเงินจริง: เชื่อม Bitkub API และบันทึกวงเงิน ตรวจความคืบหน้าใน System Health ก่อนยืนยันเริ่มด้วยตนเอง หากผลทดสอบยังไม่ครบ สามารถยืนยันเริ่มก่อนครบได้ในหน้าต่างเริ่มบอท วงเงินและความเสี่ยงยังมีผล\n\nระบบคัดเหรียญคู่ THB จากสภาพคล่อง ข่าว แนวโน้ม และความผันผวน ถือทีละเหรียญต่อพอร์ต ใช้เงินบาทหลังสำรอง และไม่เกินเพดานทุน\n\nพักซื้อ: งดซื้อใหม่แต่ยังเฝ้าขาย\nหยุดบอท: หยุดส่งใหม่และขอยกเลิกออร์เดอร์ค้าง เหรียญที่ถือยังอยู่ ต้องดูแลเอง\nปิดสถานะ: ต้องยืนยันแยก ขายเฉพาะเหรียญที่บอทถือ\n\nStop Loss ตรวจทุก 1 นาที อาจขายไม่ทันราคาที่กำหนดได้ ไม่มีการรับประกันกำไร');
 window.addEventListener('online',()=>updateMarket());window.addEventListener('pagehide',()=>stopPaper());
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){updateMarket();if(session)refreshCloud().catch(e=>notice(e.message,true));}});
 setInterval(()=>updateMarket(),30000);setInterval(()=>{if(session)refreshCloud().catch(e=>{if(mode==='live')notice(e.message,true);});},15000);
@@ -295,7 +294,7 @@ loadBacktest();
 
 function renderCloudResearch(){
  const sh=cloud?.shadow;const evidence=cloud?.evidence;
- text('evidenceState',evidence?(evidence.allowed?'ผ่านเงื่อนไขพิจารณาเงินจริง':'พักเงินจริง: '+evidence.reasons.join(' • ')):'เข้าสู่ระบบเพื่อดูผลทดลองอัตโนมัติของบัญชีคุณ');
+ text('evidenceState',evidence?(evidence.allowed?'ผลทดสอบผ่านเกณฑ์':cloud.permission?.ownerApproved?'เจ้าของยืนยันใช้เงินจริงก่อนผลทดสอบครบ · วงเงินและการตรวจความเสี่ยงยังมีผล':'ผลทดสอบยังไม่ครบ · เลือกยืนยันใช้เงินจริงได้ในปุ่มเริ่มบอทเงินจริง รายละเอียดอยู่ที่ System Health'):'เข้าสู่ระบบเพื่อดูผลทดลองอัตโนมัติของบัญชีคุณ');
  text('cloudResearchStatus',!sh?'ยังไม่มีการทดลองบนเซิร์ฟเวอร์':sh.last_error?'ข้อมูลทดลองไม่พร้อม: '+sh.last_error:sh.enabled?'กำลังเก็บผลด้วยเงินจำลอง แม้ปิดคอม':'พักการทดลองอยู่');
  text('researchCapital',sh?'ทุนจำลองชุดละ '+money(Number(sh.capital)):'เงินจำลองแยกจากเงินจริง');
  const control=$('researchToggle');control.hidden=!session;control.disabled=actionBusy;text('researchToggle',sh?.enabled?'พักทดลองอัตโนมัติ':'เริ่มทดลองอัตโนมัติ');

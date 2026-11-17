@@ -1,4 +1,4 @@
-# BITBOT 14 — AI Trading Company
+# BITBOT 14.1 — AI Trading Company
 เว็บ: https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/
 
 ## การทำงานใหม่
@@ -108,3 +108,7 @@ The 14-day/20-round progress display uses actual continuous paper records, and s
 - [Deployment and recovery](docs/OPERATIONS.md)
 - [คู่มือภาษาไทย](docs/USER_GUIDE_TH.md)
 - [Server environment template](.env.example)
+
+## Owner live consent v14.1
+
+At the owner's explicit request, incomplete historical/forward research can now be acknowledged in the existing real-start dialog. A server-stored, configuration-bound session consent permits new buys through the company and final buy gates while retaining all signal, wallet, market, daily, loss, reservation and reconciliation checks. Research continues to display its actual failed/pending result. The upgrade starts no account and does not change capital or keys. See [owner live consent](docs/OWNER_LIVE_CONSENT.md) for scope and deployment.

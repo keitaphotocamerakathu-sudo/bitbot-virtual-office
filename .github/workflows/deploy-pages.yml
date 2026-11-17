@@ -1,7 +1,7 @@
-name: Test and deploy Bitbot 14
+name: Test and deploy Bitbot 14.1
 on:
   push:
-    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14]
+    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1]
   workflow_dispatch:
 permissions:
   contents: read
