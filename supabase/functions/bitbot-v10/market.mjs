@@ -29,6 +29,15 @@ export function candlesFrom(raw,now=Date.now()){
  if(raw?.s!=='ok'||!Array.isArray(raw.t)||!Array.isArray(raw.c))throw Error('อ่านแท่งเทียนไม่ได้');
  return raw.t.map((t,i)=>({t:Number(t)*1000,c:Number(raw.c[i]),h:Number(raw.h?.[i]),l:Number(raw.l?.[i])})).filter(x=>x.t+300000<=now);
 }
+
+export function shortlist(ranked,held=[],now=Date.now()){
+ const eligible=ranked.filter(x=>x.eligible),picked=eligible.slice(0,8),rest=eligible.slice(8);
+ const offset=rest.length?Math.floor(now/60000)*4%rest.length:0;
+ for(let i=0;i<Math.min(4,rest.length);i++)picked.push(rest[(offset+i)%rest.length]);
+ for(const symbol of [...held,'BTC_THB']){const m=ranked.find(x=>x.symbol===symbol);if(m&&!picked.some(x=>x.symbol===symbol))picked.push(m);}
+ if(!picked.length)picked.push(...ranked.filter(x=>x.status==='active').slice(0,3));return picked;
+}
+
 export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
  const local=new Map(),pending=new Map();
  async function cached(key,ttl,fn){
@@ -68,10 +77,8 @@ export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
  if(!m)throw Error('ไม่มีคู่เหรียญนี้ใน Bitkub');const [candles,feed]=await Promise.all([history(symbol),news()]);return{...m,candles,news:assessNews(m,feed)};
  }
  async function scan(held=[]){
- const [markets,feed]=await Promise.all([all(),news()]),ranked=rankUniverse(markets,{budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000},feed);
- const picked=ranked.filter(x=>x.eligible).slice(0,12);
- for(const symbol of [...held,'BTC_THB']){const m=ranked.find(x=>x.symbol===symbol);if(m&&!picked.some(x=>x.symbol===symbol))picked.push(m);}
- if(!picked.length)picked.push(...ranked.filter(x=>x.status==='active').slice(0,3));
+ const [markets,feed]=await Promise.all([all(),news()]),ranked=rankUniverse(markets,{budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000,minVolumeTHB:100000},feed);
+ const picked=shortlist(ranked,held);
  const detailed=[];
  for(let i=0;i<picked.length;i+=4){const rows=await Promise.allSettled(picked.slice(i,i+4).map(async m=>({...m,candles:await history(m.symbol)})));for(const r of rows)if(r.status==='fulfilled')detailed.push(r.value);}
  return{version:'11.0.0',observedAt:Date.now(),universeCount:markets.filter(x=>x.status==='active').length,

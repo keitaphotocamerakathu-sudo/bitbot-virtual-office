@@ -1,4 +1,4 @@
-// Bitbot 10: five independent quantitative agents. No LLM or profit guarantee.
+// Bitbot 11: six independent quantitative agents. No LLM or profit guarantee.
 export const DEFAULTS=Object.freeze({budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000,allocation:0.2,stopLoss:0.02,takeProfit:0.04,dailyLoss:0.03,maxDrawdown:0.1,fee:0.0025,maxSpread:0.006,buyPaused:false,walletReservePct:0.2,cashReserveTHB:0,riskPerTrade:0.01,minVolumeTHB:250000,maxVolatility:0.06,maxChase:0.025});
 export function config(input={},live=false){
  const c={...DEFAULTS,...input};
@@ -86,6 +86,7 @@ export function riskAgent(m,s,c,proposal,now){
 export function executionAgent(m,s,r){
  const side=r.action;if(side==='HOLD')return{agent:'execution',order:null,reason:'ไม่มีคำสั่งส่ง'};
  const rule=rules(m),price=tickPrice(side==='BUY'?m.ask:m.bid,rule,side==='BUY');
+ if(!Number.isFinite(price)||price<=0||Math.abs(price/(side==='BUY'?m.ask:m.bid)-1)>.015)return{agent:'execution',order:null,reason:'ความละเอียดราคาขัดกับราคาเสนอ งดส่งคำสั่ง'};
  const amount=side==='BUY'?Math.floor(r.notional*100)/100:roundUnit(Math.min(s.qty,r.notional/price),rule.qtyScale);
  if((side==='BUY'?amount:amount*price)<rule.minQuote)return{agent:'execution',order:null,reason:'จำนวนหลังปัดเศษต่ำกว่าขั้นต่ำตลาด'};
  return{agent:'execution',order:{symbol:m.symbol,side,price,amount,qtyScale:rule.qtyScale,notional:side==='BUY'?amount:amount*price,type:'limit'},reason:'LIMIT '+m.symbol+' • ซื้อเป็น THB • ขายเป็น '+assetOf(m.symbol)};

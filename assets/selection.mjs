@@ -23,7 +23,7 @@ export function matchesAsset(title,market){
 export function assessNews(m,feed,now=Date.now()){
  const ready=feed?.ready===true&&Number.isFinite(feed.fetchedAt)&&now-feed.fetchedAt<=1800000;
  const rows=ready?(feed.items||[]).filter(x=>now-x.publishedAt<=86400000&&(matchesAsset(x.title,m)||/crypto (market|exchange).*(crash|hack|bankrupt)/i.test(x.title))):[];
- const high=/\b(hack(?:ed)?|exploit(?:ed)?|delist(?:ing|ed)?|rug.?pull|fraud|insolven|bankrupt|breach|criminal|drain(?:ed)?)\b|trading (halt|suspend)|withdrawals? (halt|suspend)/i;
+ const high=/\b(hack(?:ed|s|ing|er|ers)?|exploit(?:ed|s|ation)?|delist(?:ing|ed|s)?|rug.?pull|fraud(?:ulent)?|insolven(?:t|cy)|bankrupt(?:cy)?|breach(?:es|ed)?|criminal|drain(?:ed|s)?)\b|trading (halt|suspend)|withdrawals? (halt|suspend)/i;
  const negative=/\b(tumbl|plung|crash|liquidat|sell.off|lawsuit|outflow|dump|unlock)/i;
  const positive=/\b(approv|adopt|partnership|inflow|upgrad|integrat)/i;
  let score=0;for(const h of rows){score+=high.test(h.title)?-3:negative.test(h.title)?-1:positive.test(h.title)?1:0;}
@@ -48,7 +48,7 @@ export function evaluate(m,state,c,now=Date.now()){
  const out=cycle(m,state,c,now),trend=out.trace.find(x=>x.agent==='trend'),n=out.trace.find(x=>x.agent==='news'),r=out.trace.find(x=>x.agent==='risk');
  const timing=trend?.bias==='UP'?35:trend?.bias==='FLAT'?10:0;
  const score=Math.max(0,Math.min(100,(m.preScore||0)+timing-(trend?.volatility||0)*200+(out.order?.side==='BUY'?10:0)));
- return{market:m,out,score:Math.round(score*10)/10,signal:out.order?.side||'HOLD',reasons:r?.blocked||[out.error||'รอจังหวะ'],risk:r,news:n,trend};
+ return{market:m,out,score:Math.round(score*10)/10,signal:out.order?.side||'HOLD',reasons:r?.blocked?.length?r.blocked:[out.error||out.trace.find(x=>x.agent==='strategy')?.reason||'รอจังหวะ'],risk:r,news:n,trend};
 }
 export function portfolioCycle(bundle,state,c,now=Date.now(),paper=false){
  const hold=heldSymbol(state),markets=bundle?.markets||[],pool=hold?markets.filter(m=>m.symbol===hold):markets;

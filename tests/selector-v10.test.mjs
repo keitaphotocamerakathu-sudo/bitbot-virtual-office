@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {config,initial,cycle,applyFill,sizing,executionAgent} from '../assets/engine.mjs';
 import {parseRSS,assessNews,matchesAsset,rankUniverse,portfolioCycle} from '../assets/selection.mjs';
-import {normalizeSymbols,mergeTickers,candlesFrom} from '../supabase/functions/bitbot-v10/market.mjs';
+import {normalizeSymbols,mergeTickers,candlesFrom,shortlist} from '../supabase/functions/bitbot-v10/market.mjs';
 const NOW=1800000000000,feed={ready:true,fetchedAt:NOW,items:[],sources:[{name:'QA',ok:true}]};
 function market(symbol='BTC_THB',scale=1){return{symbol,name:symbol==='ETH_THB'?'Ethereum':'Bitcoin',status:'active',last:3000000*scale,bid:2999000*scale,ask:3000000*scale,volumeTHB:10000000,change:1,observedAt:NOW,preScore:20,
  rules:{minQuote:10,priceStep:.01,priceScale:2,qtyScale:8},news:{ready:true,fetchedAt:NOW,blocked:false,score:0,headlines:[]},candles:Array.from({length:80},(_,i)=>({t:NOW-(80-i)*300000,c:(2950000+i*500+(i%2)*2000)*scale}))};}
@@ -26,3 +26,7 @@ test('broker minimum sizes are respected instead of assuming ten baht',()=>{cons
 test('low price coins preserve eight decimal tick precision',()=>{const m={...market('BONK_THB',1e-10),ask:.00030001,bid:.0003,rules:{minQuote:10,priceStep:.00000001,priceScale:8,qtyScale:1}},s={...initial(),qty:100000};const o=executionAgent(m,s,{action:'BUY',notional:20}).order;assert.equal(o.price,.00030001);assert.equal(o.symbol,'BONK_THB');assert(o.price>0);});
 test('symbol metadata uses Bitkub minimums and base quantity precision',()=>{const r=normalizeSymbols({error:0,result:[{symbol:'PYTH_THB',quote_asset:'THB',market_segment:'SPOT',status:'active',name:'Pyth Network',source:'broker',min_quote_size:200,price_step:'0.00001',price_scale:5,base_quantity_scale:1},{symbol:'ETH_USDT',quote_asset:'USDT',market_segment:'SPOT'}]},NOW);assert.equal(r.length,1);assert.equal(r[0].rules.minQuote,200);assert.equal(r[0].rules.qtyScale,1);});
 test('foreign quote pairs can never enter the THB universe',()=>{const c=config();const m=market('ETH_USDT',.001);assert.equal(rankUniverse([m],c,feed,NOW).length,0);});
+
+test('bankruptcy and hacked variants veto new buys for the named asset',()=>{const m=market('ETH_THB',.001);for(const title of ['Ethereum project bankruptcy','Ethereum protocol hacks reported','Ethereum insolvency concern'])assert.equal(assessNews(m,{...feed,items:[{title,publishedAt:NOW-1000}]},NOW).blocked,true);});
+test('shortlist rotates beyond the first twelve assets while preserving core liquidity leaders',()=>{const list=Array.from({length:30},(_,i)=>({symbol:'A'+i+'_THB',status:'active',eligible:true}));const first=shortlist(list,[],NOW),next=shortlist(list,[],NOW+60000);assert(first.slice(0,8).every((x,i)=>x.symbol===list[i].symbol));assert.notDeepEqual(first.map(x=>x.symbol),next.map(x=>x.symbol));assert.equal(first.length,12);});
+test('inconsistent tick metadata can never inflate a limit price tenfold',()=>{const m={...market('BONK_THB',1e-10),ask:.000000001,bid:.000000001,rules:{minQuote:10,priceStep:.00000001,priceScale:8,qtyScale:1}};assert.equal(executionAgent(m,initial(),{action:'BUY',notional:20}).order,null);});
