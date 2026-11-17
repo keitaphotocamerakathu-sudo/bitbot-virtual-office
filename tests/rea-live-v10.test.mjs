@@ -35,6 +35,9 @@ test('severe stop gap selects a real market sell fallback, never a market buy',(
  const m={...market(),bid:90,last:90,ask:90.01};const out=planLive(held(),{markets:[m]},wallet(),now,{entries:false,id:()=>id});
  assert.equal(out.intents[0].order.type,'market');assert.equal(exchangeBody(out.intents[0].order).rat,0);
  assert.throws(()=>exchangeBody({...buy(),type:'market'}));assert.throws(()=>exchangeBody({...buy(),amount:Infinity}));
+ const s=held();s.orders=[{...buy(),id:'old-exit',side:'SELL',status:'CANCELED',reason:'STOP_LOSS',positionId:'another-position'}];
+ const normal=planLive(s,{markets:[{...market(),bid:98.5,last:98.5,ask:98.51}]},wallet(),now,{entries:false,id:()=>id});
+ assert.equal(normal.intents[0].order.type,'limit');assert.equal(normal.intents[0].order.positionId,id);
 });
 test('live SELL fill applies actual proceeds, net fee credits and realized cost basis',()=>{
  const s=held();s.orders=[{...buy(),side:'SELL',amount:20,remaining:20,stop:undefined,target:undefined}];

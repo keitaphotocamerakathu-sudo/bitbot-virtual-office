@@ -4,7 +4,7 @@ create table rea.live_accounts(
  user_id uuid primary key references rea.bot_settings(user_id),
  mode text not null default 'LIVE_LOCKED' check(mode in('LIVE_LOCKED','LIVE_ENABLED')),
  state jsonb, preflight jsonb not null default '{}', latest jsonb not null default '{}',
- revision bigint not null default 0, lease uuid, lease_until timestamptz,
+ revision bigint not null default 0, lease uuid, lease_until timestamptz,cooldown_until timestamptz,
  next_tick timestamptz not null default now(), updated_at timestamptz not null default now(),
  approval jsonb, last_error text
 );
@@ -79,6 +79,7 @@ language plpgsql security invoker set search_path='' as $$begin
  return query update rea.live_accounts a set lease=gen_random_uuid(),lease_until=now()+interval '90 seconds'
  where a.user_id in(select b.user_id from rea.live_accounts b where (p_uid is null or b.user_id=p_uid)
  and (b.lease_until is null or b.lease_until<now())
+ and (b.cooldown_until is null or b.cooldown_until<now())
  and (p_lane='risk' and b.state is not null or p_lane='strategy' and b.next_tick<=now())
  order by b.next_tick for update skip locked limit 2) returning a.*;
 end$$;
@@ -125,7 +126,7 @@ declare a rea.live_accounts%rowtype;o jsonb;f jsonb;slots integer;begin
    insert into rea.live_equity values(p_uid,(p_latest->>'at')::bigint,(p_state->>'equity')::numeric,p_state->>'day',(p_state->>'dayPnl')::numeric) on conflict do nothing;
   end if;
  end if;
- update rea.live_accounts set state=p_state,preflight=p_preflight,latest=p_latest,revision=revision+1,lease_until=now()+interval '90 seconds',next_tick=case when p_lane='strategy' then now()+interval '45 seconds' else next_tick end,updated_at=now(),last_error=p_error where user_id=p_uid returning * into a;
+ update rea.live_accounts set state=p_state,preflight=p_preflight,latest=p_latest,revision=revision+1,lease_until=now()+interval '90 seconds',cooldown_until=case when p_error like '%429%' then now()+interval '31 seconds' else cooldown_until end,next_tick=case when p_lane='strategy' then now()+interval '45 seconds' else next_tick end,updated_at=now(),last_error=p_error where user_id=p_uid returning * into a;
  perform public.rea_live_heartbeat(p_uid,p_lane,case when p_error is not null then 'SAFE_MODE' when p_state is null then 'IDLE' else p_latest->>'health' end,floor(extract(epoch from now())*1000)::bigint);
  return to_jsonb(a);
 end$$;
@@ -162,6 +163,7 @@ language plpgsql security invoker set search_path='' as $$
 declare a rea.live_accounts%rowtype;o jsonb;expected jsonb;wire_path text;idx integer;r jsonb;exposure numeric;begin
  select * into a from rea.live_accounts where user_id=p_uid for update;
  if not found or a.lease is distinct from p_lease or a.lease_until<now() or a.revision<>p_revision or a.state is null or a.state->>'kill'='ALL' then return jsonb_build_object('allowed',false,'reason','LIVE_EXECUTOR_OR_CONTROL_CHANGED');end if;
+ if a.cooldown_until>now() then return jsonb_build_object('allowed',false,'reason','EXCHANGE_RATE_LIMIT_COOLDOWN');end if;
  select value,(ordinality-1)::integer into o,idx from jsonb_array_elements(a.state->'orders') with ordinality where value->>'id'=p_order::text;
  if o is null then return jsonb_build_object('allowed',false,'reason','ORDER_NOT_RESERVED');end if;
  if p_action='PLACE' then

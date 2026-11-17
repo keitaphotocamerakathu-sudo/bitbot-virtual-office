@@ -40,6 +40,13 @@ do $$declare u uuid;l uuid=gen_random_uuid();other uuid=gen_random_uuid();oid uu
  if (public.rea_live_dispatch(u,l,(r->>'revision')::bigint,oid,'PLACE',b,'/api/v3/market/place-bid')->>'allowed')::boolean then raise exception 'EMERGENCY_NOT_FENCED';end if;
  perform public.rea_live_control(u,'resume');
  if (select state->>'kill' from rea.live_accounts where user_id=u)<>'ALL' then raise exception 'RESUME_CLEARED_EMERGENCY';end if;
+ -- A 429 cooldown survives the worker releasing its execution lease.
+ update rea.live_accounts set lease=l,lease_until=now()+interval '90 seconds' where user_id=u;
+ select revision,state into rev,s from rea.live_accounts where user_id=u;
+ r=public.rea_live_checkpoint(u,l,rev,s,(select preflight from rea.live_accounts where user_id=u),jsonb_build_object('at',t,'health','SAFE_MODE'),'[]','risk','BITKUB_HTTP_429');
+ if not exists(select 1 from rea.live_accounts where user_id=u and cooldown_until>=now()+interval '30 seconds') then raise exception '429_NOT_PERSISTED';end if;
+ perform public.rea_live_release(u,l);
+ if (select count(*) from public.rea_live_claim('risk',u))<>0 then raise exception '429_RESTART_BYPASSED_COOLDOWN';end if;
 end$$;
 rollback;
 select 'LIVE_POSTGRES_INTEGRITY_PASSED_NO_HTTP' as result;

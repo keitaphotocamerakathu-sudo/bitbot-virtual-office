@@ -102,11 +102,11 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
   const m=markets.find(m=>m.symbol===p.symbol);
   if(!quoteOK(m,now)||m.sellFrozen||m.status!=='active'||!m.rules||s.orders.some(o=>liveActive(o)&&o.symbol===p.symbol))continue;
   const reason=m.bid<=p.stop?'STOP_LOSS':m.bid>=p.target?'TAKE_PROFIT':null;if(!reason)continue;
-  const prior=s.orders.findLast(o=>o.side==='SELL'&&o.symbol===p.symbol&&o.status==='CANCELED'&&o.reason==='STOP_LOSS');
+  const prior=s.orders.findLast(o=>o.side==='SELL'&&o.symbol===p.symbol&&o.positionId===p.positionId&&o.status==='CANCELED'&&o.reason==='STOP_LOSS');
   const type=reason==='STOP_LOSS'&&(m.bid<=p.stop*.98||prior)?'market':'limit';
   const amount=roundUnit(Math.min(p.qty,wallet[assetOf(p.symbol)]?.available||0),m.rules.qtyScale);
   if(amount<=0||amount*m.bid<m.rules.minQuote)continue;
-  const o={...orderBase(s,m,'SELL',id(),now),amount,remaining:amount,type,limit:type==='market'?0:tickPrice(m.bid*(1-REA_LIMITS.slippage),m.rules,false),reason,strategy:p.strategy};
+  const o={...orderBase(s,m,'SELL',id(),now),positionId:p.positionId,amount,remaining:amount,type,limit:type==='market'?0:tickPrice(m.bid*(1-REA_LIMITS.slippage),m.rules,false),reason,strategy:p.strategy};
   s.orders.push(o);intents.push({action:'PLACE',order:o});
  }
  if(entries&&healthy&&!operationalLock&&!s.buyPaused&&!s.dailyLocked&&s.kill==='NONE'){
