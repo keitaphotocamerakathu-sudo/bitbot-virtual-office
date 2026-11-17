@@ -24,7 +24,7 @@
 
 ## งานบน Backend
 
-ติดตั้ง Strategy Cron ทุกนาที และ Live Risk Watchdog เป้าหมายทุก 15 วินาทีบน Supabase แล้ว ไม่ต้องเปิดเว็บหรือรอ VPS เพื่อให้ชุดนี้ทำงาน Scanner ทำงานนอก Lease ส่งคำสั่ง เพื่อไม่ให้งาน Candle/News ที่ค้างกีดกันตัวตรวจจุดออก รอบจริงขึ้นอยู่กับเครือข่าย Exchange และการกระทบยอด จึงไม่รับประกันว่าขาดทุนจะหยุดตรงวงเงินแบบจำลองเมื่อราคากระโดด
+ติดตั้ง Strategy Cron ทุกนาที และ Live Risk Watchdog เป้าหมายทุก 15 วินาทีบน Supabase แล้ว ไม่ต้องเปิดเว็บหรือรอ VPS เพื่อให้ชุดนี้ทำงาน Scanner ทำงานนอก Lease ส่งคำสั่ง เพื่อไม่ให้งาน Candle/News ที่ค้างกีดกันตัวตรวจจุดออก มี Cooldown 429 ที่เก็บในฐานข้อมูลอย่างน้อย 31 วินาที จึงยังคงมีผลเมื่อ Worker เปลี่ยนหรือ Restart รอบจริงขึ้นอยู่กับเครือข่าย Exchange และการกระทบยอด จึงไม่รับประกันว่าขาดทุนจะหยุดตรงวงเงินแบบจำลองเมื่อราคากระโดด
 
 มีตาราง `rea.live_accounts`, `live_orders`, `live_fills`, `live_checks`, `live_heartbeats`, `live_equity` แยกจาก Paper ทุกตารางใช้ RLS และให้เฉพาะ Service Role เข้าถึง การอ่านของเจ้าของผ่าน Backend ที่ตรวจ JWT และกำหนด User ID จาก Token
 
@@ -40,7 +40,7 @@ Bitkub ปฏิเสธกุญแจที่เก็บไว้ โดย
 
 บัญชีใหม่เริ่ม `LIVE_LOCKED` โดยยังไม่จัดสรรทุน ระบบยังต้องตรวจหลักฐาน Paper จริงอย่างน้อย 7 วัน การกระทบยอด Security Review การตรวจสิทธิ์ถอน และการแจ้งเตือนถึงเจ้าของตาม SRS เดิม ก่อนเปิดใช้เงินจริง ต้องยืนยันบนบัญชีเจ้าของพร้อมพิมพ์ “เปิดซื้อขายจริง Bitkub” และวงเงิน Server ตรวจซ้ำก่อนคำสั่งซื้อทุกครั้ง
 
-การพิมพ์ข้อความหรือเลือก Checkbox ไม่สามารถเปลี่ยนผลตรวจรับในฐานข้อมูลได้ และ LLM ไม่มีสิทธิ์เพิ่มวงเงินหรือเปิดโหมดนี้ เส้นทางส่งคำสั่งเก่ากับ Gateway เดิมยังล็อกไว้ เพื่อไม่ให้มี Executor สองชุดแข่งขันกัน
+ผลตรวจสิทธิ์กุญแจและการกระทบยอดผูกกับ Fingerprint ของ API Key ชุดปัจจุบัน ผลของ Key เก่าจึงใช้ปลด Key ใหม่ไม่ได้ การพิมพ์ข้อความหรือเลือก Checkbox ไม่สามารถเปลี่ยนผลตรวจรับในฐานข้อมูลได้ และ LLM ไม่มีสิทธิ์เพิ่มวงเงินหรือเปิดโหมดนี้ เส้นทางส่งคำสั่งเก่ากับ Gateway เดิมยังล็อกไว้ เพื่อไม่ให้มี Executor สองชุดแข่งขันกัน
 
 เมื่อ Emergency Stop จะหยุดการส่งคำสั่งทั้งหมด แต่คำสั่งที่ Bitkub รับไปแล้วอาจยังจับคู่ได้ ระบบยังอ่านผลเพื่อกระทบยอด ไม่รายงานว่าคำสั่งค้างถูกยกเลิกโดยไม่มีหลักฐาน
 
@@ -50,4 +50,18 @@ Bitkub ปฏิเสธกุญแจที่เก็บไว้ โดย
 
 PostgreSQL จริงผ่านการตรวจ Lease, Revision, การส่งซ้ำ, Emergency Stop, ด้านซื้อ/ขาย, เนื้อหา Wire Request และสิทธิ์เข้าถึง โดยใช้ Transaction Rollback ข้อมูลย้อนหลังและผลตรวจรับสังเคราะห์ใน Test ถูก Rollback ทั้งหมด ไม่มีการสร้างหลักฐาน Paper ปลอมหรือเปิด Live ค้างไว้
 
-การตรวจ Docker และ Browser รอบนี้ให้ดูผล GitHub Actions ของ Commit ที่เผยแพร่ ผลคำสั่งเงินจริงยังไม่ผ่านการตรวจรับ เพราะ Private API ปฏิเสธกุญแจปัจจุบัน ไม่มีรายการ Live ของ REA ที่อ้างเป็นผลจับคู่จริงในช่วงพัฒนานี้
+ผลตรวจของโค้ดเริ่มต้น [Run 44095256254](https://github.com/keitaphotocamerakathu-sudo/bitbot-virtual-office/actions/runs/44095256254) ผ่าน Backend 209 รายการ, Browser/Mobile 24 รายการ, Docker Build/Runtime, Compose, WebSocket จริง และ Public Backend Smoke Checks
+
+ผลตรวจโค้ดสุดท้าย `b65e032a51dad7cde3e8ac0d71dfa09d53e75b98` อยู่ที่ [Run 44096511177](https://github.com/keitaphotocamerakathu-sudo/bitbot-virtual-office/actions/runs/44096511177) สถานะ: ผ่านครบและเผยแพร่แล้ว — Backend 209 รายการ, Browser/Mobile 24 รายการ, Docker Build/Runtime, Compose, Public WebSocket จริง และ Public Backend Smoke Checks
+
+ทดสอบ PostgreSQL จริงเพิ่มเติมแล้วว่าเปลี่ยน Key จะใช้ผลตรวจ Key เก่าไม่ได้ และ Cooldown 429 คงอยู่หลังปล่อย Lease ทั้งสองกรณีผ่านแบบ Rollback
+
+Backend ติดตั้งเป็น Edge Function Version 28 แล้ว ตรวจ Cron ล่าสุดสำเร็จทั้ง Strategy และ Watchdog เวลา 20:50 น. บัญชียังเป็น `LIVE_LOCKED`, ไม่จัดสรรทุน, Live Orders 0 และ Live Fills 0 รายการ ส่วน Live Orders ของระบบเดิมยังเป็น 4 รายการตามเดิม
+
+ผลคำสั่งเงินจริงยังไม่ผ่านการตรวจรับ เพราะ Private API ปฏิเสธกุญแจปัจจุบัน ไม่มีรายการ Live ของ REA ที่อ้างเป็นผลจับคู่จริงในช่วงพัฒนานี้
+
+เมื่อ Wallet ไม่ตรงกับทุน/เหรียญที่บอทบันทึก เช่น เจ้าของถอนหรือย้ายสินทรัพย์จนเงินค้ำวงเงินบอทไม่พอ ระบบจะล็อกเพื่อกระทบยอดจากหลักฐาน ไม่ถือส่วนต่างที่ไม่ทราบที่มาเป็นกำไร
+
+Security Advisor หลังติดตั้งไม่มีข้อแจ้งเตือนใหม่จากตาราง Live ยังมีของเดิมคือ [`pg_net` ใน Public Schema](https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public) และ [ยังไม่เปิดตรวจรหัสผ่านที่เคยรั่ว](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) จึงยังไม่บันทึกว่าผ่าน Security Review ขั้นสุดท้าย
+
+ผล Automated Execution/Recovery ถูกบันทึกที่ Server พร้อม Commit และ URL ของ Run ที่ผ่าน ส่วน Reconciliation Review, Security Review, No Withdraw Scope และ Owner Alert Delivery ยังไม่ได้ระบุว่าผ่าน การรับรองอัตโนมัติสองรายการไม่ปลด Live เอง

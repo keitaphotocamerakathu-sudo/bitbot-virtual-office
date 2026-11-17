@@ -32,7 +32,7 @@ Private API ปัจจุบันถูก Bitkub ปฏิเสธ `401 / 3
 
 ## ตรวจสอบและใช้งาน
 
-ผลตรวจโค้ด `ae2f29b` ผ่าน [GitHub Actions](https://github.com/keitaphotocamerakathu-sudo/bitbot-virtual-office/actions/runs/44087338864): Backend 190 รายการ, Browser/Mobile 21 รายการ, Docker Build/Runtime, Compose, Public WebSocket จริง และ Public Backend Smoke Checks
+ผลตรวจ REA 19.0 ผ่าน [GitHub Actions](https://github.com/keitaphotocamerakathu-sudo/bitbot-virtual-office/actions/runs/44096511177): Backend 209 รายการ, Browser/Mobile 24 รายการ, Docker Build/Runtime, Compose, Public WebSocket จริง และ Public Backend Smoke Checks รายละเอียดโค้ดสุดท้ายและสถานะการเชื่อมต่ออยู่ในรายงาน Live 19.0
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
