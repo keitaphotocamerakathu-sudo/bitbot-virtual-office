@@ -12,7 +12,7 @@ function fillable(order,market,now){
  if(order.side==='BUY'?price<=order.price:price>=order.price)capacity+=order.side==='BUY'?price*qty:qty;}
  return capacity>=(order.side==='BUY'?order.amount:order.amount)-1e-10;
 }
-export function shadowStep(bundle,record,c,now=Date.now()){
+export function shadowStep(bundle,record,c,now=Date.now(),plannedOut=null){
  const r=structuredClone(record),events=[];r.lastAt=now;
  if(r.pending){
   const p=r.pending,m=bundle.markets?.find(x=>x.symbol===p.order.symbol),age=now-p.at;
@@ -31,7 +31,7 @@ export function shadowStep(bundle,record,c,now=Date.now()){
   events.push({kind:'FILL',at:now,symbol:order.symbol,side:order.side,qty,price:order.price,fee,realized:r.state.realized-oldRealized,reason:order.reason,execution:'NEXT_SNAPSHOT_LIMIT_PROXY'});
   return{record:r,events};
  }
- const out=portfolioCycle(bundle,r.state,c,now);r.state=out.state;r.trace=out.trace;r.error=out.error||null;if(!out.error&&out.market)r.lastMarketAt=out.market.observedAt;
+ const out=plannedOut||portfolioCycle(bundle,r.state,c,now);r.state=out.state;r.trace=out.trace;r.error=out.error||null;if(!out.error&&out.market)r.lastMarketAt=out.market.observedAt;
  if(out.order){r.pending={order:out.order,at:now};events.push({kind:'ORDER',at:now,...out.order,execution:'PAPER_ONLY'});}
  return{record:r,events};
 }

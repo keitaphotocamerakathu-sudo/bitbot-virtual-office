@@ -1,4 +1,4 @@
-# BITBOT 11 — Multi-Asset, News & Wallet Risk
+# BITBOT 14 — AI Trading Company
 เว็บ: https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/
 
 ## การทำงานใหม่
@@ -84,7 +84,7 @@ The dashboard separates realized profit, estimated unrealized profit including a
 
 News uses entity/context rules, two RSS sources and bounded article extraction for four recent stories. Inaccessible content is labeled headline-only; a single positive source cannot boost the score. No LLM is configured. This is a quantitative agent team.
 
-`node research/backtest.mjs` performs three chronological 14-day-training/two-day-holdout runs on six predeclared coins. Holding time is selected only on training. Real OHLCV is used with synthetic spread/depth and neutral news; costs are explicit, fills are optimistic proxies and results do not establish live profitability. Each CI run archives its report. Forward paper trading remains available while the browser is open. Only the real-money server bot continues when the computer is off.
+`node research/backtest.mjs` performs three chronological 14-day-training/two-day-holdout runs on six predeclared coins. Holding time is selected only on training. Real OHLCV is used with synthetic spread/depth and neutral news; costs are explicit, fills are optimistic proxies and results do not establish live profitability. Each CI run archives its report. As of v14 both paper and real engines run on Cloud when explicitly started; the browser only renders their state.
 
 
 ## Evidence and server paper research v13
@@ -94,3 +94,17 @@ The three preregistered hypotheses and two holding times are defined in `researc
 No candidate currently qualifies for real trading. Server enforcement checks historical approval and at least 20 positive-net forward rounds over 14 days, and never treats passing those necessary conditions as a guarantee. Existing positions may still be managed when explicitly started; new real buys require evidence. The requested real account remains stopped.
 
 A separate minute scheduler now evaluates six independent paper portfolios even with the computer off. It has no exchange key access and no signed exchange calls. Simulated LIMIT orders are only eligible on a subsequent fresh quote with enough visible depth at the limit price, and expire after two minutes. Visible depth is a snapshot proxy, not proof of queue position or real matching. Fees are charged conservatively without fee credits. The dashboard separates this research capital/results from actual positions and allows pausing paper research. Paper state, events and checkpoints use an account-scoped lease and atomic database function, with service-only access.
+
+
+## Company v14 (17 November 2026)
+
+Ten quantitative departments now share a permissioned tool router, dynamically allocated bounded workers and durable account-scoped company jobs. The isometric office replays actual task records and handoffs, with explicit playback labels. It does not invent LLM conversations. New closed-data indicators cover 1m/5m/15m/1h/4h/1D, and a missing/downward hourly context vetoes new buys. A public WebSocket ticker is display-only, reconnects with backoff and falls back to REST. Optional browser TTS reads a recorded handoff after a button press.
+
+The browser's old guest paper execution has been replaced with authenticated cloud paper controls. Real and paper pause flags are preserved during upgrade. Changing paper capital archives the old paper session and never rewrites the real portfolio. Daily/weekly/monthly/yearly ledger reports, CSV and real XLSX files disclose data coverage. The owner can request a separate typed-confirmation close of bot-owned real assets under existing limits.
+
+The 14-day/20-round progress display uses actual continuous paper records, and server enforcement also checks it. No strategy is approved, no new real order is authorized by the upgrade, and no daily profit is promised. The new hourly filter still needs long-duration empirical evaluation. Managed PITR/restore testing and any LLM provider remain unconfigured/unverified.
+
+- [Architecture and scope](docs/ARCHITECTURE.md)
+- [Deployment and recovery](docs/OPERATIONS.md)
+- [คู่มือภาษาไทย](docs/USER_GUIDE_TH.md)
+- [Server environment template](.env.example)

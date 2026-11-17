@@ -39,7 +39,8 @@ export function shortlist(ranked,held=[],now=Date.now()){
  if(!picked.length)picked.push(...ranked.filter(x=>x.status==='active').slice(0,3));return picked;
 }
 
-export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
+export function createMarketService({json:requestJSON,db,read,rpc,fetchFn=fetch}){
+ async function json(url){for(let attempt=0;attempt<3;attempt++){try{return await requestJSON(url);}catch(e){if(attempt===2)throw e;await new Promise(r=>setTimeout(r,Math.min(2000,400*2**attempt)));}}}
  const local=new Map(),pending=new Map();
  async function cached(key,ttl,fn){
  const own=local.get(key);if(own&&Date.now()<own.expires)return own.value;if(pending.has(key))return pending.get(key);
@@ -95,6 +96,18 @@ export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
  });
  }
  async function detail(m){const [candles,book]=await Promise.all([history(m.symbol),depth(m.symbol).catch(()=>null)]);return{...m,candles,depth:book};}
+ async function analysis(symbol){
+ if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');
+ const frames={},errors={};
+ await Promise.all([1,60,1440].map(async resolution=>{try{
+ frames[String(resolution)]=await cached('frame-v14b-'+resolution+'-'+symbol,resolution===1?60000:resolution===60?300000:3600000,async()=>{
+ const end=Math.floor(Date.now()/1000),from=end-resolution*60*240;
+ const raw=await json('https://api.bitkub.com/tradingview/history?symbol='+symbol+'&resolution='+(resolution===1440?'1D':resolution)+'&from='+from+'&to='+end);
+ if(raw?.s!=='ok'||!Array.isArray(raw.t))throw Error('ไม่มีข้อมูล Timeframe '+resolution);
+ return raw.t.map((t,i)=>({t:Number(t)*1000,o:Number(raw.o?.[i]),h:Number(raw.h?.[i]),l:Number(raw.l?.[i]),c:Number(raw.c?.[i]),v:Number(raw.v?.[i])})).filter(b=>b.t+resolution*60000<=Date.now());
+ });}catch(e){errors[String(resolution)]=String(e.message);}}));
+ return{frames,errors};
+ }
  async function all(){const [meta,q]=await Promise.all([symbols(),quotes()]);return mergeTickers(meta,q.raw,q.at);}
  async function single(symbol='BTC_THB'){
  if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');const list=await all(),m=list.find(x=>x.symbol===symbol);
@@ -109,5 +122,5 @@ export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
  scannedCount:detailed.length,markets:detailed,watchlist:ranked.map(({candles,news,...m})=>({...m,news:{ready:news?.ready,blocked:news?.blocked}})),
  news:{...feed,items:feed.items.slice(0,12).map(({body,...item})=>item)}};
  }
- return{single,scan,all,news,symbols};
+ return{single,scan,all,news,symbols,analysis};
 }

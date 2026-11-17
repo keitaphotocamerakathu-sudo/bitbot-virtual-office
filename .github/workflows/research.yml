@@ -1,0 +1,30 @@
+name: Reproduce frozen public-data research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bitbot-research
+  cancel-in-progress: false
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify protocol and archived source identity
+        run: node research/verify-v13.mjs
+      - name: Download public OHLCV and reproduce training/holdout study
+        run: node research/compare-v13.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frozen-research-reproduction
+          path: |
+            assets/research-v13.json
+            research/research-v13-details.json
+            research/data-v13.json.gz
+          retention-days: 30
+      # No repository writes, secrets, exchange calls or automatic LIVE approval.

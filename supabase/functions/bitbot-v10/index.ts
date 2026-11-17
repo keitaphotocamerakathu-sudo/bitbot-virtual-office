@@ -1,7 +1,11 @@
 // Bitbot 10. Credentials and HMAC signing exist only on the server.
 // @ts-nocheck
-import {config,initial,cycle,applyFill,floor8,heldSymbol,assetOf,roundUnit,sizing,validSymbol,fundingAmount} from './engine.mjs';
+import {config,initial,cycle,applyFill,floor8,heldSymbol,assetOf,roundUnit,sizing,validSymbol,fundingAmount,executionAgent} from './engine.mjs';
 import {SHADOW_CANDIDATES,shadowConfig,shadowInitial,shadowStep} from './shadow.mjs';
+import {assessCompany,attachReceipts} from './company.mjs';
+import {readinessProgress} from './readiness.mjs';
+import {reportingSummary,aggregateFills} from './reporting.mjs';
+import {pack,unpack} from './archive.mjs';
 import {liveReadiness} from './evidence.mjs';
 import {portfolioCycle} from './selection.mjs';
 import {createMarketService} from './market.mjs';
@@ -100,17 +104,26 @@ function walletValue(w,quotes){
 }
 async function event(uid,kind,payload){await db('bitbot_v10_events',{user_id:uid,kind,payload});}
 async function status(uid){
- const [bots,orders,events,setup,shadows]=await Promise.all([
- read('bitbot_v10_bots?user_id=eq.'+uid+'&select=running,config,state,updated_at,last_error'),
+ const [bots,orders,events,setup,shadows,agents,jobs,paperEvents]=await Promise.all([
+ read('bitbot_v10_bots?user_id=eq.'+uid+'&select=running,config,state,updated_at,last_error,close_positions'),
  read('bitbot_v10_orders?user_id=eq.'+uid+'&order=created_at.desc&limit=100'),
  read('bitbot_v10_events?user_id=eq.'+uid+'&order=id.desc&limit=50'),
- rpc('bitbot_exchange_setup_status',{p_user_id:uid}),read('bitbot_v13_shadow?user_id=eq.'+uid+'&select=enabled,capital,states,started_at,updated_at,last_error')]);
- const shadow=shadows[0]||null,evidence=liveReadiness(bots[0]?.config?.strategyProfile||'legacy-v12',shadow);
- return{bot:bots[0]||null,orders,events,shadow,evidence,reporting:{trackingSince:bots[0]?.state?.trackingSince||null,history:'DAILY_DETAILS_FROM_V12'},key:{configured:setup.configured,suffix:setup.keySuffix,verifiedAt:setup.verifiedAt},serverLiveEnabled:LIVE};
+ rpc('bitbot_exchange_setup_status',{p_user_id:uid}),read('bitbot_v13_shadow?user_id=eq.'+uid+'&select=enabled,capital,states,started_at,updated_at,last_error,base_config,buy_paused'),read('bitbot_v14_agents?user_id=eq.'+uid+'&order=role.asc'),read('bitbot_v14_company_jobs?user_id=eq.'+uid+'&select=id,mode,status,attempts,created_at,started_at,finished_at,error&order=created_at.desc&limit=12'),read('bitbot_v13_shadow_events?user_id=eq.'+uid+'&order=id.desc&limit=100')]);
+ const shadow=shadows[0]||null,evidence=liveEvidence(bots[0]?.config?.strategyProfile||'legacy-v12',shadow);
+ return{bot:bots[0]||null,orders,events,shadow,evidence,paperEvents,readiness:readinessProgress(bots[0]?.config?.strategyProfile||'trend-confirmed',shadow),company:{agents,jobs},reporting:{trackingSince:bots[0]?.state?.trackingSince||null,history:'DAILY_DETAILS_FROM_V12'},key:{configured:setup.configured,suffix:setup.keySuffix,verifiedAt:setup.verifiedAt},serverLiveEnabled:LIVE};
+}
+function liveEvidence(profile,shadow){
+ const legacy=liveReadiness(profile,shadow),progress=readinessProgress(profile,shadow);
+ return{...legacy,allowed:legacy.allowed&&progress.technicalReady,reasons:[...new Set([...legacy.reasons,...progress.checks.filter(x=>!x.passed).map(x=>x.label+' — '+x.value)])]};
+}
+async function ledgerPages(path,cap=10000){
+ const rows=[];while(rows.length<=cap){const batch=await read(path+'&limit=500&offset='+rows.length);rows.push(...batch);if(batch.length<500)break;}
+ return{rows:rows.slice(0,cap),possiblyTruncated:rows.length>cap,limit:cap};
 }
 async function updateOrder(id,uid,patch){return db('bitbot_v10_orders?id=eq.'+id+'&user_id=eq.'+uid,{...patch,updated_at:new Date().toISOString()},'PATCH');}
 async function finish(b,s,trace=[],error=null,id=null,status=null,fills=[]){
- return await rpc('bitbot_v12_finish',{p_uid:b.user_id,p_lease:b.lease,p_state:s,p_trace:trace,p_error:error,p_settle:id,p_status:status,p_fills:fills});
+ const done=await rpc('bitbot_v12_finish',{p_uid:b.user_id,p_lease:b.lease,p_state:s,p_trace:trace,p_error:error,p_settle:id,p_status:status,p_fills:fills});
+ if(b._company){b._company.archive.executionReceipts=[...(b._company.archive.executionReceipts||[]),{stage:b._receipt?.stage||'NO_SUBMISSION',...b._receipt,checkpointCommitted:done,error,settledOrder:id,at:Date.now()}];await companyFinish(b._companyJob,b._company,error);b._company=null;}if(done&&b.close_positions&&s.qty===0){await rpc('bitbot_v10_control',{p_uid:b.user_id,p_action:'stop'});await db('bitbot_v10_bots?user_id=eq.'+b.user_id,{close_positions:false},'PATCH');}return done;
 }
 function filledState(state,order,info,c,ledger=[]){
  c=config(c);
@@ -163,17 +176,24 @@ async function tickBot(b,bundle){
  const pair=await keys(b.user_id),pending=await read('bitbot_v10_orders?user_id=eq.'+b.user_id+'&settled=eq.false&limit=1');
  if(pending.length)return await reconcile(b,pending[0],pair);
  if(!b.running)return await finish(b,b.state);
+ if(b.close_positions&&!(b.state.qty>0)){await rpc('bitbot_v10_control',{p_uid:b.user_id,p_action:'stop'});await db('bitbot_v10_bots?user_id=eq.'+b.user_id,{close_positions:false},'PATCH');return;}
  if(!LIVE)return await finish(b,b.state,[],'ระบบปิดการซื้อขายเงินจริง');
  const c=config(b.config,true),w=walletValue(await wallet(pair),bundle?.watchlist||[]);
  const data={...bundle,markets:(bundle?.markets||[]).map(m=>({...m,wallet:w}))};
- const out=portfolioCycle(data,b.state,c,Date.now());
+ let out=portfolioCycle(data,b.state,c,Date.now());
+ if(b.close_positions&&!out.error&&out.market&&!out.market.sellFrozen&&(out.market.ask-out.market.bid)/out.market.last<=c.maxSpread){const notional=Math.min(b.state.qty*out.market.bid,c.maxOrder,c.dailySell-out.state.sold),risk={action:'SELL',notional,exitMinimum:(out.market.rules?.minQuote||10)*(1+c.stopLoss*2+c.fee*2)};const planned=executionAgent(out.market,b.state,risk);out.order=planned.order?{...planned.order,strategy:b.state.entryStrategy||'owner-close',reason:'OWNER_CLOSE'}:null;out.trace=out.trace.map(t=>t.agent==='risk'?{...t,...risk,reason:'OWNER_CLOSE'}:t.agent==='execution'?planned:t);}
+ b._companyJob=await companyClaim(b.user_id,'LIVE');
+ const proof=liveEvidence(c.strategyProfile,(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0]),plans={live:out};
+ b._company=assessCompany({bundle:data,plans,records:{live:{state:b.state}},configs:{live:c},advanced:b._companyJob||out.order?.side==='BUY'?await advancedFor(plans):{},mode:'LIVE',evidence:proof});out=b._company.plans.live;
  out.state.walletSnapshot={availableTHB:w.THB.available,reservedTHB:w.THB.reserved,
  equityTHB:w.equityTHB,at:w.at,reserveTHB:w.THB.available*c.walletReservePct+c.cashReserveTHB,
  spendableTHB:Math.max(0,w.THB.available*(1-c.walletReservePct)-c.cashReserveTHB)};
+ const mark=out.market&&Date.now()-out.market.observedAt<=30000?out.state.cash+out.state.qty*out.market.bid:out.state.qty===0?out.state.cash:null;
+ if(mark!==null&&out.state.peak>0)out.state.maxDrawdownSeen=Math.max(out.state.maxDrawdownSeen||0,1-mark/out.state.peak);
  if(out.error)return await finish(b,out.state,out.trace,out.error);
  if(!out.order)return await finish(b,out.state,out.trace);
  const o=out.order,quote=out.market;
- if(o.side==='BUY'){const shadow=(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0],ready=liveReadiness(c.strategyProfile,shadow);if(!ready.allowed)return await finish(b,out.state,[...out.trace,{agent:'risk',reason:ready.reasons.join(' • '),action:'HOLD'}]);}
+ if(o.side==='BUY'){const shadow=(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0],ready=liveEvidence(c.strategyProfile,shadow);if(!ready.allowed)return await finish(b,out.state,[...out.trace,{agent:'risk',reason:ready.reasons.join(' • '),action:'HOLD'}]);}
  if(Date.now()-quote.observedAt>25000)return await finish(b,out.state,[...out.trace,{agent:'execution',reason:'ราคาเก่าเกินส่งคำสั่ง รอตรวจใหม่'}]);
  // Re-read the actual wallet immediately before reserving any exchange write.
  const actual=walletValue(await wallet(pair),bundle.watchlist||[]),power=sizing({...quote,wallet:actual},b.state,c,Date.now());
@@ -185,34 +205,65 @@ async function tickBot(b,bundle){
  const body={sym:o.symbol.toLowerCase(),amt:o.amount,rat:o.price,typ:'limit',client_id:'bb10-'+rid.replaceAll('-','').slice(0,24)};
  const ans=await signed(pair,'POST',o.side==='BUY'?'/api/v3/market/place-bid':'/api/v3/market/place-ask',body);
  if(!ans.result?.id)throw Error('ไม่มีเลขออร์เดอร์ตอบกลับ');
- await updateOrder(rid,b.user_id,{status:'OPEN',exchange_id:String(ans.result.id)});await finish(b,out.state,out.trace);
+ await updateOrder(rid,b.user_id,{status:'OPEN',exchange_id:String(ans.result.id)});b._receipt={stage:'EXCHANGE_ACCEPTED',orderId:rid,exchangeId:String(ans.result.id),side:o.side,symbol:o.symbol};await finish(b,out.state,out.trace);
  }catch(e){
  await updateOrder(rid,b.user_id,{status:e.exchangeRejected?'REJECTED':'UNKNOWN',settled:e.exchangeRejected===true});
  await finish(b,out.state,out.trace,e.exchangeRejected?'Bitkub ปฏิเสธคำสั่ง':'ไม่ทราบผลคำสั่ง '+rid+' หยุดบอทและตรวจใน Bitkub');
  }
  }catch(e){await finish(b,b.state,[],String(e.message||'ระบบผิดพลาด').slice(0,250));}
 }
+async function advancedFor(plans){
+ const symbols=[...new Set(Object.values(plans).map(p=>p.market?.symbol).filter(Boolean))],advanced={};
+ await Promise.all(symbols.map(async symbol=>{const result=await markets.analysis(symbol);advanced[symbol]=result.frames;}));return advanced;
+}
+async function companyClaim(uid,mode,slot=Math.floor(Date.now()/300000)){
+ return await rpc('bitbot_v14_company_claim',{p_uid:uid,p_mode:mode,p_slot:slot});
+}
+async function companyFinish(job,result,error=null){
+ if(!job||!result)return false;
+ return await rpc('bitbot_v14_company_finish',{p_uid:job.user_id,p_id:job.id,p_lease:job.lease,p_archive:await pack(result.archive),p_workers:result.workers,p_error:error});
+}
 async function shadowTick(row,bundle){
- const states={...row.states},events=[];
+ const states={...row.states},events=[],records={},configs={},plans={};let job=null,company=null;
  try{
  if(!bundle?.markets?.length)throw Error('ข้อมูลตลาดยังไม่พร้อมสำหรับทดลอง');
- const base=(await read('bitbot_v10_bots?user_id=eq.'+row.user_id+'&select=config&limit=1'))[0]?.config;
- if(!base)throw Error('ไม่พบการตั้งค่าทุน');
+ const rawBase=row.base_config||(await read('bitbot_v10_bots?user_id=eq.'+row.user_id+'&select=config&limit=1'))[0]?.config;
+ if(!rawBase)throw Error('ไม่พบการตั้งค่าทุน');const base=row.base_config||{...rawBase,riskPerTrade:Math.min(rawBase.riskPerTrade||.01,.005),dailyLoss:Math.min(rawBase.dailyLoss||.03,.02)};
+ job=await companyClaim(row.user_id,'PAPER');
  for(const candidate of SHADOW_CANDIDATES){
- const c=shadowConfig(base,candidate),record=states[candidate.key]||shadowInitial(c,Number(row.capital));
- const result=shadowStep(bundle,record,c,Date.now());states[candidate.key]=result.record;
- for(const event of result.events)events.push({candidate:candidate.key,event});
+ const previous=states[candidate.key],c=previous?.companyVersion==='14.0.0'&&previous.config?config(previous.config):shadowConfig(base,candidate);
+ c.buyPaused=row.buy_paused===true;const record=previous||shadowInitial(c,Number(row.capital));records[candidate.key]=record;configs[candidate.key]=c;
+ plans[candidate.key]=record.pending?{state:record.state,market:bundle.markets.find(m=>m.symbol===record.pending.order.symbol),order:null,trace:record.trace||[]}:portfolioCycle(bundle,record.state,c,Date.now());
  }
- await rpc('bitbot_v13_shadow_finish',{p_uid:row.user_id,p_lease:row.lease,p_states:states,p_events:events,p_error:null});
- }catch(e){await rpc('bitbot_v13_shadow_finish',{p_uid:row.user_id,p_lease:row.lease,p_states:states,p_events:[],p_error:String(e.message).slice(0,250)});}
+ const advanced=job||Object.values(plans).some(p=>p.order?.side==='BUY')?await advancedFor(plans):{};
+ company=assessCompany({bundle,plans,records,configs,advanced,mode:'PAPER'});
+ for(const candidate of SHADOW_CANDIDATES){try{
+ const key=candidate.key,result=shadowStep(bundle,records[key],configs[key],Date.now(),company.plans[key]);
+ const next=result.record,prior=records[key],gap=Date.now()-(prior.forwardLastAt||0);next.forwardWindowAt=!prior.forwardWindowAt||gap>300000?Date.now():prior.forwardWindowAt;if(!next.error&&Number.isFinite(next.lastMarketAt)&&Date.now()-next.lastMarketAt<=30000)next.forwardLastAt=Date.now();
+ next.roundHistory=[...(prior.roundHistory||[])];if((next.roundPnls?.length||0)>(prior.roundPnls?.length||0))next.roundHistory.push({at:Date.now(),pnl:next.roundPnls.at(-1)});
+ const mark=bundle.markets.find(m=>m.symbol===heldSymbol(next.state)),equity=next.state.qty>0?(mark&&Date.now()-mark.observedAt<=30000?next.state.cash+mark.bid*next.state.qty:null):next.state.cash;if(equity!==null)next.state.maxDrawdownSeen=Math.max(prior.state.maxDrawdownSeen||0,next.state.peak?1-equity/next.state.peak:0);
+ states[key]={...next,config:configs[key],companyVersion:'14.0.0'};
+ for(const event of result.events)events.push({candidate:key,event});
+ }catch(e){states[candidate.key]={...records[candidate.key],error:String(e.message).slice(0,180)};}}
+ const committed=await rpc('bitbot_v13_shadow_finish',{p_uid:row.user_id,p_lease:row.lease,p_states:states,p_events:events,p_error:null});
+ company.archive=attachReceipts(company.archive,committed?events:[],states);company.archive.checkpointCommitted=committed;
+ await companyFinish(job,company,committed?null:'PAPER_CHECKPOINT_NOT_COMMITTED');
+ }catch(e){await rpc('bitbot_v13_shadow_finish',{p_uid:row.user_id,p_lease:row.lease,p_states:states,p_events:[],p_error:String(e.message).slice(0,250)});if(company)await companyFinish(job,company,String(e.message).slice(0,180));}
+}
+async function observeTick(row,bundle){
+ const job=await companyClaim(row.user_id,'OBSERVE',Number(row.slot));if(!job)return;
+ const bot=(await read('bitbot_v10_bots?user_id=eq.'+row.user_id+'&select=config,state&limit=1'))[0];if(!bot)return;
+ const c=config({...bot.config,buyPaused:true}),plan=portfolioCycle(bundle,bot.state,c,Date.now()),plans={observe:plan};
+ const advanced=await advancedFor(plans),result=assessCompany({bundle,plans,records:{observe:{state:bot.state}},configs:{observe:c},advanced,mode:'OBSERVE'});
+ await companyFinish(job,result,plan.error|| (result.archive.tasks.some(t=>t.status==='FAILED')?'DEPARTMENT_FAILURE':null));
 }
 async function run(uid=null){
- const [bots,shadows]=await Promise.all([rpc('bitbot_v10_claim',{p_uid:uid}),rpc('bitbot_v13_shadow_claim',{p_uid:uid})]);
- if(!bots.length&&!shadows.length)return{processed:0,researchProcessed:0};
+ const [bots,shadows,observations]=await Promise.all([rpc('bitbot_v10_claim',{p_uid:uid}),rpc('bitbot_v13_shadow_claim',{p_uid:uid}),read('bitbot_v14_company_jobs?mode=eq.OBSERVE&status=in.(READY,RUNNING)&attempts=lt.3'+(uid?'&user_id=eq.'+uid:'')+'&limit=5')]);
+ if(!bots.length&&!shadows.length&&!observations.length)return{processed:0,researchProcessed:0,observed:0};
  const held=[...bots.map(b=>heldSymbol(b.state)),...shadows.flatMap(row=>Object.values(row.states||{}).map(r=>heldSymbol(r.state||{qty:0})))].filter(Boolean);
  let bundle=null;try{bundle=await markets.scan([...new Set(held)]);}catch{/* Reconcile real orders even if public prices are unavailable. */}
- await Promise.all([...bots.map(b=>tickBot(b,bundle)),...shadows.map(row=>shadowTick(row,bundle))]);
- return{processed:bots.length,researchProcessed:shadows.length};
+ await Promise.allSettled([...bots.map(b=>tickBot(b,bundle)),...shadows.map(row=>shadowTick(row,bundle)),...observations.map(row=>observeTick(row,bundle))]);
+ return{processed:bots.length,researchProcessed:shadows.length,observed:observations.length};
 }
 
 async function body(req){
@@ -224,7 +275,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'13.0.0',serverTime:Date.now(),engine:'6 agents / intraday / net costs / depth / daily limits',liveEnabled:LIVE};
+ if(req.method==='GET'&&a==='health')return{version:'14.0.0',serverTime:Date.now(),engine:'6 agents / intraday / net costs / depth / daily limits',liveEnabled:LIVE};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');return{scan:await markets.scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
@@ -236,6 +287,10 @@ async function handle(req){
  if(['login','register','recover'].includes(a)){if(req.method!=='POST')fail('Method not allowed',405);return await authAction(req,a,b);}
  const u=await user(req),uid=u.id;
  if(req.method==='GET'&&a==='state')return await status(uid);
+ if(req.method==='GET'&&a==='report'){const st=await status(uid),page=await ledgerPages('bitbot_v12_fills?user_id=eq.'+uid+'&order=filled_at.asc,order_id.asc,fill_index.asc'),fills=page.rows;return{fills,summary:reportingSummary(st.bot?.state||{realized:0},fills),periods:Object.fromEntries(['day','week','month','year'].map(p=>[p,aggregateFills(fills,p)])),coverage:{limit:page.limit,possiblyTruncated:page.possiblyTruncated}};}
+ if(req.method==='GET'&&a==='paper-export'){const page=await ledgerPages('bitbot_v13_shadow_events?user_id=eq.'+uid+'&order=id.desc');return{events:page.rows,coverage:{limit:page.limit,possiblyTruncated:page.possiblyTruncated}};}
+ if(req.method==='GET'&&a==='company'){const id=new URL(req.url).searchParams.get('id');if(id&&!/^[a-f0-9-]{36}$/.test(id))fail('รหัสงานไม่ถูกต้อง');const rows=await read('bitbot_v14_company_jobs?user_id=eq.'+uid+(id?'&id=eq.'+id:'&order=created_at.desc')+'&limit=1');return{job:rows[0]?{id:rows[0].id,mode:rows[0].mode,status:rows[0].status,archive:rows[0].result_gzip?await unpack(rows[0].result_gzip):null}:null};}
+ if(req.method==='GET'&&a==='analysis'){const symbol=new URL(req.url).searchParams.get('symbol');if(!validSymbol(symbol))fail('คู่เหรียญไม่ถูกต้อง');await throttle(req,'analysis',uid,12,60);const m=await market(symbol),extra=await markets.analysis(symbol);return{market:m,extra};}
  if(req.method==='GET'&&a==='wallet')return{wallet:await wallet(await keys(uid))};
  if(req.method!=='POST')fail('Method not allowed',405);
  await throttle(req,'action',uid,60,60);
@@ -256,6 +311,10 @@ async function handle(req){
  if(st.bot)await event(uid,'SESSION_SAVED',{state:st.bot.state,config:st.bot.config});
  await rpc('bitbot_v10_control',{p_uid:uid,p_action:'save',p_config:c,p_state:initial(c)});return{saved:true};
  }
+ if(a==='close-positions'){if(b.confirm!=='ปิดสถานะของบอท'||b.acceptRisk!==true)fail('ยืนยันการปิดสถานะก่อนส่งคำสั่ง');const st=await status(uid);if(!(st.bot?.state?.qty>0))fail('ไม่มีสถานะของบอทที่ต้องปิด');await wallet(await keys(uid));await rpc('bitbot_v14_close_request',{p_uid:uid});return{closing:true,note:'เริ่มทยอยปิดเฉพาะเหรียญของบอท ภายใต้เพดานคำสั่งและสภาพคล่องเดิม'};}
+ if(a==='paper-config'){const c=config(b.config),capital=Number(b.capital);if(!Number.isFinite(capital)||capital<=0||capital>c.budget)fail('ทุนทดลองไม่ถูกต้อง');await rpc('bitbot_v14_paper_config',{p_uid:uid,p_config:c,p_capital:capital});return{saved:true};}
+ if(a==='paper-pause'){if(typeof b.paused!=='boolean')fail('สถานะพักซื้อไม่ถูกต้อง');await db('bitbot_v13_shadow?user_id=eq.'+uid,{buy_paused:b.paused},'PATCH');return{saved:true};}
+ if(a==='observe'){if(!(await status(uid)).bot)fail('ตั้งค่าบัญชีก่อนเรียกวิเคราะห์');await db('bitbot_v14_company_jobs',{user_id:uid,mode:'OBSERVE',slot:Math.floor(Date.now()/300000)},'POST').catch(()=>null);await run(uid);return{observed:true};}
  if(a==='shadow-toggle'){if(typeof b.enabled!=='boolean')fail('สถานะทดลองไม่ถูกต้อง');await rpc('bitbot_v13_shadow_toggle',{p_uid:uid,p_enabled:b.enabled});return{saved:true};}
  if(a==='start'){
  if(!LIVE)fail('เซิร์ฟเวอร์ปิดเทรดจริง');
@@ -272,7 +331,7 @@ async function handle(req){
  return{started:true,note:'ตรวจตลาดทุก 1 นาที สัญญาณจากแท่งปิด 5 นาที'};
  }
  if(['pause','resume','stop'].includes(a)){
- await rpc('bitbot_v10_control',{p_uid:uid,p_action:a});return{saved:true,note:a==='stop'?'หยุดส่งคำสั่งใหม่แล้ว ออร์เดอร์ที่ส่งไปแล้วจะตรวจและขอยกเลิก เหรียญที่ถือยังอยู่ใน Bitkub':'บันทึกแล้ว'};
+ await rpc('bitbot_v10_control',{p_uid:uid,p_action:a});if(a==='stop')await db('bitbot_v10_bots?user_id=eq.'+uid,{close_positions:false},'PATCH');return{saved:true,note:a==='stop'?'หยุดส่งคำสั่งใหม่แล้ว ออร์เดอร์ที่ส่งไปแล้วจะตรวจและขอยกเลิก เหรียญที่ถือยังอยู่ใน Bitkub':'บันทึกแล้ว'};
  }
  if(a==='tick'){await run(uid);return await status(uid);}
 

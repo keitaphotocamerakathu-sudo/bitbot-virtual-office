@@ -1,0 +1,3 @@
+// Gzip archives keep complete task evidence without putting secrets in browser storage.
+export async function pack(value){const stream=new Blob([JSON.stringify(value)]).stream().pipeThrough(new CompressionStream('gzip')),bytes=new Uint8Array(await new Response(stream).arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(binary);}
+export async function unpack(value){const bytes=Uint8Array.from(atob(value),c=>c.charCodeAt(0)),stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));return JSON.parse(await new Response(stream).text());}
