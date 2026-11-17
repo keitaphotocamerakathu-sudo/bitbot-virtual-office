@@ -46,8 +46,9 @@ export function sizing(m,s,c,now=Date.now()){
  const existing=(m.wallet?.[assetOf(m.symbol)]?.available||0)+(m.wallet?.[assetOf(m.symbol)]?.reserved||0);
  const concentrationRoom=m.wallet?Math.max(0,Math.min(c.budget,m.wallet.equityTHB??(available+existing*m.bid))*c.allocation-existing*m.bid):Infinity;
  const liquidityCap=m.volumeTHB?m.volumeTHB*.001:Infinity;
- return{walletOK,available,reserve,spendable,riskNotional,concentrationRoom,liquidityCap,
- maxBuy:Math.max(0,Math.min(c.maxOrder,c.dailyBuy-s.bought,s.cash,spendable,equity*c.allocation,riskNotional,concentrationRoom,liquidityCap))};
+ const exitRoom=Math.max(0,(c.dailySell-s.sold)/(1+c.takeProfit+.01));
+ return{walletOK,available,reserve,spendable,riskNotional,concentrationRoom,liquidityCap,exitRoom,
+ maxBuy:Math.max(0,Math.min(c.maxOrder,c.dailyBuy-s.bought,s.cash,spendable,equity*c.allocation,riskNotional,concentrationRoom,liquidityCap,exitRoom))};
 }
 
 export function initial(c=DEFAULTS){return{cash:c.budget,qty:0,cost:0,realized:0,fees:0,peak:c.budget,day:'',dayStart:c.budget,dayPnl:0,bought:0,sold:0,lastCandle:0,trades:0,halted:false,lessons:{},entryStrategy:null,positionRealized:0,symbol:null,lastCandles:{},startCapital:c.budget,qtyScale:8,entryAt:null,entryPolicy:null,entriesToday:0,lossStreak:0,cooldownUntil:0,daily:{}};}
@@ -99,13 +100,17 @@ export function riskAgent(m,s,c,proposal,now){
  let notional=action==='BUY'?power.maxBuy:action==='SELL'?Math.min(s.qty*m.bid,c.maxOrder,c.dailySell-s.sold):0;
  const minimum=action==='BUY'?Math.ceil(r.minQuote*(1+c.stopLoss*2+c.fee*2)*100)/100:r.minQuote;
  if(notional<minimum){if(action!=='HOLD')reasons.push('วงเงินหลังสำรองต่ำกว่าขั้นต่ำที่ขายออกได้: '+minimum+' บาท');action='HOLD';notional=0;}
- return{agent:'risk',action,notional,exit,drawdown,equity,positionPnl,wallet:power,plan,netPositionPnl,blocked:reasons,reason:exit||reasons.join(' • ')||'ผ่านวงเงิน กระเป๋า สภาพคล่อง ข่าว และความเสี่ยง'};
+ return{agent:'risk',action,notional,exit,drawdown,equity,positionPnl,wallet:power,plan,exitMinimum:Math.ceil(r.minQuote*(1+c.stopLoss*2+c.fee*2)*100)/100,netPositionPnl,blocked:reasons,reason:exit||reasons.join(' • ')||'ผ่านวงเงิน กระเป๋า สภาพคล่อง ข่าว และความเสี่ยง'};
 }
 export function executionAgent(m,s,r){
  const side=r.action;if(side==='HOLD')return{agent:'execution',order:null,reason:'ไม่มีคำสั่งส่ง'};
  const rule=rules(m),price=tickPrice(side==='BUY'?m.ask:m.bid,rule,side==='BUY');
  if(!Number.isFinite(price)||price<=0||Math.abs(price/(side==='BUY'?m.ask:m.bid)-1)>.015)return{agent:'execution',order:null,reason:'ความละเอียดราคาขัดกับราคาเสนอ งดส่งคำสั่ง'};
- const amount=side==='BUY'?Math.floor(r.notional*100)/100:roundUnit(Math.min(s.qty,r.notional/price),rule.qtyScale);
+ let amount=side==='BUY'?Math.floor(r.notional*100)/100:roundUnit(Math.min(s.qty,r.notional/price),rule.qtyScale);
+ // Leave a sellable second slice when a cap prevents closing the entire position.
+ if(side==='SELL'&&amount<s.qty-10**-rule.qtyScale/2&&(s.qty-amount)*price<(r.exitMinimum||rule.minQuote*1.05)){
+ amount=Math.min(amount,roundUnit(Math.max(0,s.qty-(r.exitMinimum||rule.minQuote*1.05)/price),rule.qtyScale));
+ }
  if((side==='BUY'?amount:amount*price)<rule.minQuote)return{agent:'execution',order:null,reason:'จำนวนหลังปัดเศษต่ำกว่าขั้นต่ำตลาด'};
  return{agent:'execution',order:{symbol:m.symbol,side,price,amount,qtyScale:rule.qtyScale,notional:side==='BUY'?amount:amount*price,type:'limit',...(side==='BUY'?{entryPolicy:r.plan}:{})},reason:'LIMIT '+m.symbol+' • ซื้อเป็น THB • ขายเป็น '+assetOf(m.symbol)};
 }

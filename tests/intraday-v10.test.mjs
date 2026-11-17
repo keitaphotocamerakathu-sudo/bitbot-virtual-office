@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {config,initial,cycle,applyFill,bangkokDay} from '../assets/engine.mjs';
+import {config,initial,cycle,applyFill,bangkokDay,executionAgent,sizing} from '../assets/engine.mjs';
 import {entryPlan,bookImpact,performance,extractArticle} from '../assets/intraday.mjs';
 import {assessNews,rankUniverse} from '../assets/selection.mjs';
 const now=1800000000000;
@@ -78,4 +78,16 @@ test('related story cards cannot be misread as article content',()=>{
 test('missing OHLC ranges and a shifted book cannot justify a fresh entry',()=>{
  const c=config(),m=market();m.candles.forEach(b=>delete b.h);assert.equal(cycle(m,initial(c),c,now).order,null);
  const shifted=market();shifted.depth.asks=[[3100,100]];assert.equal(cycle(shifted,initial(c),c,now).order,null);
+});
+
+test('capped profitable exits leave a sellable remainder and close on the next slice',()=>{
+ const c=config({maxOrder:100}),m={...market(),bid:30,ask:30.01,last:30,depth:{at:now,asks:[[30.01,100]],bids:[[30,100]]},rules:{minQuote:10,priceStep:.01,priceScale:2,qtyScale:8}};
+ let s={...initial(c),qty:3.4,cost:98,symbol:'ETH_THB',cash:99902,qtyScale:8};
+ const first=executionAgent(m,s,{action:'SELL',notional:100,exitMinimum:10.45}).order;assert(first);assert(first.notional<=100);assert((s.qty-first.amount)*30>=10.45-1e-6);
+ s=applyFill(s,{side:'SELL',symbol:'ETH_THB',qty:first.amount,price:first.price,fee:.23,at:now},c);
+ const second=executionAgent(m,s,{action:'SELL',notional:s.qty*m.bid,exitMinimum:10.45}).order;assert(second);assert(second.notional>=10);s=applyFill(s,{side:'SELL',symbol:'ETH_THB',qty:second.amount,price:second.price,fee:.03,at:now+1000},c);assert.equal(s.qty,0);assert.equal(s.lessons['trend-pullback'].wins,1);
+});
+test('new entry sizing preserves enough daily sell allowance for a profitable exit',()=>{
+ const c=config({budget:1000,maxOrder:100,dailyBuy:100,dailySell:100}),s=initial(c),power=sizing(market(),s,c,now);
+ assert(power.maxBuy*(1+c.takeProfit+.01)<=100+1e-8);
 });
