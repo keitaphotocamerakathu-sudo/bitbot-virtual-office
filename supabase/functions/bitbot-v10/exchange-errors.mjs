@@ -9,7 +9,7 @@ export function exchangeFailure(httpStatus,body){
   '6':['BITKUB_INVALID_SIGNATURE','Bitkub ตรวจลายเซ็นไม่ผ่าน กรุณาตรวจ API Secret และการเชื่อมต่อ','CHECK_API_SECRET'],
   '52':['BITKUB_PERMISSION_DENIED','API Key ไม่มีสิทธิ์สำหรับคำขอนี้ กรุณาตรวจสิทธิ์ที่ Bitkub','CHECK_KEY_PERMISSIONS']
  }[exchangeCode];
- if(known)return Object.assign(Error('Bitkub: '+known[1]+' (รหัส '+exchangeCode+')'),{status:409,code:known[0],action:known[2],retryable:false,exchangeStatus:httpStatus,exchangeCode,exchangeRejected:true});
+ if(known)return Object.assign(Error('Bitkub (รหัส '+exchangeCode+'): '+known[1]),{status:409,code:known[0],action:known[2],retryable:false,exchangeStatus:httpStatus,exchangeCode,exchangeRejected:true});
  if(httpStatus===429)return Object.assign(Error('Bitkub จำกัดคำขอ (429) ระบบจะพักก่อนตรวจใหม่'),{status:429,code:'BITKUB_RATE_LIMIT',action:'WAIT_AND_RECHECK',retryable:true,exchangeStatus:httpStatus,exchangeCode,exchangeRejected:false});
  if(httpStatus===401||httpStatus===403)return Object.assign(Error('Bitkub ไม่อนุญาตการเชื่อมต่อบัญชี (HTTP '+httpStatus+') กรุณาตรวจ API Key/Secret'),{status:409,code:'BITKUB_AUTH_REJECTED',action:'RECONNECT_BITKUB',retryable:false,exchangeStatus:httpStatus,exchangeCode,exchangeRejected:true});
  const rejected=httpStatus<500&&!!exchangeCode&&exchangeCode!=='0';
