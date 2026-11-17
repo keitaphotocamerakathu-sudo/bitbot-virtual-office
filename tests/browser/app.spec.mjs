@@ -1,6 +1,7 @@
+import {config,initial} from '../../assets/engine.mjs';
 import {test,expect} from '@playwright/test';
 async function setup(page){
- const now=Date.now(),market={symbol:'BTC_THB',last:3000000,bid:2999000,ask:3000000,change:2.5,observedAt:now,source:'BITKUB_LIVE',status:'active',name:'Bitcoin',volumeTHB:10000000,change:1,preScore:30,depth:{at:now,asks:[[3000000,1]],bids:[[2999000,1]]},news:{ready:true,fetchedAt:now,blocked:false,score:0,headlines:[]},rules:{minQuote:10,priceStep:.01,priceScale:2,qtyScale:8},candles:Array.from({length:80},(_,i)=>({t:now-(80-i)*300000,c:2950000+i*500+(i%2)*2000,h:(2950000+i*500)*1.025,l:(2950000+i*500)*.975}))};
+ const now=Date.now(),market={symbol:'BTC_THB',last:3000000,bid:2999000,ask:3000000,change:2.5,observedAt:now,source:'BITKUB_LIVE',status:'active',name:'Bitcoin',volumeTHB:10000000,change:1,preScore:30,depth:{at:now,asks:[[3000000,1]],bids:[[2999000,1]]},news:{ready:true,fetchedAt:now,blocked:false,score:0,headlines:[]},rules:{minQuote:10,priceStep:.01,priceScale:2,qtyScale:8},candles:Array.from({length:180},(_,i)=>({t:now-(180-i)*300000,v:i===179?200:100,c:2950000+i*500+(i%2)*2000,h:(2950000+i*500)*1.025,l:(2950000+i*500)*.975}))};
  await page.route('https://fonts.googleapis.com/**',r=>r.abort());
  await page.route('https://cdn.jsdelivr.net/**',r=>r.fulfill({contentType:'text/javascript',body:"export const createClient=()=>({auth:{onAuthStateChange(){},getSession:async()=>({data:{session:null}})}});"}));
  await page.route('https://lrxrigimdaedfemqheug.supabase.co/functions/v1/bitbot-v10?**',r=>{const a=new URL(r.request().url()).searchParams.get('action');return r.fulfill({contentType:'application/json',body:JSON.stringify(a==='scan'?{ok:true,scan:{universeCount:200,markets:[market],watchlist:[market],news:{ready:true,fetchedAt:now,items:[],sources:[{name:'QA',ok:true}]}}}:a==='market'?{ok:true,market}:{ok:false,error:'กรุณาเข้าสู่ระบบ'}),headers:{'Access-Control-Allow-Origin':'*'}});});
@@ -22,4 +23,19 @@ test('net profits and intraday controls are visible without starting live tradin
 test('insufficient research data is displayed without invented returns',async({page})=>{
  await page.route('**/assets/backtest-v12.json?**',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({status:'INSUFFICIENT_DATA',from:'2026-10-28',to:'2026-11-17',symbols:['BTC_THB'],totalNet:null,folds:[{from:'2026-11-11',to:'2026-11-13',status:'INSUFFICIENT_DATA'}]})}));
  await setup(page);await page.locator('.nav-item[data-page=history]').click();await expect(page.locator('#backtestSummary')).toContainText('ยังสรุปกำไร');await expect(page.locator('#backtestBody')).toContainText('ข้อมูลไม่พอ');
+});
+
+test('signed-in research shows six paper portfolios and cannot start unapproved real trading',async({page})=>{
+ await setup(page);const c=config({budget:100,maxOrder:100,dailyBuy:100,dailySell:100}),now=Date.now();let enabled=true,startCalls=0;
+ const states=Object.fromEntries(['trend-confirmed','volume-breakout','range-reversion'].flatMap(profile=>[60,120].map(hold=>[profile+':'+hold,{state:{...initial(c),cash:80,startCapital:80},roundPnls:[],lastAt:now}])));
+ await page.route('https://cdn.jsdelivr.net/**',r=>r.fulfill({contentType:'text/javascript',body:'export const createClient=()=>({auth:{onAuthStateChange(){},getSession:async()=>({data:{session:{access_token:"test-session",user:{id:"11111111-1111-4111-8111-111111111111",user_metadata:{display_name:"QA"}}}}})}});'}));
+ await page.route('**/functions/v1/bitbot-v10?**',r=>{const a=new URL(r.request().url()).searchParams.get('action');let data;
+ if(a==='state')data={ok:true,bot:{running:false,config:c,state:initial(c)},orders:[],events:[],key:{configured:false},evidence:{allowed:false,reasons:['ยังไม่ผ่านผลทดสอบ']},shadow:{enabled,capital:80,states,started_at:new Date(now).toISOString(),updated_at:new Date(now).toISOString()}};
+ else if(a==='shadow-toggle'){enabled=JSON.parse(r.request().postData()).enabled;data={ok:true};}
+ else if(a==='start'){startCalls++;data={ok:false,error:'Unexpected real start'};}
+ else return r.fallback();return r.fulfill({contentType:'application/json',body:JSON.stringify(data),headers:{'Access-Control-Allow-Origin':'*'}});
+ });
+ await page.reload();await expect(page.locator('#cloudResearchBody tr')).toHaveCount(6);await expect(page.locator('#cloudResearchStatus')).toContainText('กำลังเก็บผล');
+ await page.locator('#researchToggle').click();await expect(page.locator('#cloudResearchStatus')).toContainText('พักการทดลอง');
+ await page.locator('#liveMode').click();await page.locator('#startBtn').click();await expect(page.locator('#notice')).toContainText('พักเงินจริง');await expect(page.locator('#startDialog')).toBeHidden();expect(startCalls).toBe(0);
 });

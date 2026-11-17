@@ -1,0 +1,8 @@
+
+research/data-v13.json.gz
+research/research-v13-details.json
+research/ohlcv-v12.json
+
+node_modules/
+test-results/
+playwright-report/

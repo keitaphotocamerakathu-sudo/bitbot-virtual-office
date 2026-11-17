@@ -1,0 +1,1071 @@
+{
+  "version": "13.0.0",
+  "generatedAt": "2026-11-17T02:51:32.522Z",
+  "protocol": {
+    "version": "13.0.0",
+    "registeredAt": "2026-11-17",
+    "symbols": [
+      "BTC_THB",
+      "ETH_THB",
+      "XRP_THB",
+      "ADA_THB",
+      "SOL_THB",
+      "KUB_THB"
+    ],
+    "profiles": [
+      "trend-confirmed",
+      "volume-breakout",
+      "range-reversion"
+    ],
+    "holdingMinutes": [
+      60,
+      120
+    ],
+    "researchEnd": "2026-10-28T00:00:00Z",
+    "dataDays": 90,
+    "trainingDays": 30,
+    "validationDays": 7,
+    "validationFolds": 4,
+    "finalHoldoutDays": 14,
+    "capitalCases": [
+      79.98,
+      10000
+    ],
+    "selectionCapital": 10000,
+    "trainingRequirements": {
+      "minRounds": 20,
+      "profitFactor": 1.15,
+      "positiveNet": true,
+      "maxDrawdown": 0.03
+    },
+    "liveRequirements": {
+      "minHoldoutRounds": 20,
+      "positiveHoldoutNet": true,
+      "positiveStressNet": true,
+      "minForwardRounds": 20,
+      "positiveForwardNet": true
+    },
+    "baseCosts": {
+      "feePerSide": 0.0025,
+      "spread": 0.001,
+      "slippagePerSide": 0.0005
+    },
+    "stressCosts": {
+      "feePerSide": 0.0025,
+      "spread": 0.003,
+      "slippagePerSide": 0.0015
+    },
+    "policy": "Freeze these six candidates before downloading prices. Choose only on training; otherwise hold cash. Final 14 days are evaluated after choices are frozen. Do not change candidates after seeing holdout results. The research window ends before the v12 study to avoid reusing its examined dates. No live order is authorized by a research result alone."
+  },
+  "dataDigest": "f1e2ff7a84ecfcbbf6cafdfdadf415e2d82bd886f4e894ec19f4478284c83b3b",
+  "dataFrom": "2026-07-30",
+  "dataTo": "2026-10-28",
+  "coverage": {
+    "BTC_THB": {
+      "bars": 25753,
+      "expected": 25920
+    },
+    "ETH_THB": {
+      "bars": 24305,
+      "expected": 25920
+    },
+    "XRP_THB": {
+      "bars": 24509,
+      "expected": 25920
+    },
+    "ADA_THB": {
+      "bars": 18627,
+      "expected": 25920
+    },
+    "SOL_THB": {
+      "bars": 21600,
+      "expected": 25920
+    },
+    "KUB_THB": {
+      "bars": 18748,
+      "expected": 25920
+    }
+  },
+  "codeDigest": "22178b5937f3ccbb9d5761b3b28970f09f007678e7a96c5ecb9528484a533b76",
+  "folds": [
+    {
+      "from": "2026-09-16",
+      "to": "2026-09-23",
+      "trainFrom": "2026-08-17",
+      "selected": null,
+      "training": [
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.922337962962963,
+          "net": -15.713792570163648,
+          "realized": -15.713792570163648,
+          "unrealized": 0,
+          "fees": 7.49,
+          "rounds": 3,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -1.2996552312727176,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.0016418727730884708,
+          "openPosition": null,
+          "validSteps": 7969,
+          "skippedSteps": 671,
+          "exits": {
+            "TIME_EXIT": 2,
+            "STOP_LOSS": 2
+          }
+        },
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.922337962962963,
+          "net": -20.231148237109892,
+          "realized": -20.231148237109892,
+          "unrealized": 0,
+          "fees": 7.470000000000001,
+          "rounds": 3,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -1.4961554906228227,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.0020935764452363337,
+          "openPosition": null,
+          "validSteps": 7969,
+          "skippedSteps": 671,
+          "exits": {
+            "STOP_LOSS": 3
+          }
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 60
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.6447916666666667,
+          "net": null,
+          "realized": -32.66216986682514,
+          "unrealized": 0.05605725326204514,
+          "fees": 14.930000000000001,
+          "rounds": 5,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -2.4482799776101514,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.0035523239844494903,
+          "openPosition": "XRP_THB",
+          "validSteps": 5571,
+          "skippedSteps": 3069,
+          "exits": {
+            "STOP_LOSS": 5,
+            "TIME_EXIT": 1
+          }
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9359953703703704,
+          "net": -68.53180691567024,
+          "realized": -68.53180691567024,
+          "unrealized": 0,
+          "fees": 49.99000000000001,
+          "rounds": 20,
+          "wins": 3,
+          "profitFactor": 0.3489980019048901,
+          "lowerDailyMean": -4.710901983950654,
+          "profitableDays": 1,
+          "observedDays": 31,
+          "maxDrawdown": 0.006853180691567262,
+          "openPosition": null,
+          "validSteps": 8087,
+          "skippedSteps": 553,
+          "exits": {
+            "STOP_LOSS": 18,
+            "TAKE_PROFIT": 3,
+            "TIME_EXIT": 2
+          }
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9359953703703704,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 8087,
+          "skippedSteps": 553,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9359953703703704,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 8087,
+          "skippedSteps": 553,
+          "exits": {}
+        }
+      ],
+      "validation": {
+        "status": "CASH",
+        "net": 0,
+        "rounds": 0
+      }
+    },
+    {
+      "from": "2026-09-23",
+      "to": "2026-09-30",
+      "trainFrom": "2026-08-24",
+      "selected": null,
+      "training": [
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9300925925925926,
+          "net": -4.049729404753748,
+          "realized": -4.049729404753748,
+          "unrealized": 0,
+          "fees": 2.5,
+          "rounds": 1,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -0.3919092972342337,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.0004248054516104993,
+          "openPosition": null,
+          "validSteps": 8036,
+          "skippedSteps": 604,
+          "exits": {
+            "STOP_LOSS": 1
+          }
+        },
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9300925925925926,
+          "net": -4.049729404753748,
+          "realized": -4.049729404753748,
+          "unrealized": 0,
+          "fees": 2.5,
+          "rounds": 1,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -0.3919092972342337,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.0004248054516104993,
+          "openPosition": null,
+          "validSteps": 8036,
+          "skippedSteps": 604,
+          "exits": {
+            "STOP_LOSS": 1
+          }
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 60
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.6253472222222223,
+          "net": null,
+          "realized": -22.999084582611204,
+          "unrealized": 0.27142329151583766,
+          "fees": 9.940000000000001,
+          "rounds": 3,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -1.855046168331479,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.002485656736776032,
+          "openPosition": "XRP_THB",
+          "validSteps": 5403,
+          "skippedSteps": 3237,
+          "exits": {
+            "STOP_LOSS": 3,
+            "TIME_EXIT": 1
+          }
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 120
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.6253472222222223,
+          "net": null,
+          "realized": -24.385926199069615,
+          "unrealized": 0.27142329151583766,
+          "fees": 9.940000000000001,
+          "rounds": 3,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": -1.9892566473435833,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0.0026243408984218952,
+          "openPosition": "XRP_THB",
+          "validSteps": 5403,
+          "skippedSteps": 3237,
+          "exits": {
+            "STOP_LOSS": 4
+          }
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9300925925925926,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 8036,
+          "skippedSteps": 604,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9300925925925926,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 8036,
+          "skippedSteps": 604,
+          "exits": {}
+        }
+      ],
+      "validation": {
+        "status": "CASH",
+        "net": 0,
+        "rounds": 0
+      }
+    },
+    {
+      "from": "2026-09-30",
+      "to": "2026-10-07",
+      "trainFrom": "2026-08-31",
+      "selected": null,
+      "training": [
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9103009259259259,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7865,
+          "skippedSteps": 775,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9103009259259259,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7865,
+          "skippedSteps": 775,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 60
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.8603009259259259,
+          "net": null,
+          "realized": -0.18386251365804895,
+          "unrealized": -0.5731651751015985,
+          "fees": 32.56999999999999,
+          "rounds": 12,
+          "wins": 2,
+          "profitFactor": 0.7308699763486036,
+          "lowerDailyMean": -2.034613120178607,
+          "profitableDays": 2,
+          "observedDays": 31,
+          "maxDrawdown": 0.0035363646358208545,
+          "openPosition": "XRP_THB",
+          "validSteps": 7433,
+          "skippedSteps": 1207,
+          "exits": {
+            "STOP_LOSS": 8,
+            "TIME_EXIT": 5,
+            "TAKE_PROFIT": 3
+          }
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 120
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.8603009259259259,
+          "net": null,
+          "realized": -6.170613754148771,
+          "unrealized": -0.5731651751015985,
+          "fees": 32.55,
+          "rounds": 12,
+          "wins": 2,
+          "profitFactor": 0.6510032796274449,
+          "lowerDailyMean": -2.2697153938899963,
+          "profitableDays": 3,
+          "observedDays": 31,
+          "maxDrawdown": 0.003941093282914365,
+          "openPosition": "XRP_THB",
+          "validSteps": 7433,
+          "skippedSteps": 1207,
+          "exits": {
+            "STOP_LOSS": 9,
+            "TREND_EXIT": 1,
+            "TAKE_PROFIT": 3,
+            "TIME_EXIT": 2
+          }
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9103009259259259,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7865,
+          "skippedSteps": 775,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9103009259259259,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7865,
+          "skippedSteps": 775,
+          "exits": {}
+        }
+      ],
+      "validation": {
+        "status": "CASH",
+        "net": 0,
+        "rounds": 0
+      }
+    },
+    {
+      "from": "2026-10-07",
+      "to": "2026-10-14",
+      "trainFrom": "2026-09-07",
+      "selected": null,
+      "training": [
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9012731481481482,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7787,
+          "skippedSteps": 853,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "trend-confirmed",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9012731481481482,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7787,
+          "skippedSteps": 853,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 60
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.7474537037037037,
+          "net": null,
+          "realized": -0.18386251365804895,
+          "unrealized": -0.5246836240035968,
+          "fees": 32.56999999999999,
+          "rounds": 12,
+          "wins": 2,
+          "profitFactor": 0.7308699763486036,
+          "lowerDailyMean": -1.926490762845366,
+          "profitableDays": 2,
+          "observedDays": 31,
+          "maxDrawdown": 0.0035363646358208545,
+          "openPosition": "XRP_THB",
+          "validSteps": 6458,
+          "skippedSteps": 2182,
+          "exits": {
+            "STOP_LOSS": 8,
+            "TIME_EXIT": 5,
+            "TAKE_PROFIT": 3
+          }
+        },
+        {
+          "candidate": {
+            "profile": "volume-breakout",
+            "hold": 120
+          },
+          "status": "INSUFFICIENT_DATA",
+          "coverage": 0.7474537037037037,
+          "net": null,
+          "realized": -6.170613754148771,
+          "unrealized": -0.5246836240035968,
+          "fees": 32.55,
+          "rounds": 12,
+          "wins": 2,
+          "profitFactor": 0.6510032796274449,
+          "lowerDailyMean": -2.1921839852377074,
+          "profitableDays": 3,
+          "observedDays": 31,
+          "maxDrawdown": 0.003941093282914365,
+          "openPosition": "XRP_THB",
+          "validSteps": 6458,
+          "skippedSteps": 2182,
+          "exits": {
+            "STOP_LOSS": 9,
+            "TREND_EXIT": 1,
+            "TAKE_PROFIT": 3,
+            "TIME_EXIT": 2
+          }
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 60
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9012731481481482,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7787,
+          "skippedSteps": 853,
+          "exits": {}
+        },
+        {
+          "candidate": {
+            "profile": "range-reversion",
+            "hold": 120
+          },
+          "status": "QUALIFIED",
+          "coverage": 0.9012731481481482,
+          "net": 0,
+          "realized": 0,
+          "unrealized": 0,
+          "fees": 0,
+          "rounds": 0,
+          "wins": 0,
+          "profitFactor": 0,
+          "lowerDailyMean": 0,
+          "profitableDays": 0,
+          "observedDays": 31,
+          "maxDrawdown": 0,
+          "openPosition": null,
+          "validSteps": 7787,
+          "skippedSteps": 853,
+          "exits": {}
+        }
+      ],
+      "validation": {
+        "status": "CASH",
+        "net": 0,
+        "rounds": 0
+      }
+    }
+  ],
+  "final": {
+    "from": "2026-10-14",
+    "to": "2026-10-28",
+    "selected": null,
+    "smallCapitalTraining": [
+      {
+        "candidate": {
+          "profile": "trend-confirmed",
+          "hold": 60
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      },
+      {
+        "candidate": {
+          "profile": "trend-confirmed",
+          "hold": 120
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      },
+      {
+        "candidate": {
+          "profile": "volume-breakout",
+          "hold": 60
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.20474537037037038,
+        "net": null,
+        "realized": -0.22712050336262912,
+        "unrealized": 1.5073684181992775,
+        "fees": 0.2,
+        "rounds": 2,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": -0.030063425495704198,
+        "profitableDays": 0,
+        "observedDays": 21,
+        "maxDrawdown": 0.04063964027912159,
+        "openPosition": "ADA_THB",
+        "validSteps": 1769,
+        "skippedSteps": 6871,
+        "exits": {
+          "STOP_LOSS": 1,
+          "TIME_EXIT": 1
+        }
+      },
+      {
+        "candidate": {
+          "profile": "volume-breakout",
+          "hold": 120
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": -1.5634154273532594,
+        "unrealized": 0,
+        "fees": 1.3000000000000005,
+        "rounds": 16,
+        "wins": 2,
+        "profitFactor": 0.24027613119127686,
+        "lowerDailyMean": -0.10180488828256569,
+        "profitableDays": 2,
+        "observedDays": 31,
+        "maxDrawdown": 0.01954757973684984,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {
+          "STOP_LOSS": 12,
+          "TREND_EXIT": 2,
+          "TIME_EXIT": 1,
+          "TAKE_PROFIT": 1
+        }
+      },
+      {
+        "candidate": {
+          "profile": "range-reversion",
+          "hold": 60
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      },
+      {
+        "candidate": {
+          "profile": "range-reversion",
+          "hold": 120
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      }
+    ],
+    "training": [
+      {
+        "candidate": {
+          "profile": "trend-confirmed",
+          "hold": 60
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      },
+      {
+        "candidate": {
+          "profile": "trend-confirmed",
+          "hold": 120
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      },
+      {
+        "candidate": {
+          "profile": "volume-breakout",
+          "hold": 60
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.6444444444444445,
+        "net": null,
+        "realized": 4.65733883994691,
+        "unrealized": -1.5400684297262934,
+        "fees": 30.069999999999997,
+        "rounds": 11,
+        "wins": 2,
+        "profitFactor": 0.8249754517630802,
+        "lowerDailyMean": -1.7506704652578136,
+        "profitableDays": 2,
+        "observedDays": 30,
+        "maxDrawdown": 0.0035346571972285634,
+        "openPosition": "XRP_THB",
+        "validSteps": 5568,
+        "skippedSteps": 3072,
+        "exits": {
+          "STOP_LOSS": 7,
+          "TIME_EXIT": 5,
+          "TAKE_PROFIT": 3
+        }
+      },
+      {
+        "candidate": {
+          "profile": "volume-breakout",
+          "hold": 120
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.6568287037037037,
+        "net": null,
+        "realized": -29.0375576564945,
+        "unrealized": -1.5400684297262934,
+        "fees": 27.469999999999995,
+        "rounds": 10,
+        "wins": 1,
+        "profitFactor": 0.10580011600299576,
+        "lowerDailyMean": -2.506356033388914,
+        "profitableDays": 2,
+        "observedDays": 30,
+        "maxDrawdown": 0.004227317841878575,
+        "openPosition": "XRP_THB",
+        "validSteps": 5675,
+        "skippedSteps": 2965,
+        "exits": {
+          "STOP_LOSS": 8,
+          "TREND_EXIT": 1,
+          "TIME_EXIT": 2,
+          "TAKE_PROFIT": 1
+        }
+      },
+      {
+        "candidate": {
+          "profile": "range-reversion",
+          "hold": 60
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      },
+      {
+        "candidate": {
+          "profile": "range-reversion",
+          "hold": 120
+        },
+        "status": "INSUFFICIENT_DATA",
+        "coverage": 0.897337962962963,
+        "net": null,
+        "realized": 0,
+        "unrealized": 0,
+        "fees": 0,
+        "rounds": 0,
+        "wins": 0,
+        "profitFactor": 0,
+        "lowerDailyMean": 0,
+        "profitableDays": 0,
+        "observedDays": 31,
+        "maxDrawdown": 0,
+        "openPosition": null,
+        "validSteps": 7753,
+        "skippedSteps": 887,
+        "exits": {}
+      }
+    ],
+    "cases": [
+      {
+        "capital": 79.98,
+        "base": null,
+        "stress": null,
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "ยังไม่มีกลยุทธ์ผ่านช่วงฝึก จึงยังไม่เริ่มช่วงทดสอบสุดท้าย"
+          ]
+        }
+      },
+      {
+        "capital": 10000,
+        "base": null,
+        "stress": null,
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "ยังไม่มีกลยุทธ์ผ่านช่วงฝึก จึงยังไม่เริ่มช่วงทดสอบสุดท้าย"
+          ]
+        }
+      }
+    ]
+  },
+  "liveApproved": false,
+  "decision": "ยังไม่มีกลยุทธ์ผ่านช่วงฝึก เก็บเงินสดและทดลองเดินหน้า",
+  "limitations": [
+    "Historical news and order books are unavailable; neutral news and synthetic depth are assumptions, not observed facts.",
+    "Only six predeclared surviving assets and current trading rules are used; the full live universe is not validated.",
+    "Signals use closed candles; immediate next-open fills are optimistic proxies, with explicit fees/spread/slippage and no partial fill queue model.",
+    "Five-minute research checks can miss intra-candle losses. Missing held quotes delay evaluation and must pass 90% coverage.",
+    "The daily bootstrap is an uncertainty diagnostic and does not prove independent samples or future returns.",
+    "No strategy is activated in real money automatically, and no daily profit is promised."
+  ]
+}

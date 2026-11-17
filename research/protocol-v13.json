@@ -1,0 +1,20 @@
+{
+  "version": "13.0.0",
+  "registeredAt": "2026-11-17",
+  "symbols": ["BTC_THB", "ETH_THB", "XRP_THB", "ADA_THB", "SOL_THB", "KUB_THB"],
+  "profiles": ["trend-confirmed", "volume-breakout", "range-reversion"],
+  "holdingMinutes": [60, 120],
+  "researchEnd": "2026-10-28T00:00:00Z",
+  "dataDays": 90,
+  "trainingDays": 30,
+  "validationDays": 7,
+  "validationFolds": 4,
+  "finalHoldoutDays": 14,
+  "capitalCases": [79.98, 10000],
+  "selectionCapital": 10000,
+  "trainingRequirements": {"minRounds": 20, "profitFactor": 1.15, "positiveNet": true, "maxDrawdown": 0.03},
+  "liveRequirements": {"minHoldoutRounds": 20, "positiveHoldoutNet": true, "positiveStressNet": true, "minForwardRounds": 20, "positiveForwardNet": true},
+  "baseCosts": {"feePerSide": 0.0025, "spread": 0.001, "slippagePerSide": 0.0005},
+  "stressCosts": {"feePerSide": 0.0025, "spread": 0.003, "slippagePerSide": 0.0015},
+  "policy": "Freeze these six candidates before downloading prices. Choose only on training; otherwise hold cash. Final 14 days are evaluated after choices are frozen. Do not change candidates after seeing holdout results. The research window ends before the v12 study to avoid reusing its examined dates. No live order is authorized by a research result alone."
+}

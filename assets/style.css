@@ -11,3 +11,5 @@
 
 .profit-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.profit-grid small{display:block;color:var(--muted,#97a5b7);font-size:12px;margin-bottom:8px}.profit-grid strong{font-size:23px;overflow-wrap:anywhere}.intraday-settings{padding:12px 0;border-top:1px solid #283442;margin-top:18px}
 @media(max-width:800px){.profit-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 10px}.profit-grid strong{font-size:20px}}
+
+select{font:inherit;width:100%;max-width:100%;border:1px solid #36485c;border-radius:7px;background:#0c1421;color:var(--text);padding:11px 12px;min-height:43px;font-size:13px}

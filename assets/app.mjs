@@ -1,6 +1,6 @@
-import {performance,dayKey} from './intraday.mjs?v=12.0.0';
-import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=12.0.0';
-import {portfolioCycle} from './selection.mjs?v=12.0.0';
+import {performance,dayKey} from './intraday.mjs?v=13.0.0';
+import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=13.0.0';
+import {portfolioCycle} from './selection.mjs?v=13.0.0';
 const $=id=>document.getElementById(id);
 const CFG=window.BITBOT_CLOUD_CONFIG;
 const ENDPOINT=CFG.url+'/functions/v1/bitbot-v10';
@@ -18,7 +18,7 @@ const agents=[
 {id:'execution',name:'EXECUTION',role:'ส่งและตรวจคำสั่ง',color:'#ffacbe'}];
 let bundle=null,liveWallet=null,walletError='',lastWalletAttempt=0;
 let mode='paper',market=null,session=null,client=null,cloud=null,cloudBusy=false,authBusy=false,actionBusy=false;
-let paperConfig=config(),paperState=initial(paperConfig),paperTrades=[],paperJournal=[],paperRunning=false,lastCycle=0,releaseLock=null,cycleBusy=false;
+let paperConfig=config({strategyProfile:'trend-confirmed'}),paperState=initial(paperConfig),paperTrades=[],paperJournal=[],paperRunning=false,lastCycle=0,releaseLock=null,cycleBusy=false;
 const text=(id,v)=>$(id).textContent=v;
 function notice(message,bad=false){text('notice',message);$('notice').className='notice'+(bad?' bad':'');$('notice').hidden=false;}
 function info(title,message){text('infoTitle',title);$('infoContent').replaceChildren();const p=document.createElement('p');p.textContent=message;$('infoContent').append(p);if(!$('infoDialog').open)$('infoDialog').showModal();}
@@ -101,10 +101,12 @@ $('removeKey').onclick=()=>{if(!confirm('ถอดคีย์ Bitkub ออก�
 const fields=['budget','maxOrder','dailyBuy','dailySell','stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','cashReserveTHB','riskPerTrade','minVolumeTHB','maxVolatility','maxHoldMinutes','dailyProfitTarget','maxEntries','lossStreakLimit','cooldownMinutes'];
 const percentage=new Set(['stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','riskPerTrade','maxVolatility','dailyProfitTarget']);
 function fillConfig(){const c=cfg();for(const k of fields)$(k).value=Number((c[k]*(percentage.has(k)?100:1)).toFixed(4));
+ $('strategyProfile').value=c.strategyProfile;
  text('settingsMode',mode==='paper'?'ทดลอง':'เงินจริง');$('budget').max=mode==='paper'?'10000000':'100000';$('maxOrder').max=mode==='paper'?'100000':'1000';
  text('limitHint',mode==='paper'?'วันซื้อขายคิดตามเวลาไทย · ค่าธรรมเนียมทดลอง 0.25% และเผื่อราคาคลาดเคลื่อน':'เพดานเซิร์ฟเวอร์: คำสั่งละ 1,000 บาท / ซื้อวันละ 5,000 / ขายวันละ 10,000 บาท ลดเพดานได้ตามต้องการ');}
 $('configForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
  const next={...cfg()};for(const k of fields)next[k]=Number($(k).value)/(percentage.has(k)?100:1);
+ next.strategyProfile=$('strategyProfile').value;
  const c=config(next,mode==='live');
  if(mode==='paper'){
  if(paperRunning||paperState.qty>0)throw Error('หยุดบอทและรอปิดสถานะก่อนเปลี่ยนทุน');
@@ -134,6 +136,7 @@ function startPaper(){
  }).catch(e=>{stopPaper();notice(e.message,true);});
 }
 $('startBtn').onclick=()=>{if(mode==='paper')return startPaper();if(!session){page('settings');openAuth();return;}
+ if(cloud?.evidence&&!cloud.evidence.allowed&&!(cloud.bot?.state?.qty>0)){page('history');notice('พักเงินจริง: '+cloud.evidence.reasons.join(' • '),true);return;}
  if(!cloud?.key?.configured||!cloud?.bot){page('settings');notice('เชื่อม API และบันทึกวงเงินก่อนเริ่มบอทเงินจริง');return;}
  if(cloud.bot.state.halted){notice('พอร์ตถึงเพดานขาดทุนจากจุดสูงสุดแล้ว ตรวจประวัติและจัดการสถานะก่อนเริ่มรอบใหม่',true);return;}
  const c=cfg();text('startSummary','ทุนสูงสุด '+money(c.budget)+'\nสำรองเงิน '+fmt(c.walletReservePct*100,1)+'% + '+money(c.cashReserveTHB)+'\nต่อคำสั่ง '+money(c.maxOrder)+'\nซื้อรวมต่อวัน '+money(c.dailyBuy)+' / ขาย '+money(c.dailySell)+'\nStop Loss '+fmt(c.stopLoss*100,1)+'% / Take Profit '+fmt(c.takeProfit*100,1)+'%');
@@ -172,7 +175,7 @@ function render(){
  if(live?.running&&Date.now()-Date.parse(live.updated_at)>180000){
  $('serverActivity').hidden=false;$('serverActivity').className='notice bad';text('serverActivity','เซิร์ฟเวอร์ไม่ได้อัปเดตเกิน 3 นาที กรุณาตรวจคำสั่งและสถานะที่ Bitkub');if(mode==='live')text('botStatus','รอตรวจเซิร์ฟเวอร์');
  }else $('serverActivity').className='notice';
- renderScanner();renderWalletPower();renderAgents();renderDecision($('decisionFeed'),trace());if(!$('history').hidden)renderHistory();
+ renderCloudResearch();renderScanner();renderWalletPower();renderAgents();renderDecision($('decisionFeed'),trace());if(!$('history').hidden)renderHistory();
 }
 function chart(){
  if(!market?.candles.length)return;const cs=market.candles.slice(-80),values=cs.map(x=>x.c),lo=Math.min(...values),hi=Math.max(...values),span=hi-lo||1;
@@ -291,7 +294,7 @@ function renderDaily(){
 }
 async function loadBacktest(){
  try{
- const r=await fetch('./assets/backtest-v12.json?v=12.0.0',{cache:'no-store'});if(!r.ok)throw Error('pending');
+ const r=await fetch('./assets/backtest-v12.json?v=13.0.0',{cache:'no-store'});if(!r.ok)throw Error('pending');
  const data=await r.json();if(!Array.isArray(data.folds)||!data.folds.length)throw Error('pending');
  text('backtestSummary',data.status==='INSUFFICIENT_DATA'?'ข้อมูล '+data.from+' ถึง '+data.to+' ยังขาดช่วงจนไม่ผ่านเกณฑ์ความครอบคลุม 75% จึงยังสรุปกำไรจากการทดสอบย้อนหลังไม่ได้':'ข้อมูล '+data.from+' ถึง '+data.to+' · '+data.symbols.join(', ')+' · '+data.folds.length+' ช่วงทดสอบถัดจากช่วงฝึก · '+(data.totalNet>=0?'กำไร':'ขาดทุน')+'รวม '+money(Math.abs(data.totalNet))+' จากทุนเริ่มต่อช่วง '+money(data.capitalPerFold)+' · ผลนี้ยังไม่ยืนยันกำไรทุกวัน');
  $('backtestBody').replaceChildren();
@@ -302,3 +305,27 @@ async function loadBacktest(){
  }catch{text('backtestSummary','ยังไม่มีผลทดสอบย้อนหลังที่ตรวจสอบได้ กำลังเก็บผลทดลองเดินหน้า ไม่ถือว่าผ่านเกณฑ์ใช้เงินจริง');}
 }
 loadBacktest();
+
+function renderCloudResearch(){
+ const sh=cloud?.shadow;const evidence=cloud?.evidence;
+ text('evidenceState',evidence?(evidence.allowed?'ผ่านเงื่อนไขพิจารณาเงินจริง':'พักเงินจริง: '+evidence.reasons.join(' • ')):'เข้าสู่ระบบเพื่อดูผลทดลองอัตโนมัติของบัญชีคุณ');
+ text('cloudResearchStatus',!sh?'ยังไม่มีการทดลองบนเซิร์ฟเวอร์':sh.last_error?'ข้อมูลทดลองไม่พร้อม: '+sh.last_error:sh.enabled?'กำลังเก็บผลด้วยเงินจำลอง แม้ปิดคอม':'พักการทดลองอยู่');
+ text('researchCapital',sh?'ทุนจำลองชุดละ '+money(Number(sh.capital)):'เงินจำลองแยกจากเงินจริง');
+ const control=$('researchToggle');control.hidden=!session;control.disabled=actionBusy;text('researchToggle',sh?.enabled?'พักทดลองอัตโนมัติ':'เริ่มทดลองอัตโนมัติ');
+ $('cloudResearchBody').replaceChildren();
+ for(const [key,record] of Object.entries(sh?.states||{})){
+ const p=performance(record.state,bundle?.watchlist||[],cfg()),tr=document.createElement('tr');
+ for(const value of [key,(record.roundPnls||[]).length,money(p.realized),p.unrealized===null?'รอราคา':money(p.unrealized),money(p.fees),record.pending?'รอจับคู่จำลอง':record.error||'รอจังหวะ']){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}$('cloudResearchBody').append(tr);
+ }
+}
+$('researchToggle').onclick=()=>perform(async()=>{await api('shadow-toggle',{method:'POST',auth:true,data:{enabled:!cloud?.shadow?.enabled}});await refreshCloud();});
+async function loadResearch(){
+ try{const r=await fetch('./assets/research-v13.json?v=13.0.0',{cache:'no-store'});if(!r.ok)throw Error('pending');const data=await r.json();
+ text('researchDecision',data.decision+' · ข้อมูล '+data.dataFrom+' ถึง '+data.dataTo+' · ช่วงสุดท้าย '+data.final.from+' – '+data.final.to+(data.final.selected?'':' ยังไม่ถูกใช้เลือกค่า เพราะไม่มีตัวเลือกผ่านช่วงฝึก'));
+ $('researchTrainingBody').replaceChildren();
+ for(const [capital,rows] of [[10000,data.final.training],[79.98,data.final.smallCapitalTraining||[]]])for(const row of rows){
+ const tr=document.createElement('tr');for(const value of [row.candidate.profile,row.candidate.hold+' นาที',money(capital),row.rounds,row.net===null?'ข้อมูลไม่พอ':money(row.net),fmt(row.profitFactor,2),row.status==='QUALIFIED'&&row.rounds>=20&&row.net>0&&row.profitFactor>=1.15&&row.maxDrawdown<=.03?'ผ่านช่วงฝึก':'ยังไม่ผ่าน']){const td=document.createElement('td');td.textContent=String(value);tr.append(td);}$('researchTrainingBody').append(tr);
+ }
+ }catch{text('researchDecision','ยังอ่านรายงานการทดลองไม่ได้ จึงยังไม่มีหลักฐานอนุมัติให้ใช้เงินจริง');}
+}
+loadResearch();

@@ -1,12 +1,14 @@
-import {INTRADAY_DEFAULTS,entryPlan,dailyBlocks,rollDay} from './intraday.mjs?v=12.0.0';
+import {PROFILES,profileStrategy} from './strategies.mjs?v=13.0.0';
+import {INTRADAY_DEFAULTS,entryPlan,dailyBlocks,rollDay} from './intraday.mjs?v=13.0.0';
 // Bitbot 12: six independent quantitative agents. No LLM or profit guarantee.
-export const DEFAULTS=Object.freeze({...INTRADAY_DEFAULTS,budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000,allocation:0.2,stopLoss:0.02,takeProfit:0.04,dailyLoss:0.03,maxDrawdown:0.1,fee:0.0025,maxSpread:0.006,buyPaused:false,walletReservePct:0.2,cashReserveTHB:0,riskPerTrade:0.01,minVolumeTHB:250000,maxVolatility:0.06,maxChase:0.025});
+export const DEFAULTS=Object.freeze({...INTRADAY_DEFAULTS,strategyProfile:'legacy-v12',budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000,allocation:0.2,stopLoss:0.02,takeProfit:0.04,dailyLoss:0.03,maxDrawdown:0.1,fee:0.0025,maxSpread:0.006,buyPaused:false,walletReservePct:0.2,cashReserveTHB:0,riskPerTrade:0.01,minVolumeTHB:250000,maxVolatility:0.06,maxChase:0.025});
 export function config(input={},live=false){
  const c={...DEFAULTS,...input};
  const ranges={maxHoldMinutes:[15,240],dailyProfitTarget:[0,.05],maxEntries:[1,20],lossStreakLimit:[1,5],cooldownMinutes:[15,240],minNetRR:[1.2,5],minNetProfit:[.001,.05],slippage:[.0005,.01],maxDepthImpact:[.0001,.005],minRangeCostRatio:[1.5,5],budget:[100,live?100000:10000000],maxOrder:[100,live?1000:100000],dailyBuy:[100,live?5000:1000000],dailySell:[100,live?10000:1000000],allocation:[0.01,0.2],stopLoss:[0.005,0.1],takeProfit:[0.01,0.3],dailyLoss:[0.005,0.05],maxDrawdown:[0.01,0.2],fee:[0.0025,0.01],maxSpread:[0.0001,0.006],walletReservePct:[0,0.8],cashReserveTHB:[0,1000000],riskPerTrade:[0.001,0.02],minVolumeTHB:[100000,1000000000],maxVolatility:[0.005,0.1],maxChase:[0.005,0.05]};
  for(const [k,[lo,hi]] of Object.entries(ranges))if(typeof c[k]!=='number'||!Number.isFinite(c[k])||c[k]<lo||c[k]>hi)throw Error('ค่าตั้งไม่ถูกต้อง: '+k);
  if(c.maxOrder>c.budget||c.maxOrder>c.dailyBuy||c.maxOrder>c.dailySell)throw Error('วงเงินต่อคำสั่งต้องไม่เกินเงินทุนและวงเงินรายวัน');
  for(const k of ['maxEntries','lossStreakLimit','maxHoldMinutes','cooldownMinutes'])if(!Number.isInteger(c[k]))throw Error('ค่าตั้งต้องเป็นจำนวนเต็ม: '+k);
+ if(!PROFILES.includes(c.strategyProfile))throw Error('กลยุทธ์ไม่ถูกต้อง');
  c.intraday=c.intraday!==false;c.buyPaused=c.buyPaused===true;return c;
 }
 export const bangkokDay=ms=>new Date(ms+25200000).toISOString().slice(0,10);
@@ -70,7 +72,7 @@ export function trendAgent(m){
  const atrPct=bars.slice(-14).reduce((sum,b,i)=>sum+(Number.isFinite(b.h)&&Number.isFinite(b.l)?(b.h-b.l)/b.c:Math.abs(returns.slice(-14)[i]||0)),0)/14;
  return{agent:'trend',fast,slow,rsi:strength,slope,volatility,atrPct,bias:fast>slow&&slope>0?'UP':fast<slow?'DOWN':'FLAT',reason:'EMA9/21, RSI14, ATR และความผันผวนจากแท่งปิด 5 นาที'};
 }
-export function strategyAgent(m,t,s){const c=m.candles.map(x=>x.c),last=c.at(-1),breakout=last>Math.max(...c.slice(-21,-1));const candidates=[{name:'trend-pullback',buy:t.bias==='UP'&&t.rsi>=45&&t.rsi<=68&&last>=t.fast*.998&&last<=t.fast*1.006},{name:'breakout',buy:t.bias==='UP'&&breakout&&t.rsi>=50&&t.rsi<=72}];const ranked=candidates.map(x=>{const l=s.lessons[x.name]||{wins:0,losses:0};return{...x,score:(l.wins+2)/(l.wins+l.losses+4),samples:l.wins+l.losses};}).sort((a,b)=>b.score-a.score);const picked=ranked.find(x=>x.buy);return{agent:'strategy',signal:picked?'BUY':t.bias==='DOWN'?'SELL':'HOLD',strategy:picked?.name||s.entryStrategy||'trend-pullback',candidates:ranked,reason:picked?'ผ่านเงื่อนไข '+picked.name:'รอสัญญาณที่ผ่าน EMA และ RSI'};}
+export function strategyAgent(m,t,s,cfg={strategyProfile:'legacy-v12'}){if(cfg.strategyProfile!=='legacy-v12')return profileStrategy(m,s,cfg.strategyProfile);const c=m.candles.map(x=>x.c),last=c.at(-1),breakout=last>Math.max(...c.slice(-21,-1));const candidates=[{name:'trend-pullback',buy:t.bias==='UP'&&t.rsi>=45&&t.rsi<=68&&last>=t.fast*.998&&last<=t.fast*1.006},{name:'breakout',buy:t.bias==='UP'&&breakout&&t.rsi>=50&&t.rsi<=72}];const ranked=candidates.map(x=>{const l=s.lessons[x.name]||{wins:0,losses:0};return{...x,score:(l.wins+2)/(l.wins+l.losses+4),samples:l.wins+l.losses};}).sort((a,b)=>b.score-a.score);const picked=ranked.find(x=>x.buy);return{agent:'strategy',signal:picked?'BUY':t.bias==='DOWN'?'SELL':'HOLD',strategy:picked?.name||s.entryStrategy||'trend-pullback',candidates:ranked,reason:picked?'ผ่านเงื่อนไข '+picked.name:'รอสัญญาณที่ผ่าน EMA และ RSI'};}
 export function riskAgent(m,s,c,proposal,now){
  const reasons=[],equity=s.cash+s.qty*m.bid,drawdown=s.peak>0?1-equity/s.peak:0;
  const positionPnl=s.qty>0?m.bid/(s.cost/s.qty)-1:0;
@@ -128,12 +130,12 @@ export function cycle(m,state,c,now=Date.now()){
  c=config(c);let s=structuredClone(state);try{validMarket(m,now);if(heldSymbol(s)&&heldSymbol(s)!==m.symbol)throw Error('ต้องดูแลเหรียญที่ถือก่อนเลือกซื้อเหรียญใหม่');}catch(e){return{state:s,order:null,trace:[{agent:'coordinator',reason:e.message},{agent:'trend',reason:'หยุด: ข้อมูลตลาดไม่พร้อม'},{agent:'news',reason:'รอข้อมูลข่าว'},{agent:'strategy',reason:'HOLD'},{agent:'risk',reason:'ปิดการส่งคำสั่งเมื่อข้อมูลผิดปกติ'},{agent:'execution',reason:'ไม่ส่งคำสั่ง'}],error:e.message};}
  const equity=s.cash+s.qty*m.bid;s=rollDay(s,now,equity);
  s.peak=Math.max(s.peak,equity);if(1-equity/s.peak>=c.maxDrawdown)s.halted=true;
- const trend=trendAgent(m);m={...m,volatility:trend.volatility,atrPct:trend.atrPct};const news=newsAgent(m,now),strategy=strategyAgent(m,trend,s),risk=riskAgent(m,s,c,strategy,now),execution=executionAgent(m,s,risk);
+ const trend=trendAgent(m);m={...m,volatility:trend.volatility,atrPct:trend.atrPct};const news=newsAgent(m,now),strategy=strategyAgent(m,trend,s,c),risk=riskAgent(m,s,c,strategy,now),execution=executionAgent(m,s,risk);
  s.lastCandle=Math.max(s.lastCandle,m.candles.at(-1).t);s.lastCandles={...s.lastCandles,[m.symbol]:m.candles.at(-1).t};
  return{state:s,order:execution.order?{...execution.order,strategy:strategy.strategy,reason:risk.exit||strategy.reason}:null,trace:[{agent:'coordinator',reason:'รอบวิเคราะห์แท่งปิด '+new Date(m.candles.at(-1).t).toISOString(),mode:'QUANTITATIVE'},trend,news,strategy,risk,execution]};
 }
 export function paperCycle(m,s,c,now=Date.now()){
- const out=cycle(m,s,c,now);if(!out.order)return out;const o=out.order,price=o.side==='BUY'?m.ask*1.0005:m.bid*.9995;
+ const out=cycle(m,s,c,now);if(!out.order)return out;const o=out.order,price=o.side==='BUY'?m.ask*(1+c.slippage):m.bid*(1-c.slippage);
  const fee=o.side==='BUY'?Math.ceil(o.amount*c.fee*100)/100:Math.ceil(o.amount*price*c.fee*100)/100;
  const qty=o.side==='BUY'?roundUnit((o.amount-fee)/price,o.qtyScale):Math.min(o.amount,out.state.qty);
  try{out.state=applyFill(out.state,{symbol:o.symbol,qtyScale:o.qtyScale,side:o.side,qty,price,fee,strategy:o.strategy,at:now,entryPolicy:o.entryPolicy,...(o.side==='BUY'?{spend:o.amount}:{})},c);out.fill={symbol:o.symbol,side:o.side,qty,price,fee,at:now,reason:o.reason};}

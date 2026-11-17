@@ -1,5 +1,5 @@
-import {STABLE_ASSETS} from './intraday.mjs?v=12.0.0';
-import {config,cycle,paperCycle,heldSymbol,validSymbol,trendAgent,newsAgent} from './engine.mjs?v=12.0.0';
+import {STABLE_ASSETS} from './intraday.mjs?v=13.0.0';
+import {config,cycle,paperCycle,heldSymbol,validSymbol,trendAgent,newsAgent} from './engine.mjs?v=13.0.0';
 const esc=s=>s.replace(/[.*+?^$()|[\]\\]/g,'\\$&');
 export function plain(s=''){return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/<[^>]*>/g,' ').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Math.min(0x10ffff,Number(n)))).replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();}
 export function parseRSS(xml,source,now=Date.now()){

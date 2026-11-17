@@ -28,7 +28,7 @@ export function mergeTickers(symbols,raw,now=Date.now()){
 }
 export function candlesFrom(raw,now=Date.now()){
  if(raw?.s!=='ok'||!Array.isArray(raw.t)||!Array.isArray(raw.c))throw Error('อ่านแท่งเทียนไม่ได้');
- return raw.t.map((t,i)=>({t:Number(t)*1000,c:Number(raw.c[i]),h:Number(raw.h?.[i]),l:Number(raw.l?.[i])})).filter(x=>x.t+300000<=now);
+ return raw.t.map((t,i)=>({t:Number(t)*1000,c:Number(raw.c[i]),o:Number(raw.o?.[i]),v:Number(raw.v?.[i]),h:Number(raw.h?.[i]),l:Number(raw.l?.[i])})).filter(x=>x.t+300000<=now);
 }
 
 export function shortlist(ranked,held=[],now=Date.now()){
@@ -84,7 +84,7 @@ export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
  });}
  async function history(symbol){
  if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');
- return cached('bars-'+symbol,60000,async()=>{const end=Math.floor(Date.now()/1000),from=end-300*240;
+ return cached('bars-v13-'+symbol,60000,async()=>{const end=Math.floor(Date.now()/1000),from=end-300*240;
  return candlesFrom(await json('https://api.bitkub.com/tradingview/history?symbol='+symbol+'&resolution=5&from='+from+'&to='+end));});
  }
  async function depth(symbol){
