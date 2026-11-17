@@ -37,7 +37,7 @@
 - ทดสอบกับ PostgreSQL จริงแบบ Transaction/Rollback: บันทึก Checkpoint สำเร็จ, ปฏิเสธการบันทึกซ้ำ, ไม่ให้สอง Executor จับบัญชีเดียวกัน, Pause ไม่ถูก Lease เก่าบันทึกทับ และปิดสิทธิ์ anon/authenticated ต่อ RPC ภายใน
 - ตรวจ API ที่ติดตั้งจริงคืน `mode=PAPER_ONLY` และ `liveEnabled=false`
 - ตรวจรอบ Paper ที่ทำงานจริงแล้ว: พบคู่ THB 347 คู่ วิเคราะห์เชิงลึก 20 คู่ บันทึก Agent Decisions, Equity และ Heartbeat ได้ ตัวเลขการค้นพบเปลี่ยนได้ตามตลาด
-- ยังไม่ผ่านการทดสอบภาพหน้าเว็บ: เครื่องทดสอบ Chromium เปิดไม่ได้เพราะข้อจำกัดระบบ `socket() Operation not permitted` ชุด Playwright ถูกจัดเตรียมไว้แต่ไม่อ้างว่าผ่าน
+- เครื่องทดสอบหลักเปิด Chromium ไม่ได้เพราะข้อจำกัด `socket() Operation not permitted` จึงตรวจหน้าเว็บจริงผ่าน Browser แยกและส่งชุด Playwright ไปตรวจบน GitHub Actions พบจุดล้นจอมือถือและแก้การตัดบรรทัดแล้ว ต้องอ้างอิงผล CI ของ Commit ล่าสุดสำหรับสถานะผ่าน
 - ยังไม่ได้ทดสอบ Docker Build/Run บนเครื่องปลายทาง เนื่องจากไม่มี Docker หรือ VPS ที่เชื่อมต่อในงานนี้
 
 ## สถานะตาม Phase
