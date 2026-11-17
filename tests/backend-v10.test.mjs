@@ -88,6 +88,33 @@ test('legacy accounts retain the legacy feed and verified decisions omit unresol
  const result=h.eval("decide({markets:[],readyCount:0},initial(config()),runtimeConfig({marketDataPolicy:'verified-v17'}),Date.now())");assert.equal(result.order,null);assert.equal(result.trace[0].policy,'verified-v17');
 });
 
+test('paper feed selection stays independent of a live account upgrade',async()=>{
+ for(const explicitPolicy of [null,'verified-v17']){
+  const c=engine.config({marketDataPolicy:'verified-v17',budget:100,maxOrder:100,dailyBuy:100,dailySell:100});let checkpoint;
+  const h=harness((url,opts)=>{const path=String(url);
+   if(path.includes('rpc/bitbot_v10_claim')||path.includes('bitbot_v14_company_jobs'))return ok([]);
+   if(path.includes('rpc/bitbot_v14_company_claim'))return ok(null);
+   if(path.includes('rpc/bitbot_v13_shadow_claim'))return ok([{user_id:'11111111-1111-4111-8111-111111111111',lease:'test',capital:80,states:{},base_config:explicitPolicy?c:null}]);
+   if(path.includes('bitbot_v10_bots'))return ok([{config:c}]);
+   if(path.includes('bitbot_v13_shadow_finish')){checkpoint=JSON.parse(opts.body);return ok(true);}
+   throw Error('Unexpected private access '+path);
+  });
+  h.eval('globalThis.feedCalls=[];markets.scan=async()=>{feedCalls.push("legacy");return{markets:[{symbol:"ETH_THB"}]}};verifiedMarkets.scan=async()=>{feedCalls.push("verified-v17");return{markets:[{symbol:"ETH_THB",dataQuality:{ready:true}}]}}');
+  await h.eval('run()');assert.deepEqual(JSON.parse(h.eval('JSON.stringify(feedCalls)')),[explicitPolicy||'legacy']);
+  assert.equal(Object.keys(checkpoint.p_states).length,6);for(const record of Object.values(checkpoint.p_states))assert.equal(record.config.marketDataPolicy,explicitPolicy||'legacy');
+ }
+});
+
+test('observation uses the account feed for both decisions and hourly analysis without orders',async()=>{
+ for(const policy of ['legacy','verified-v17']){
+  const c=engine.config({marketDataPolicy:policy});
+  const h=harness(url=>{const path=String(url);if(path.includes('bitbot_v10_bots?'))return ok([{config:c,state:engine.initial(c)}]);throw Error('Unexpected private access '+path);});
+  h.eval('globalThis.seen=[];companyClaim=async()=>({id:"mock"});companyFinish=async()=>{globalThis.finished=true};markets.analysis=async()=>{seen.push("legacy-analysis");return{frames:{}}};verifiedMarkets.scan=async()=>{seen.push("verified-scan");return{policy:"verified-v17",markets:[]}};verifiedMarkets.analysis=async()=>{seen.push("verified-analysis");return{frames:{}}};decide=(bundle,state,c)=>{if(bundle.policy!==c.marketDataPolicy||!c.buyPaused)throw Error("Feed mismatch");seen.push("decision-"+c.marketDataPolicy);return{state,market:{symbol:"ETH_THB"},trace:[],order:null}};assessCompany=()=>({archive:{tasks:[]}})');
+  await h.eval('observeTick({user_id:"11111111-1111-4111-8111-111111111111",slot:1},{policy:"legacy",markets:[]})');
+  assert.equal(h.eval('finished'),true);assert.deepEqual(JSON.parse(h.eval('JSON.stringify(seen)')),policy==='legacy'?['decision-legacy','legacy-analysis']:['verified-scan','decision-verified-v17','verified-analysis']);
+ }
+});
+
 test('verified unattended cycle buys, reconciles, sells and records both fills without a duplicate order',async()=>{
  const now=Date.now(),aligned=Math.floor(now/300000)*300000,uid='11111111-1111-4111-8111-111111111111';
  const c=engine.config({entryPlanner:'net-v16',strategyProfile:'trend-confirmed',marketDataPolicy:'verified-v17',budget:100,maxOrder:100,dailyBuy:100,dailySell:100});

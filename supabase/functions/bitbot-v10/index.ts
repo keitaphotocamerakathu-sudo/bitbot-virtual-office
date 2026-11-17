@@ -248,11 +248,11 @@ async function shadowTick(row,bundle){
  try{
  if(!bundle?.markets?.length)throw Error('ข้อมูลตลาดยังไม่พร้อมสำหรับทดลอง');
  const rawBase=row.base_config||(await read('bitbot_v10_bots?user_id=eq.'+row.user_id+'&select=config&limit=1'))[0]?.config;
- if(!rawBase)throw Error('ไม่พบการตั้งค่าทุน');const base=row.base_config||{...rawBase,riskPerTrade:Math.min(rawBase.riskPerTrade||.01,.005),dailyLoss:Math.min(rawBase.dailyLoss||.03,.02)};
+ if(!rawBase)throw Error('ไม่พบการตั้งค่าทุน');const base=row.base_config||{...rawBase,marketDataPolicy:'legacy',riskPerTrade:Math.min(rawBase.riskPerTrade||.01,.005),dailyLoss:Math.min(rawBase.dailyLoss||.03,.02)};
  job=await companyClaim(row.user_id,'PAPER');
  for(const candidate of SHADOW_CANDIDATES){
  const previous=states[candidate.key],c=previous?.companyVersion==='14.0.0'&&previous.config?runtimeConfig(previous.config):runtimeConfig(shadowConfig(base,candidate));
- c.buyPaused=row.buy_paused===true;const record=previous||shadowInitial(c,Number(row.capital));records[candidate.key]=record;configs[candidate.key]=c;
+ c.marketDataPolicy=base.marketDataPolicy||'legacy';c.buyPaused=row.buy_paused===true;const record=previous||shadowInitial(c,Number(row.capital));records[candidate.key]=record;configs[candidate.key]=c;
  plans[candidate.key]=record.pending?{state:record.state,market:bundle.markets.find(m=>m.symbol===record.pending.order.symbol),order:null,trace:record.trace||[]}:decide(bundle,record.state,c,Date.now());
  }
  const advanced=job||Object.values(plans).some(p=>p.order?.side==='BUY')?await advancedFor(plans,marketServiceFor(base)):{};
@@ -273,8 +273,10 @@ async function shadowTick(row,bundle){
 async function observeTick(row,bundle){
  const job=await companyClaim(row.user_id,'OBSERVE',Number(row.slot));if(!job)return;
  const bot=(await read('bitbot_v10_bots?user_id=eq.'+row.user_id+'&select=config,state&limit=1'))[0];if(!bot)return;
- const c=config({...bot.config,buyPaused:true}),plan=decide(bundle,bot.state,c,Date.now()),plans={observe:plan};
- const advanced=await advancedFor(plans),result=assessCompany({bundle,plans,records:{observe:{state:bot.state}},configs:{observe:c},advanced,mode:'OBSERVE'});
+ const c=runtimeConfig({...bot.config,buyPaused:true}),service=marketServiceFor(c);
+ if(c.marketDataPolicy==='verified-v17')bundle=await service.scan([heldSymbol(bot.state)].filter(Boolean));
+ const plan=decide(bundle,bot.state,c,Date.now()),plans={observe:plan};
+ const advanced=await advancedFor(plans,service),result=assessCompany({bundle,plans,records:{observe:{state:bot.state}},configs:{observe:c},advanced,mode:'OBSERVE'});
  await companyFinish(job,result,plan.error|| (result.archive.tasks.some(t=>t.status==='FAILED')?'DEPARTMENT_FAILURE':null));
 }
 async function run(uid=null){
