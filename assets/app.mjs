@@ -1,4 +1,5 @@
-import {attachCompanyUI} from './company-ui.mjs?v=14.2.0';
+import {attachPlannerUI} from './planner-ui.mjs?v=16.0.0';
+import {attachCompanyUI} from './company-ui.mjs?v=16.0.0';
 import {performance,dayKey} from './intraday.mjs?v=13.0.0';
 import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=13.0.0';
 const $=id=>document.getElementById(id);
@@ -17,6 +18,7 @@ const agents=[
 {id:'risk',name:'RISK',role:'คุมความเสี่ยง',color:'#9af5c7'},
 {id:'execution',name:'EXECUTION',role:'ส่งและตรวจคำสั่ง',color:'#ffacbe'}];
 let bundle=null,liveWallet=null,walletError='',lastWalletAttempt=0;
+let plannerUI=null;
 let mode='paper',market=null,session=null,client=null,cloud=null,cloudBusy=false,authBusy=false,actionBusy=false;
 let paperConfig=config({strategyProfile:'trend-confirmed',riskPerTrade:.005,dailyLoss:.02}),paperState=initial(paperConfig),paperTrades=[],paperJournal=[],paperRunning=false,lastCycle=0,releaseLock=null,cycleBusy=false;
 const text=(id,v)=>$(id).textContent=v;
@@ -102,12 +104,12 @@ $('removeKey').onclick=()=>{if(!confirm('ถอดคีย์ Bitkub ออก�
 const fields=['budget','maxOrder','dailyBuy','dailySell','stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','cashReserveTHB','riskPerTrade','minVolumeTHB','maxVolatility','maxHoldMinutes','dailyProfitTarget','maxEntries','lossStreakLimit','cooldownMinutes'];
 const percentage=new Set(['stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','riskPerTrade','maxVolatility','dailyProfitTarget']);
 function fillConfig(){const c=cfg();for(const k of fields)$(k).value=Number((c[k]*(percentage.has(k)?100:1)).toFixed(4));
- $('strategyProfile').value=c.strategyProfile;$('strategyProfile').disabled=mode==='paper';document.querySelector('label[for=budget]').textContent=mode==='paper'?'ทุนจำลองต่อชุด (บาท)':'ทุนสูงสุดที่บอทใช้ได้ (บาท)';
+ $('entryPlanner').value=c.entryPlanner||'legacy-v13';$('strategyProfile').value=c.strategyProfile;$('strategyProfile').disabled=mode==='paper';document.querySelector('label[for=budget]').textContent=mode==='paper'?'ทุนจำลองต่อชุด (บาท)':'ทุนสูงสุดที่บอทใช้ได้ (บาท)';
  text('settingsMode',mode==='paper'?'ทดลอง':'เงินจริง');$('budget').max=mode==='paper'?'10000000':'100000';$('maxOrder').max=mode==='paper'?'100000':'1000';
  text('limitHint',mode==='paper'?'วันซื้อขายคิดตามเวลาไทย · ค่าธรรมเนียมทดลอง 0.25% และเผื่อราคาคลาดเคลื่อน':'เพดานเซิร์ฟเวอร์: คำสั่งละ 1,000 บาท / ซื้อวันละ 5,000 / ขายวันละ 10,000 บาท ลดเพดานได้ตามต้องการ');}
 $('configForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
  const next={...cfg()};for(const k of fields)next[k]=Number($(k).value)/(percentage.has(k)?100:1);
- next.strategyProfile=$('strategyProfile').value;
+ next.strategyProfile=$('strategyProfile').value;next.entryPlanner=$('entryPlanner').value;
  const c=config(next,mode==='live');
  if(mode==='paper'){
  if(!session){openAuth();throw Error('เข้าสู่ระบบเพื่อบันทึกทุนทดลองบน Cloud');}
@@ -124,7 +126,7 @@ async function startPaper(){
 $('startBtn').onclick=()=>{if(mode==='paper')return startPaper();if(!session){page('settings');openAuth();return;}
  if(!cloud?.key?.configured||!cloud?.bot){page('settings');notice('เชื่อม API และบันทึกวงเงินก่อนเริ่มบอทเงินจริง');return;}
  if(cloud.bot.state.halted){notice('พอร์ตถึงเพดานขาดทุนจากจุดสูงสุดแล้ว ตรวจประวัติและจัดการสถานะก่อนเริ่มรอบใหม่',true);return;}
- const c=cfg();text('startSummary','ทุนสูงสุด '+money(c.budget)+'\nสำรองเงิน '+fmt(c.walletReservePct*100,1)+'% + '+money(c.cashReserveTHB)+'\nต่อคำสั่ง '+money(c.maxOrder)+'\nซื้อรวมต่อวัน '+money(c.dailyBuy)+' / ขาย '+money(c.dailySell)+'\nStop Loss '+fmt(c.stopLoss*100,1)+'% / Take Profit '+fmt(c.takeProfit*100,1)+'%');
+ const c=cfg();text('startSummary','สูตร '+(c.entryPlanner==='net-v16'?'สุทธิตามเวลาถือ v16 (ยังไม่ยืนยันกำไร)':'เดิม v13')+'\nทุนสูงสุด '+money(c.budget)+'\nสำรองเงิน '+fmt(c.walletReservePct*100,1)+'% + '+money(c.cashReserveTHB)+'\nต่อคำสั่ง '+money(c.maxOrder)+'\nซื้อรวมต่อวัน '+money(c.dailyBuy)+' / ขาย '+money(c.dailySell)+'\nStop Loss '+fmt(c.stopLoss*100,1)+'% / Take Profit '+fmt(c.takeProfit*100,1)+'%');
  $('startForm').reset();const early=cloud.evidence?.allowed!==true;$('unvalidatedWarning').hidden=!early;$('unvalidatedAccepted').required=early&&!(cloud.bot.state.qty>0);$('startDialog').showModal();
 };
 $('startForm').onsubmit=e=>{e.preventDefault();perform(async()=>{if($('confirmStart').value!=='เริ่มบอทเงินจริง')throw Error('กรุณาพิมพ์ เริ่มบอทเงินจริง ให้ตรงกัน');
@@ -143,6 +145,7 @@ function renderDecision(container,rows){
  for(const a of agents){const x=rows.find(t=>t.agent===a.id);if(!x)continue;const d=document.createElement('div');d.className='decision';d.style.setProperty('--accent',a.color);const b=document.createElement('b');b.textContent=a.name;const p=document.createElement('p');p.textContent=x.reason||'ตรวจข้อมูลแล้ว';d.append(b,p);container.append(d);}
 }
 function render(){
+ plannerUI?.update();
  const c=cfg(),s=state(),isRunning=running(),held=heldSymbol(s),equity=portfolioValue(s,[...(bundle?.markets||[]),...(bundle?.watchlist||[])]),pnl=performance(s,bundle?.watchlist||[],c).totalNet;
  text('portfolioLabel',mode==='paper'?'จำลอง Cloud':'พอร์ตบอท');text('equity',equity===null?'รอราคาเหรียญที่ถือ':money(equity));text('pnl',pnl===null?'—':(pnl>=0?'+':'−')+money(Math.abs(pnl)));$('pnl').className=pnl<0?'negative':'green';
  if(mode==='live'&&!cloud?.key?.configured){text('equity','ยังไม่เชื่อม Wallet');text('pnl','—');}
@@ -251,6 +254,7 @@ $('resolveOrder').onclick=()=>perform(async()=>{
  await api('resolve-order',{method:'POST',auth:true,data:{id,exchangeId}});await refreshCloud();notice('ตรวจเลขออร์เดอร์แล้ว เซิร์ฟเวอร์จะตรวจผลการจับคู่ในรอบถัดไป');
 });
 
+plannerUI=attachPlannerUI({api,getContext:()=>({cloud,accountId:session?.user?.id}),openAuth,notice});
 let companyUI=attachCompanyUI({api,getContext:()=>({cloud,bundle,mode,wallet:liveWallet,config:cfg(),state:state(),accountId:session?.user?.id}),info,notice,openAuth,refresh:refreshCloud});
 $('paperCandidate').onchange=()=>{fillConfig();render();updateMarket();};
 const params=new URLSearchParams(location.search);

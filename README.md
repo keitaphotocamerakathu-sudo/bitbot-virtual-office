@@ -1,5 +1,8 @@
-# BITBOT 14.2 — AI Trading Company
+# BITBOT 16.0 — AI Trading Company
 เว็บ: https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/
+
+## สูตรสุทธิตามเวลาถือ v16
+ดู [รายละเอียดและผลเปรียบเทียบ](docs/NET_PLANNER_V16.md) ใน Strategy Lab มีปุ่มตรวจสดสูตรเดิม/ใหม่ที่อ่านข้อมูลอย่างเดียว และช่องเลือกสูตรใน Risk Control สูตรที่ไม่มี `entryPlanner` ยังคงใช้เดิม การเผยแพร่โค้ดไม่เปลี่ยนสูตร วงเงิน สถานะเปิด/ปิด หรือความยินยอมของบัญชีที่กำลังทำงาน
 
 ## การทำงานใหม่
 - คัดกรองคู่ THB ที่มีข้อมูลราคาและยังเปิดซื้อขายจาก Bitkub ทุกคู่ ไม่กำหนด BTC เป็นเหรียญเดียว

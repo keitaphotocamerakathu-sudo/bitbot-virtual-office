@@ -1,7 +1,7 @@
-name: Test and deploy Bitbot 14.2
+name: Test and deploy Bitbot 16.0
 on:
   push:
-    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2]
+    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,13 +21,14 @@ jobs:
       - name: Financial engine and server security
         run: npm test
       - name: Verify archived research integrity
-        run: node research/verify-v13.mjs
+        run: node research/verify-v13.mjs && node research/verify-v16.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: intraday-research
           path: |
             assets/backtest-v12.json
             assets/research-v13.json
+            assets/research-v16.json
       - name: Install browser dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Install Chromium

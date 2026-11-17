@@ -1,0 +1,13 @@
+{
+  "version":"16.0.0",
+  "registeredAt":"2026-11-17",
+  "studyType":"DEVELOPMENT_REPLAY_NOT_NEW_BLIND_HOLDOUT",
+  "dataSource":"existing frozen Bitkub OHLCV v13 dataset",
+  "symbols":["BTC_THB","ETH_THB","XRP_THB","ADA_THB","SOL_THB","KUB_THB"],
+  "days":45,"validationDays":14,"capitalCases":[79.979,10000],
+  "candidates":[{"profile":"legacy-v12","hold":60},{"profile":"trend-confirmed","hold":60},{"profile":"volume-breakout","hold":60},{"profile":"range-reversion","hold":120}],
+  "planners":["legacy-v13","net-v16"],
+  "costCases":[{"name":"STANDARD_FEES","fee":0.0025,"spread":0.001,"slippage":0.0005,"entryCredit":false},{"name":"ENTRY_CREDIT_ONLY","fee":0.0025,"spread":0.001,"slippage":0.0005,"entryCredit":true}],
+  "selection":{"minRounds":20,"positiveNet":true,"profitFactor":1.15,"maxDrawdown":0.1},
+  "policy":"Freeze candidates before running this comparison. Previously examined historical dates are development evidence only. Evaluate both planners with identical next-snapshot fills, no future OHLC in signals, full exit fees and explicit synthetic depth/neutral news. Standard-fee training chooses the candidate; credit cases cannot approve standard-fee trading. Report validation diagnostics for every frozen candidate without selecting on validation. No result automatically changes a live account, risk limit or approval."
+}

@@ -9,6 +9,8 @@ import {reportingSummary,aggregateFills} from './reporting.mjs';
 import {pack,unpack} from './archive.mjs';
 import {liveReadiness} from './evidence.mjs';
 import {portfolioCycle} from './selection.mjs';
+import {plannerConfig,adaptivePortfolioCycle} from './adaptive.mjs';
+import {indicators} from './technical.mjs';
 import {createMarketService} from './market.mjs';
 const ORIGIN='https://keitaphotocamerakathu-sudo.github.io';
 const PROJECT=Deno.env.get('SUPABASE_URL')||'';
@@ -16,7 +18,7 @@ const SERVICE=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
 const ANON=Deno.env.get('SUPABASE_ANON_KEY')||SERVICE;
 const EXCHANGE='https://api.bitkub.com';
 const LIVE=Deno.env.get('BITBOT_LIVE_ENABLED')!=='false';
-const privatePaths=new Set(['/api/v4/wallet/balances','/api/v3/market/place-bid','/api/v3/market/place-ask','/api/v3/market/order-info','/api/v3/market/my-open-orders','/api/v3/market/my-order-history','/api/v3/market/cancel-order']);
+const privatePaths=new Set(['/api/v4/wallet/balances','/api/v3/user/trading-credits','/api/v3/market/place-bid','/api/v3/market/place-ask','/api/v3/market/order-info','/api/v3/market/my-open-orders','/api/v3/market/my-order-history','/api/v3/market/cancel-order']);
 const enc=new TextEncoder();
 const hex=a=>[...new Uint8Array(a)].map(x=>x.toString(16).padStart(2,'0')).join('');
 const sha=async s=>hex(await crypto.subtle.digest('SHA-256',enc.encode(s)));
@@ -81,10 +83,10 @@ async function signed(pair,method,path,body=null){
  if(!privatePaths.has(path.split('?')[0]))fail('ปลายทางไม่อยู่ในรายการที่อนุญาต',403);
  const time=await json(EXCHANGE+'/api/v3/servertime'),ts=String(typeof time==='number'||typeof time==='string'?time:time?.result);
  if(!/^\d{13}$/.test(ts))fail('เวลาเซิร์ฟเวอร์ Bitkub ผิดรูปแบบ',502);
- const payload=method==='POST'?JSON.stringify(body):'';
+ const payload=method==='POST'&&body!==null?JSON.stringify(body):'';
  const key=await crypto.subtle.importKey('raw',enc.encode(pair.apiSecret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=hex(await crypto.subtle.sign('HMAC',key,enc.encode(ts+method+path+payload)));
- const d=await json(EXCHANGE+path,{method,headers:{'Content-Type':'application/json','X-BTK-APIKEY':pair.apiKey,'X-BTK-TIMESTAMP':ts,'X-BTK-SIGN':sig},...(method==='POST'?{body:payload}:{})},10000);
+ const d=await json(EXCHANGE+path,{method,headers:{'Content-Type':'application/json','X-BTK-APIKEY':pair.apiKey,'X-BTK-TIMESTAMP':ts,'X-BTK-SIGN':sig},...(payload?{body:payload}:{})},10000);
  const code=d?.error??d?.code;if(code!==undefined&&String(code)!=='0')throw Object.assign(Error('Bitkub ปฏิเสธ (รหัส '+String(code).slice(0,20)+')'),{exchangeRejected:true,status:409});
  return d;
 }
@@ -98,6 +100,11 @@ async function wallet(pair){
  }
  out.THB??={available:0,reserved:0};out.BTC??={available:0,reserved:0};return out;
 }
+async function feeCredits(pair){
+ try{const d=await signed(pair,'POST','/api/v3/user/trading-credits'),available=Number(d.result);if(d.result===null||d.result===''||!['number','string'].includes(typeof d.result)||!Number.isFinite(available)||available<0)throw Error('invalid credits');return{ready:true,available,at:Date.now()};}
+ catch{return{ready:false,available:0,at:Date.now(),reason:'อ่านเครดิตไม่ได้ คิดค่าธรรมเนียมเต็ม'};}
+}
+const decide=(bundle,state,c,now)=>c.entryPlanner==='net-v16'?adaptivePortfolioCycle(bundle,state,c,now):portfolioCycle(bundle,state,c,now);
 function walletValue(w,quotes){
  let total=w.THB.available+w.THB.reserved;
  for(const m of quotes){const a=w[assetOf(m.symbol)];if(a)total+=(a.available+a.reserved)*m.bid;}
@@ -110,10 +117,11 @@ async function status(uid){
  read('bitbot_v10_orders?user_id=eq.'+uid+'&order=created_at.desc&limit=100'),
  read('bitbot_v10_events?user_id=eq.'+uid+'&order=id.desc&limit=50'),
  rpc('bitbot_exchange_setup_status',{p_user_id:uid}),read('bitbot_v13_shadow?user_id=eq.'+uid+'&select=enabled,capital,states,started_at,updated_at,last_error,base_config,buy_paused'),read('bitbot_v14_agents?user_id=eq.'+uid+'&order=role.asc'),read('bitbot_v14_company_jobs?user_id=eq.'+uid+'&select=id,mode,status,attempts,created_at,started_at,finished_at,error&order=created_at.desc&limit=12'),read('bitbot_v13_shadow_events?user_id=eq.'+uid+'&order=id.desc&limit=100')]);
- const shadow=shadows[0]||null,evidence=liveEvidence(bots[0]?.config?.strategyProfile||'legacy-v12',shadow);
+ const shadow=shadows[0]||null,evidence=liveEvidence(bots[0]?.config?.strategyProfile||'legacy-v12',shadow,bots[0]?.config?.entryPlanner);
  return{bot:bots[0]||null,orders,events,shadow,evidence,permission:livePermission(evidence,bots[0]),paperEvents,readiness:readinessProgress(bots[0]?.config?.strategyProfile||'trend-confirmed',shadow),company:{agents,jobs},reporting:{trackingSince:bots[0]?.state?.trackingSince||null,history:'DAILY_DETAILS_FROM_V12'},key:{configured:setup.configured,suffix:setup.keySuffix,verifiedAt:setup.verifiedAt},serverLiveEnabled:LIVE};
 }
-function liveEvidence(profile,shadow){
+function liveEvidence(profile,shadow,planner='legacy-v13'){
+ if(planner==='net-v16')return{allowed:false,reasons:['สูตรสุทธิ v16 ยังไม่มีผลเดินหน้าที่ผ่านการยืนยัน'],planner};
  const legacy=liveReadiness(profile,shadow),progress=readinessProgress(profile,shadow);
  return{...legacy,allowed:legacy.allowed&&progress.technicalReady,reasons:[...new Set([...legacy.reasons,...progress.checks.filter(x=>!x.passed).map(x=>x.label+' — '+x.value)])]};
 }
@@ -179,12 +187,12 @@ async function tickBot(b,bundle){
  if(!b.running)return await finish(b,b.state);
  if(b.close_positions&&!(b.state.qty>0)){await rpc('bitbot_v10_control',{p_uid:b.user_id,p_action:'stop'});await db('bitbot_v10_bots?user_id=eq.'+b.user_id,{close_positions:false},'PATCH');return;}
  if(!LIVE)return await finish(b,b.state,[],'ระบบปิดการซื้อขายเงินจริง');
- const c=config(b.config,true),w=walletValue(await wallet(pair),bundle?.watchlist||[]);
- const data={...bundle,markets:(bundle?.markets||[]).map(m=>({...m,wallet:w}))};
- let out=portfolioCycle(data,b.state,c,Date.now());
+ const c=plannerConfig(b.config,true),w=walletValue(await wallet(pair),bundle?.watchlist||[]),credits=c.entryPlanner==='net-v16'&&!(b.state.qty>0)?await feeCredits(pair):null;
+ const data={...bundle,markets:(bundle?.markets||[]).map(m=>({...m,wallet:w,...(credits?{feeCredits:credits}:{})}))};
+ let out=decide(data,b.state,c,Date.now());
  if(b.close_positions&&!out.error&&out.market&&!out.market.sellFrozen&&(out.market.ask-out.market.bid)/out.market.last<=c.maxSpread){const notional=Math.min(b.state.qty*out.market.bid,c.maxOrder,c.dailySell-out.state.sold),risk={action:'SELL',notional,exitMinimum:(out.market.rules?.minQuote||10)*(1+c.stopLoss*2+c.fee*2)};const planned=executionAgent(out.market,b.state,risk);out.order=planned.order?{...planned.order,strategy:b.state.entryStrategy||'owner-close',reason:'OWNER_CLOSE'}:null;out.trace=out.trace.map(t=>t.agent==='risk'?{...t,...risk,reason:'OWNER_CLOSE'}:t.agent==='execution'?planned:t);}
  b._companyJob=await companyClaim(b.user_id,'LIVE');
- const proof=livePermission(liveEvidence(c.strategyProfile,(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0]),b),plans={live:out};
+ const proof=livePermission(liveEvidence(c.strategyProfile,(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0],c.entryPlanner),b),plans={live:out};
  b._company=assessCompany({bundle:data,plans,records:{live:{state:b.state}},configs:{live:c},advanced:b._companyJob||out.order?.side==='BUY'?await advancedFor(plans):{},mode:'LIVE',evidence:proof});out=b._company.plans.live;
  out.state.walletSnapshot={availableTHB:w.THB.available,reservedTHB:w.THB.reserved,
  equityTHB:w.equityTHB,at:w.at,reserveTHB:w.THB.available*c.walletReservePct+c.cashReserveTHB,
@@ -194,12 +202,14 @@ async function tickBot(b,bundle){
  if(out.error)return await finish(b,out.state,out.trace,out.error);
  if(!out.order)return await finish(b,out.state,out.trace);
  const o=out.order,quote=out.market;
- if(o.side==='BUY'){const shadow=(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0],ready=livePermission(liveEvidence(c.strategyProfile,shadow),b);if(!ready.allowed)return await finish(b,out.state,[...out.trace,{agent:'risk',reason:ready.reasons.join(' • '),action:'HOLD'}]);}
+ if(o.side==='BUY'){const shadow=(await read('bitbot_v13_shadow?user_id=eq.'+b.user_id+'&limit=1'))[0],ready=livePermission(liveEvidence(c.strategyProfile,shadow,c.entryPlanner),b);if(!ready.allowed)return await finish(b,out.state,[...out.trace,{agent:'risk',reason:ready.reasons.join(' • '),action:'HOLD'}]);}
  if(Date.now()-quote.observedAt>25000)return await finish(b,out.state,[...out.trace,{agent:'execution',reason:'ราคาเก่าเกินส่งคำสั่ง รอตรวจใหม่'}]);
  // Re-read the actual wallet immediately before reserving any exchange write.
  const actual=walletValue(await wallet(pair),bundle.watchlist||[]),power=sizing({...quote,wallet:actual},b.state,c,Date.now());
  if(o.side==='BUY'&&o.amount>power.spendable)return await finish(b,out.state,[...out.trace,{agent:'risk',reason:'ยอดใช้ได้หลังสำรองเปลี่ยน รอรอบใหม่'}]);
  if(o.side==='SELL'&&(actual[assetOf(o.symbol)]?.available||0)<o.amount)return await finish(b,out.state,out.trace,'ยอดเหรียญที่ขายได้ไม่พอ ตรวจ Wallet');
+ if(o.side==='BUY'&&o.entryPolicy?.feeModel?.entryCreditUsed>0){const fresh=await feeCredits(pair);if(!fresh.ready||fresh.available<o.entryPolicy.feeModel.entryCreditUsed)return await finish(b,out.state,[...out.trace,{agent:'risk',action:'HOLD',reason:'เครดิตค่าธรรมเนียมเปลี่ยน รอคำนวณใหม่'}]);}
+ if(Date.now()-quote.observedAt>25000)return await finish(b,out.state,[...out.trace,{agent:'execution',reason:'ราคาเก่าหลังตรวจยอดและเครดิต รอราคาใหม่'}]);
  const rid=crypto.randomUUID();
  await rpc('bitbot_v10_reserve',{p_uid:b.user_id,p_lease:b.lease,p_id:rid,p_order:o,p_state:out.state});
  try{
@@ -232,9 +242,9 @@ async function shadowTick(row,bundle){
  if(!rawBase)throw Error('ไม่พบการตั้งค่าทุน');const base=row.base_config||{...rawBase,riskPerTrade:Math.min(rawBase.riskPerTrade||.01,.005),dailyLoss:Math.min(rawBase.dailyLoss||.03,.02)};
  job=await companyClaim(row.user_id,'PAPER');
  for(const candidate of SHADOW_CANDIDATES){
- const previous=states[candidate.key],c=previous?.companyVersion==='14.0.0'&&previous.config?config(previous.config):shadowConfig(base,candidate);
+ const previous=states[candidate.key],c=previous?.companyVersion==='14.0.0'&&previous.config?plannerConfig(previous.config):plannerConfig(shadowConfig(base,candidate));
  c.buyPaused=row.buy_paused===true;const record=previous||shadowInitial(c,Number(row.capital));records[candidate.key]=record;configs[candidate.key]=c;
- plans[candidate.key]=record.pending?{state:record.state,market:bundle.markets.find(m=>m.symbol===record.pending.order.symbol),order:null,trace:record.trace||[]}:portfolioCycle(bundle,record.state,c,Date.now());
+ plans[candidate.key]=record.pending?{state:record.state,market:bundle.markets.find(m=>m.symbol===record.pending.order.symbol),order:null,trace:record.trace||[]}:decide(bundle,record.state,c,Date.now());
  }
  const advanced=job||Object.values(plans).some(p=>p.order?.side==='BUY')?await advancedFor(plans):{};
  company=assessCompany({bundle,plans,records,configs,advanced,mode:'PAPER'});
@@ -254,7 +264,7 @@ async function shadowTick(row,bundle){
 async function observeTick(row,bundle){
  const job=await companyClaim(row.user_id,'OBSERVE',Number(row.slot));if(!job)return;
  const bot=(await read('bitbot_v10_bots?user_id=eq.'+row.user_id+'&select=config,state&limit=1'))[0];if(!bot)return;
- const c=config({...bot.config,buyPaused:true}),plan=portfolioCycle(bundle,bot.state,c,Date.now()),plans={observe:plan};
+ const c=config({...bot.config,buyPaused:true}),plan=decide(bundle,bot.state,c,Date.now()),plans={observe:plan};
  const advanced=await advancedFor(plans),result=assessCompany({bundle,plans,records:{observe:{state:bot.state}},configs:{observe:c},advanced,mode:'OBSERVE'});
  await companyFinish(job,result,plan.error|| (result.archive.tasks.some(t=>t.status==='FAILED')?'DEPARTMENT_FAILURE':null));
 }
@@ -276,7 +286,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'14.1.0',serverTime:Date.now(),engine:'quantitative company / owner live consent / risk checks',liveEnabled:LIVE};
+ if(req.method==='GET'&&a==='health')return{version:'16.0.0',serverTime:Date.now(),engine:'quantitative company / owner live consent / risk checks',liveEnabled:LIVE};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');return{scan:await markets.scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
@@ -292,6 +302,15 @@ async function handle(req){
  if(req.method==='GET'&&a==='paper-export'){const page=await ledgerPages('bitbot_v13_shadow_events?user_id=eq.'+uid+'&order=id.desc');return{events:page.rows,coverage:{limit:page.limit,possiblyTruncated:page.possiblyTruncated}};}
  if(req.method==='GET'&&a==='company'){const id=new URL(req.url).searchParams.get('id');if(id&&!/^[a-f0-9-]{36}$/.test(id))fail('รหัสงานไม่ถูกต้อง');const rows=await read('bitbot_v14_company_jobs?user_id=eq.'+uid+(id?'&id=eq.'+id:'&order=created_at.desc')+'&limit=1');return{job:rows[0]?{id:rows[0].id,mode:rows[0].mode,status:rows[0].status,archive:rows[0].result_gzip?await unpack(rows[0].result_gzip):null}:null};}
  if(req.method==='GET'&&a==='analysis'){const symbol=new URL(req.url).searchParams.get('symbol');if(!validSymbol(symbol))fail('คู่เหรียญไม่ถูกต้อง');await throttle(req,'analysis',uid,12,60);const m=await market(symbol),extra=await markets.analysis(symbol);return{market:m,extra};}
+ if(req.method==='GET'&&a==='planning'){
+ await throttle(req,'planning',uid,4,60);
+ const bot=(await read('bitbot_v10_bots?user_id=eq.'+uid+'&select=config,state,running&limit=1'))[0];if(!bot)fail('บันทึกวงเงินก่อนตรวจสูตร',409);
+ const pair=await keys(uid),[w0,credits,bundle]=await Promise.all([wallet(pair),feeCredits(pair),markets.scan([heldSymbol(bot.state)].filter(Boolean))]);
+ const w=walletValue(w0,bundle.watchlist||[]),data={...bundle,markets:bundle.markets.map(m=>({...m,wallet:w,feeCredits:credits}))},now=Date.now(),plans={};
+ for(const planner of ['legacy-v13','net-v16']){const c=plannerConfig({...bot.config,entryPlanner:planner},true),p=decide(data,structuredClone(bot.state),c,now);plans[planner]=p;}
+ const advanced=await advancedFor(plans),rows=Object.entries(plans).map(([planner,p])=>{const r=p.trace?.find(t=>t.agent==='risk'),signal=p.trace?.find(t=>t.agent==='strategy'),h=indicators(advanced[p.market?.symbol]?.['60']||[],60,now),blocked=[...(r?.blocked||[])];if(!(bot.state.qty>0)&&!h.ready)blocked.push('รอข้อมูลแท่งปิด 1 ชั่วโมงให้เพียงพอ');else if(!(bot.state.qty>0)&&h.regime==='DOWNTREND')blocked.push('แนวโน้ม 1 ชั่วโมงเป็นขาลง');return{planner,symbol:p.market?.symbol||null,signal:signal?.signal||'HOLD',action:blocked.length||p.error?'HOLD':p.order?.side||'HOLD',plan:r?.plan||null,notional:r?.wallet?.maxBuy||0,blocked,error:p.error||null,hourly:{ready:h.ready,bars:h.bars,regime:h.regime,reason:h.reason}};});
+ return{at:now,activePlanner:bot.config.entryPlanner||'legacy-v13',running:bot.running,credits,rows,readOnly:true,note:'เปรียบเทียบจากกระเป๋าและราคาปัจจุบัน ไม่บันทึกสถานะหรือส่งคำสั่ง'};
+ }
  if(req.method==='GET'&&a==='wallet')return{wallet:await wallet(await keys(uid))};
  if(req.method!=='POST')fail('Method not allowed',405);
  await throttle(req,'action',uid,60,60);
@@ -307,13 +326,13 @@ async function handle(req){
  await rpc('bitbot_remove_exchange_key',{p_user_id:uid});return{removed:true};
  }
  if(a==='save'){
- const c=config(b.config,true),st=await status(uid);
+ const c=plannerConfig(b.config,true),st=await status(uid);
  // A stopped session with no position may retain its accounting; changing budget starts a new session and preserves the old summary in audit.
  if(st.bot)await event(uid,'SESSION_SAVED',{state:st.bot.state,config:st.bot.config});
  await rpc('bitbot_v10_control',{p_uid:uid,p_action:'save',p_config:c,p_state:initial(c)});await db('bitbot_v10_bots?user_id=eq.'+uid,{evidence_consent:null},'PATCH');return{saved:true};
  }
  if(a==='close-positions'){if(b.confirm!=='ปิดสถานะของบอท'||b.acceptRisk!==true)fail('ยืนยันการปิดสถานะก่อนส่งคำสั่ง');const st=await status(uid);if(!(st.bot?.state?.qty>0))fail('ไม่มีสถานะของบอทที่ต้องปิด');await wallet(await keys(uid));await rpc('bitbot_v14_close_request',{p_uid:uid});return{closing:true,note:'เริ่มทยอยปิดเฉพาะเหรียญของบอท ภายใต้เพดานคำสั่งและสภาพคล่องเดิม'};}
- if(a==='paper-config'){const c=config(b.config),capital=Number(b.capital);if(!Number.isFinite(capital)||capital<=0||capital>c.budget)fail('ทุนทดลองไม่ถูกต้อง');await rpc('bitbot_v14_paper_config',{p_uid:uid,p_config:c,p_capital:capital});return{saved:true};}
+ if(a==='paper-config'){const c=plannerConfig(b.config),capital=Number(b.capital);if(!Number.isFinite(capital)||capital<=0||capital>c.budget)fail('ทุนทดลองไม่ถูกต้อง');await rpc('bitbot_v14_paper_config',{p_uid:uid,p_config:c,p_capital:capital});return{saved:true};}
  if(a==='paper-pause'){if(typeof b.paused!=='boolean')fail('สถานะพักซื้อไม่ถูกต้อง');await db('bitbot_v13_shadow?user_id=eq.'+uid,{buy_paused:b.paused},'PATCH');return{saved:true};}
  if(a==='observe'){if(!(await status(uid)).bot)fail('ตั้งค่าบัญชีก่อนเรียกวิเคราะห์');await db('bitbot_v14_company_jobs',{user_id:uid,mode:'OBSERVE',slot:Math.floor(Date.now()/300000)},'POST').catch(()=>null);await run(uid);return{observed:true};}
  if(a==='shadow-toggle'){if(typeof b.enabled!=='boolean')fail('สถานะทดลองไม่ถูกต้อง');await rpc('bitbot_v13_shadow_toggle',{p_uid:uid,p_enabled:b.enabled});return{saved:true};}
@@ -323,7 +342,7 @@ async function handle(req){
  const st=await status(uid);if(!st.bot)fail('บันทึกวงเงินก่อนเริ่ม');
  if(!(st.bot.state.qty>0)&&!st.evidence.allowed&&b.allowUnvalidated!==true)fail('ผลทดสอบยังไม่ครบ กรุณายืนยันตัวเลือกเริ่มเงินจริงก่อนผลทดสอบครบในหน้าต่างเริ่มบอท',409);
  if(st.orders.some(o=>!o.settled))fail('ตรวจคำสั่งค้างให้เสร็จก่อนเริ่มรอบ');
- const c=config(st.bot.config,true),w=await wallet(await keys(uid)),bundle=await markets.scan([heldSymbol(st.bot.state)].filter(Boolean));
+ const c=plannerConfig(st.bot.config,true),w=await wallet(await keys(uid)),bundle=await markets.scan([heldSymbol(st.bot.state)].filter(Boolean));
  if(!bundle.markets.length)fail('ยังไม่มีข้อมูลตลาดพร้อมวิเคราะห์');
  const funds=fundingAmount(c,w);
  if(st.bot.state.qty===0&&funds<10)fail('เงินบาทหลังสำรองต่ำกว่าขั้นต่ำตลาด กรุณาปรับเงินสำรองหรือเติมเงิน');

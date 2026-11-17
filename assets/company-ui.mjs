@@ -8,7 +8,7 @@ function cellRow(parent,values){const tr=document.createElement('tr');for(const 
 function paragraph(parent,value){const p=document.createElement('p');p.textContent=value;parent.append(p);}
 function download(name,data,type){const url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 export function attachCompanyUI({api,getContext,info,notice,openAuth,refresh}){
- for(const [source,target] of [['scannerBody','scanner'],['newsFeed','newsroom'],['configForm','risk'],['researchTrainingBody','lab'],['backtestBody','lab']]){const section=$(source)?.closest('section');if(section&&$(target))$(target).append(section);}
+ for(const [source,target] of [['netPlannerPanel','lab'],['scannerBody','scanner'],['newsFeed','newsroom'],['configForm','risk'],['researchTrainingBody','lab'],['backtestBody','lab']]){const section=$(source)?.closest('section');if(section&&$(target))$(target).append(section);}
  const grid=document.querySelector('.settings-grid');if(grid)grid.style.gridTemplateColumns='1fr';
  let archive=null,archiveId=null,archiveBusy=false,report=null,reportBusy=false,currentAccount=null,voiceEnabled=false,scene=null;
  const speak=text=>{if(!voiceEnabled||!globalThis.speechSynthesis)return;const voice=speechSynthesis.getVoices().find(v=>v.lang.startsWith('th'));if(!voice)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='th-TH';u.voice=voice;u.rate=1.03;speechSynthesis.speak(u);};
@@ -46,7 +46,7 @@ export function attachCompanyUI({api,getContext,info,notice,openAuth,refresh}){
  $('companyMode').textContent=archive?archive.mode==='OBSERVE'?'วิเคราะห์อย่างเดียว • ไม่ส่งคำสั่ง':archive.mode==='PAPER'?'เงินจำลอง':'แผนเงินจริง':'ยังไม่มีบันทึกงาน';
  $('companyMessages').replaceChildren();for(const message of archive?.messages||[]){const div=document.createElement('div');div.className='history-entry';paragraph(div,time(message.at)+' · '+message.from+' → '+message.to);paragraph(div,message.text);paragraph(div,'หลักฐานงาน #'+message.taskId+' · '+message.kind);$('companyMessages').append(div);}
  if(!archive)paragraph($('companyMessages'),'ยังไม่มีข้อความจากงานจริง กดวิเคราะห์รอบนี้หลังเข้าสู่ระบบ');
- const ready=readinessProgress(ctx.config.strategyProfile,cloud?.shadow);$('readinessPolicy').textContent=ready.profile+' · ผลวิจัยแสดงตามข้อมูลจริง เจ้าของเลือกยืนยันเริ่มก่อนครบได้ที่ปุ่มเริ่มบอทเงินจริง';$('readinessChecks').replaceChildren();
+ const ready=readinessProgress(ctx.config.strategyProfile,cloud?.shadow);if(ctx.config.entryPlanner==='net-v16'){ready.checks.unshift({passed:false,label:'สูตรสุทธิ v16',value:'ผลของสูตรเดิมใช้รับรองสูตรนี้ไม่ได้ ยังไม่ยืนยันกำไร'});}$('readinessPolicy').textContent=ready.profile+' · ผลวิจัยแสดงตามข้อมูลจริง เจ้าของเลือกยืนยันเริ่มก่อนครบได้ที่ปุ่มเริ่มบอทเงินจริง';$('readinessChecks').replaceChildren();
  for(const check of ready.checks){const d=document.createElement('div');d.className='connection-box';paragraph(d,(check.passed?'✓ ':'○ ')+check.label);paragraph(d,check.value);$('readinessChecks').append(d);}
  $('systemHealth').replaceChildren();paragraph($('systemHealth'),cloud?'เงินจริง: '+(cloud.bot?.running?'เปิดอยู่':'หยุดอยู่')+' · Paper: '+(cloud.shadow?.enabled?'เปิดอยู่':'พักอยู่'):'เข้าสู่ระบบเพื่ออ่านสถานะ Cloud');
  if(cloud?.shadow){paragraph($('systemHealth'),'Paper ตรวจล่าสุด '+time(cloud.shadow.updated_at)+(cloud.shadow.last_error?' · '+cloud.shadow.last_error:''));}
