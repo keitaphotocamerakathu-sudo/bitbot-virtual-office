@@ -47,7 +47,7 @@ test('exchange fill timestamps drive Bangkok daily fees and partial realized PnL
  const c=config();let s=applyFill(initial(c),{side:'BUY',symbol:'ETH_THB',qty:1,price:3000,fee:7.5,at:Date.parse('2026-11-16T16:59:00Z')},c);
  s=applyFill(s,{side:'SELL',symbol:'ETH_THB',qty:.5,price:3100,fee:3.88,at:Date.parse('2026-11-16T17:01:00Z')},c);
  assert.equal(s.daily['2026-11-16'].fees,7.5);assert.equal(s.daily['2026-11-17'].fees,3.88);assert(Math.abs(s.dayPnl-42.37)<1e-8);
- const p=performance(s,[{symbol:'ETH_THB',bid:3100}],c);assert.equal(p.realized,s.realized);assert.equal(p.fees,11.38);assert(Math.abs(p.totalNet-(p.realized+p.unrealized))<1e-8);
+ const p=performance(s,[{symbol:'ETH_THB',bid:3100}],c);assert.equal(p.realized,s.realized);assert(Math.abs(p.fees-11.38)<1e-8);assert(Math.abs(p.totalNet-(p.realized+p.unrealized))<1e-8);
 });
 test('article extraction reads bounded article text and strips executable content',()=>{
  const body='Ethereum protocol upgraded with new safeguards. '.repeat(10);
