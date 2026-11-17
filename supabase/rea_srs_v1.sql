@@ -9,6 +9,7 @@ create table rea.bot_settings(
  enabled boolean not null default false, state jsonb not null, latest jsonb not null default '{}',
  revision bigint not null default 0, lease uuid, lease_until timestamptz, next_tick timestamptz not null default now(),
  updated_at timestamptz not null default now(), last_error text,
+ operational_lock boolean not null default false,operational_reasons jsonb not null default '[]',
  check(state->>'mode'='PAPER_ONLY'),check((state->>'cash')::numeric>=0),check((state->>'initialCapital')::numeric=10000)
 );
 create table rea.market_snapshots(user_id uuid not null references rea.bot_settings,at_ms bigint not null,payload jsonb not null,primary key(user_id,at_ms));
@@ -66,9 +67,11 @@ declare s jsonb;v_enabled boolean;begin
 end$$;
 create function public.rea_checkpoint(p_uid uuid,p_lease uuid,p_revision bigint,p_state jsonb,p_latest jsonb,p_events jsonb,p_signals jsonb,p_fills jsonb,p_at bigint,p_error text default null) returns boolean
 language plpgsql security invoker set search_path='' as $$
-declare x jsonb;d record;begin
+declare x jsonb;d record;previous_state jsonb;locked boolean;begin
  perform 1 from rea.bot_settings where user_id=p_uid and lease=p_lease and revision=p_revision and lease_until>now() for update;
  if not found then return false;end if;
+ select state,operational_lock into previous_state,locked from rea.bot_settings where user_id=p_uid;
+ if locked and exists(select 1 from jsonb_array_elements(p_state->'orders') as e(value) where e.value->>'side'='BUY' and e.value->>'status' in('OPEN','PARTIAL') and not exists(select 1 from jsonb_array_elements(previous_state->'orders') as old(value) where old.value->>'id'=e.value->>'id')) then raise exception 'OPERATIONAL_SAFE_MODE';end if;
  if p_state->>'mode'<>'PAPER_ONLY' or (p_state->>'cash')::numeric<0 or (p_state->>'initialCapital')::numeric<>10000 then raise exception 'INVALID_PAPER_STATE';end if;
  if (select count(distinct symbol) from(select e.value->>'symbol' symbol from jsonb_array_elements(p_state->'positions') as e(value) union all select e.value->>'symbol' from jsonb_array_elements(p_state->'orders') as e(value) where e.value->>'side'='BUY' and e.value->>'status' in('OPEN','PARTIAL'))q)>2 then raise exception 'MAX_POSITIONS';end if;
  for x in select value from jsonb_array_elements(p_state->'orders') loop

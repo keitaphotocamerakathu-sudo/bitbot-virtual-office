@@ -1,3 +1,7 @@
+# REA 18.1 · Backend Operations & LLM Advisory
+
+[Dashboard](./rea.html) · [ผลส่งมอบ 18.1](./docs/REA-18.1-DELIVERY-TH.md) · [Compose](./compose.rea.yaml)
+
 # REA · SRS v1.0 · PAPER_ONLY
 
 [เปิด Dashboard REA](./rea.html) · [ผลส่งมอบและข้อจำกัด](./docs/REA-DELIVERY-TH.md) · [คู่มือใช้งาน](./docs/REA-OPERATIONS-TH.md)

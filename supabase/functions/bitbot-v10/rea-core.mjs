@@ -56,6 +56,7 @@ export function riskSizeREA(s,{stopDistance,minQuote=10},markets,now){
 export function scoreREA(m,now){
  const x=indicators(m.candles,5,now),bars=m.candles||[],last=bars.at(-1),prior=bars.slice(-21,-1),prev=bars.at(-2);
  const reasons=[];if(bars.some(b=>!Number.isFinite(b.t)||b.t+300000>now))reasons.push('UNFINISHED_CANDLE');if(!quoteOK(m,now))reasons.push('STALE_OR_INVALID_PRICE');
+ if(m.wsReady===false)reasons.push('WEBSOCKET_STALE');
  if(m.status!=='active'||m.buyFrozen||m.sellFrozen||m.marketSource!=='exchange')reasons.push('MARKET_NOT_EXECUTABLE');
  if(m.dataQuality?.ready!==true||!x.ready)reasons.push('CANDLE_QUALITY');
  const spread=(m.ask-m.bid)/m.last;if(!Number.isFinite(spread)||spread>REA_LIMITS.maxSpread)reasons.push('SPREAD');
@@ -74,8 +75,8 @@ export function scoreREA(m,now){
  return{symbol:m.symbol,score:money(Object.values(factors).reduce((a,b)=>a+b,0)),factors,strategy,eligible:reasons.length===0,reasons,indicators:x,stopDistance,signalAt:last?.t+300000,reference:m.ask,priceAt:m.observedAt};
 }
 function bookQty(m,side,limit){const rows=side==='BUY'?m.depth?.asks:m.depth?.bids;return(rows||[]).reduce((sum,row)=>{const price=Number(row.price??row[0]),qty=Number(row.base_volume??row[1]);return Number.isFinite(price)&&Number.isFinite(qty)&&qty>0&&(side==='BUY'?price<=limit:price>=limit)?sum+qty:sum;},0);}
-function fillOrders(s,markets,now,out){
- for(const o of s.orders.filter(active)){
+function fillOrders(s,markets,now,out,riskOnly=false){
+ for(const o of s.orders.filter(o=>active(o)&&(!riskOnly||o.side==='SELL'))){
   if(now-o.createdAt>=120000||o.fillCount>=10){o.status='CANCELED';o.reserved=0;event(out,'CANCEL','PAPER_LIMIT_TIMEOUT',{orderId:o.id});continue;}
   if(o.createdAt>=now)continue;const m=markets.find(m=>m.symbol===o.symbol);
   if(!quoteOK(m,now)||!m.depth||now-m.depth.at>30000||m.depth.at>now+5000)continue;
@@ -106,7 +107,7 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
  const markets=bundle?.markets||[],healthy=rollREA(s,markets,now,out);
  if(s.kill==='ALL'){for(const o of s.orders.filter(active)){o.status='CANCELED';o.reserved=0;}event(out,'EMERGENCY_STOP','ALL_ORDERS_STOPPED');s.lastAt=now;return out;}
  if(s.buyPaused||s.kill==='ENTRY'||!healthy)cancelBuys(s,out,s.buyPaused?'PAUSED':s.kill==='ENTRY'?'ENTRY_STOP':'SAFE_MODE');
- fillOrders(s,markets,now,out);rollREA(s,markets,now,out);
+ fillOrders(s,markets,now,out,control.riskOnly===true);rollREA(s,markets,now,out);
  // Risk exits run independently of entry signals, indicators, news and spread eligibility.
  for(const p of s.positions){
   const m=markets.find(m=>m.symbol===p.symbol);if(!quoteOK(m,now)||s.orders.some(o=>active(o)&&o.side==='SELL'&&o.symbol===p.symbol))continue;
@@ -114,9 +115,9 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
   cancelBuys(s,out,'POSITION_EXIT');const id='exit:'+p.positionId+':'+Math.floor(now/60000);
   s.orders.push({id,signalId:id,symbol:p.symbol,side:'SELL',status:'OPEN',limit:m.bid*(1-REA_LIMITS.slippage),remaining:p.qty,qtyScale:m.rules?.qtyScale??8,reserved:0,createdAt:now,fillCount:0,reason,strategy:p.strategy});event(out,'ORDER',reason,{orderId:id});
  }
- out.ranking=markets.map(m=>scoreREA(m,now)).sort((a,b)=>b.score-a.score);
+ out.ranking=control.riskOnly===true?[]:markets.map(m=>scoreREA(m,now)).sort((a,b)=>b.score-a.score);
  const dataHealthy=markets.some(m=>quoteOK(m,now));
- const entryOK=healthy&&dataHealthy&&!s.dailyLocked&&!s.buyPaused&&s.kill==='NONE'&&s.mode==='PAPER_ONLY';
+ const entryOK=control.riskOnly!==true&&control.operationalLock!==true&&healthy&&dataHealthy&&!s.dailyLocked&&!s.buyPaused&&s.kill==='NONE'&&s.mode==='PAPER_ONLY';
  if(!bundle||!dataHealthy||!healthy){out.health='SAFE_MODE';event(out,'SAFE_MODE',s.baselinePending?'MIDNIGHT_BASELINE_UNVERIFIED':'MARKET_DATA_UNAVAILABLE');}
  for(const r of out.ranking){
   const signalId=r.symbol+':'+(r.signalAt||now)+':'+(r.strategy||'WAIT');const decision={...r,signalId,at:now,approved:false};

@@ -1,0 +1,14 @@
+{
+  "script_name": "rea-bitkub-advisor",
+  "main_module": "worker.mjs",
+  "compatibility_date": "2026-11-17",
+  "bindings": [{"type": "ai", "name": "AI"}],
+  "keep_bindings": ["secret_text"],
+  "model": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+  "backend_secret_binding": "AUTH_TOKEN",
+  "public_context_only": true,
+  "max_output_tokens": 220,
+  "max_calls_per_utc_day": 24,
+  "minimum_interval_minutes": 60,
+  "can_trade": false
+}

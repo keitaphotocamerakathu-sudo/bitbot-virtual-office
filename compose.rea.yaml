@@ -1,23 +1,39 @@
+x-rea: &rea
+  image: rea-paper:local
+  build:
+    context: .
+    dockerfile: services/rea/Dockerfile
+  restart: unless-stopped
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  secrets: [supabase_service_key]
+  mem_limit: 512m
+  cpus: 1
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+x-env: &env
+  SUPABASE_URL: https://lrxrigimdaedfemqheug.supabase.co
+  REA_SUPABASE_SERVICE_KEY_FILE: /run/secrets/supabase_service_key
 services:
-  rea-paper:
-    build:
-      context: .
-      dockerfile: services/rea/Dockerfile
-    restart: unless-stopped
-    init: true
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    environment:
-      SUPABASE_URL: https://lrxrigimdaedfemqheug.supabase.co
-      REA_SUPABASE_SERVICE_KEY_FILE: /run/secrets/supabase_service_key
-    secrets: [supabase_service_key]
+  market-data:
+    <<: *rea
+    environment: {<<: *env, REA_SERVICE: market-collector}
+    ports: ["127.0.0.1:8081:8080"]
+  strategy-worker:
+    <<: *rea
+    environment: {<<: *env, REA_SERVICE: strategy-worker}
     ports: ["127.0.0.1:8080:8080"]
-    mem_limit: 512m
-    cpus: 1
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
+  risk-watchdog:
+    <<: *rea
+    environment: {<<: *env, REA_SERVICE: risk-watchdog}
+    ports: ["127.0.0.1:8082:8080"]
+  health-monitor:
+    <<: *rea
+    environment: {<<: *env, REA_SERVICE: health-monitor}
+    ports: ["127.0.0.1:8083:8080"]
 secrets:
   supabase_service_key:
     file: .secrets/rea-supabase-service-key

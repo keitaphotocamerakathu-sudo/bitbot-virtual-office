@@ -1,4 +1,4 @@
-name: Test and deploy REA Paper 18.0
+name: Test and deploy REA Paper 18.1
 on:
   push:
     branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]
@@ -22,6 +22,14 @@ jobs:
         run: npm test
       - name: Verify archived research integrity
         run: node research/verify-v13.mjs && node research/verify-v16.mjs
+      - name: Build isolated paper container
+        run: docker build -f services/rea/Dockerfile -t rea-paper:checks .
+      - name: Container runtime and Compose checks
+        run: |
+          docker run --rm --network none --read-only --mount type=bind,src="$PWD/tests/rea-container-smoke.mjs",dst=/checks/smoke.mjs,readonly rea-paper:checks node /checks/smoke.mjs
+          docker compose -f compose.rea.yaml config --quiet
+      - name: Public backend WebSocket probe (no credentials)
+        run: node tests/rea-ws-probe.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: intraday-research

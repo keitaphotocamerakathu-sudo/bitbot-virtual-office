@@ -1,0 +1,31 @@
+-- Real Postgres checks; restores all account/lease/incident changes at ROLLBACK.
+begin;
+do $$declare u uuid;i uuid=gen_random_uuid();other uuid=gen_random_uuid();b rea.bot_settings%rowtype;s jsonb;l jsonb;at_ms bigint;begin
+ select user_id into u from rea.bot_settings limit 1;
+ if u is null then raise exception 'PAPER_ACCOUNT_REQUIRED';end if;
+ at_ms=floor(extract(epoch from now())*1000);
+ if not public.rea_service_lease('market-collector',i) then raise exception 'LEASE_FAILED';end if;
+ if public.rea_service_lease('market-collector',other) then raise exception 'DUPLICATE_COLLECTOR';end if;
+ perform public.rea_publish_market(i,jsonb_build_array(jsonb_build_object('symbol','BTC_THB','bid',100,'ask',101,'last',100,'observedAt',at_ms,'source','BITKUB_PUBLIC_WS','timestampSource','LOCAL_RECEIPT')));
+ if jsonb_array_length(public.rea_market_quotes(array['BTC_THB']))<>1 then raise exception 'MISSING_QUOTE';end if;
+ begin perform public.rea_publish_market(other,'[]');raise exception 'MISSING_LEASE_ACCEPTED';exception when others then if sqlerrm='MISSING_LEASE_ACCEPTED' then raise;end if;end;
+ insert into rea.bot_heartbeats values(u,'paper-cycle',at_ms-200000,'OK') on conflict(user_id,service) do update set at_ms=excluded.at_ms;
+ perform public.rea_risk_heartbeat(u,at_ms,'IDLE');
+ perform public.rea_monitor();
+ if not(select operational_lock from rea.bot_settings where user_id=u) then raise exception 'STALE_RUNNER_NOT_LOCKED';end if;
+ if not exists(select 1 from rea.alerts where user_id=u and status='OPEN') then raise exception 'NO_INCIDENT';end if;
+ perform public.rea_monitor();
+ if (select count(*) from rea.alerts where user_id=u and status='OPEN' and incident_key='BACKEND_HEARTBEAT_STALE')<>1 then raise exception 'DUPLICATE_INCIDENT';end if;
+ update rea.bot_heartbeats set at_ms=floor(extract(epoch from now())*1000),status='OK' where user_id=u and service='paper-cycle';
+ perform public.rea_monitor();
+ if (select operational_lock from rea.bot_settings where user_id=u) then raise exception 'HEALTHY_STATE_NOT_RECOVERED';end if;
+ select * into b from rea.bot_settings where user_id=u;
+ s=jsonb_set(b.state,'{cash}','9999');l=b.latest||jsonb_build_object('quotes','[]'::jsonb);
+ if public.rea_risk_checkpoint(u,b.revision-1,s,l,'[]','[]',at_ms) then raise exception 'STALE_RISK_REVISION_ACCEPTED';end if;
+ if not public.rea_risk_checkpoint(u,b.revision,s,l,'[]','[]',at_ms) then raise exception 'RISK_CHECKPOINT_FAILED';end if;
+ if (select next_tick from rea.bot_settings where user_id=u) is distinct from b.next_tick then raise exception 'RISK_STARVED_STRATEGY';end if;
+ if public.rea_risk_checkpoint(u,b.revision,s,l,'[]','[]',at_ms) then raise exception 'RISK_CHECKPOINT_REPLAYED';end if;
+ if has_function_privilege('authenticated','public.rea_risk_accounts()','EXECUTE') then raise exception 'PRIVATE_RISK_DATA_EXPOSED';end if;
+ if has_function_privilege('anon','public.rea_publish_market(uuid,jsonb)','EXECUTE') then raise exception 'UNTRUSTED_MARKET_WRITER';end if;
+end$$;
+rollback;
