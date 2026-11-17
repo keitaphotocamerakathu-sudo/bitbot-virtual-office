@@ -28,6 +28,12 @@ export function newsAgent(m,now=Date.now()){
  return{agent:'news',ready,blocked:!ready||n?.blocked===true,score:ready?Number(n.score)||0:0,
  headlines:ready?(n.headlines||[]).slice(0,5):[],reason:!ready?'ข่าวไม่พร้อมหรือเก่าเกินกำหนด งดซื้อใหม่':n.blocked?'พบข่าวเสี่ยงที่เกี่ยวข้อง งดซื้อใหม่':n.headlines?.length?'ประเมินหัวข่าวที่เกี่ยวข้องแล้ว ใช้ร่วมกับสัญญาณราคา':'แหล่งข่าวอัปเดต แต่ไม่มีหัวข่าวตรงเหรียญ ไม่ถือเป็นข่าวบวก'};
 }
+export function fundingAmount(c,w){
+ const available=w?.THB?.available;
+ if(typeof available!=='number'||!Number.isFinite(available)||available<0)throw Error('ยอดเงินบาทใช้ได้ไม่ถูกต้อง');
+ return Math.max(0,Math.min(c.budget,available*(1-c.walletReservePct)-c.cashReserveTHB));
+}
+
 export function sizing(m,s,c,now=Date.now()){
  const q=m.wallet?.THB?.available??s.cash;
  const walletOK=typeof q==='number'&&Number.isFinite(q)&&q>=0&&(!m.wallet||Number.isFinite(m.wallet.at)&&now-m.wallet.at<=30000&&m.wallet.at<=now+5000);

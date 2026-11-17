@@ -1,6 +1,6 @@
 // Bitbot 10. Credentials and HMAC signing exist only on the server.
 // @ts-nocheck
-import {config,initial,cycle,applyFill,floor8,heldSymbol,assetOf,roundUnit,sizing,validSymbol} from './engine.mjs';
+import {config,initial,cycle,applyFill,floor8,heldSymbol,assetOf,roundUnit,sizing,validSymbol,fundingAmount} from './engine.mjs';
 import {portfolioCycle} from './selection.mjs';
 import {createMarketService} from './market.mjs';
 const ORIGIN='https://keitaphotocamerakathu-sudo.github.io';
@@ -117,7 +117,7 @@ function filledState(state,order,info,c){
  const amount=Number(f.amount),price=Number(f.rate),grossFee=Number(f.fee||0),credit=Number(f.credit||0);
  if(![amount,price,grossFee,credit].every(Number.isFinite)||amount<=0||price<=0||grossFee<0||credit<0)throw Error('ข้อมูลการจับคู่ไม่ครบ');
  const fee=Math.max(0,grossFee-credit);
- // Bitkub: BUY history.amount is THB; SELL history.amount is BTC.
+ // Bitkub: BUY history.amount is THB; SELL history.amount is the order's base asset.
  const qty=order.side==='BUY'?roundUnit((amount-fee)/price,order.qty_scale??8):amount;
  s=applyFill(s,{symbol:order.symbol||'BTC_THB',qtyScale:order.qty_scale??8,side:order.side,qty,price,fee,strategy:order.strategy,...(order.side==='BUY'?{spend:amount}:{})},c);
  }
@@ -234,9 +234,10 @@ async function handle(req){
  if(!LIVE)fail('เซิร์ฟเวอร์ปิดเทรดจริง');
  if(b.confirm!=='เริ่มบอทเงินจริง'||b.acceptRisk!==true||b.noWithdraw!==true)fail('ยืนยันความเสี่ยงและปิดสิทธิ์ถอนก่อนเริ่ม');
  const st=await status(uid);if(!st.bot)fail('บันทึกวงเงินก่อนเริ่ม');
+ if(st.orders.some(o=>!o.settled))fail('ตรวจคำสั่งค้างให้เสร็จก่อนเริ่มรอบ');
  const c=config(st.bot.config,true),w=await wallet(await keys(uid)),bundle=await markets.scan([heldSymbol(st.bot.state)].filter(Boolean));
  if(!bundle.markets.length)fail('ยังไม่มีข้อมูลตลาดพร้อมวิเคราะห์');
- const spendable=Math.max(0,w.THB.available*(1-c.walletReservePct)-c.cashReserveTHB),funds=Math.min(c.budget,spendable);
+ const funds=fundingAmount(c,w);
  if(st.bot.state.qty===0&&funds<10)fail('เงินบาทหลังสำรองต่ำกว่าขั้นต่ำตลาด กรุณาปรับเงินสำรองหรือเติมเงิน');
  if(!st.bot.state.trades&&st.bot.state.qty===0)await rpc('bitbot_v11_fund',{p_uid:uid,p_funds:funds});
  await rpc('bitbot_v10_control',{p_uid:uid,p_action:'start'});
@@ -263,7 +264,7 @@ async function handle(req){
  if(!st.bot)fail('ยังไม่มีรอบการทำงาน');
  const w=await wallet(await keys(uid));
  const held=heldSymbol(st.bot.state);if(held){const m=await market(held),balance=w[assetOf(held)]||{available:0,reserved:0};if((balance.available+balance.reserved)*m.bid>=m.rules.minQuote)fail('ยังมี '+assetOf(held)+' ใน Wallet จัดการสถานะก่อนเริ่มรอบใหม่');}
- if(w.THB.available<st.bot.config.budget)fail('THB ไม่พอกับทุนเดิม');
+ if(fundingAmount(config(st.bot.config,true),w)<10)fail('THB หลังสำรองต่ำกว่าขั้นต่ำตลาด');
  await rpc('bitbot_v10_reset',{p_uid:uid,p_state:initial(st.bot.config)});return{reset:true};
  }
 
