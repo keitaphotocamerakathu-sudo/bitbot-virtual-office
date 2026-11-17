@@ -1,6 +1,7 @@
 import {createRiskWatchdog} from '../supabase/functions/bitbot-v10/rea-watchdog.mjs';
 import {createRiskQuotes} from '../supabase/functions/bitbot-v10/rea-risk-quotes.mjs';
 import {createAdvisory} from '../supabase/functions/bitbot-v10/rea-advisory.mjs';
+import {exchangeFailure} from '../supabase/functions/bitbot-v10/exchange-errors.mjs';
 import {createLiveService} from '../supabase/functions/bitbot-v10/rea-live-service.mjs';
 import {createREAService} from '../supabase/functions/bitbot-v10/rea-service.mjs';
 import {createVerifiedMarketService} from '../supabase/functions/bitbot-v10/market-verified.mjs';
@@ -23,8 +24,21 @@ import * as evidence from '../assets/evidence.mjs';
 import {portfolioCycle} from '../assets/selection.mjs';
 import {createMarketService} from '../supabase/functions/bitbot-v10/market.mjs';
 const source=fs.readFileSync(new URL('../supabase/functions/bitbot-v10/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
-function harness(fetchImpl){let handler;const sandbox={...engine,...shadow,...evidence,...company,...archives,...readiness,...reporting,...permission,...adaptive,...technical,structuredClone,portfolioCycle,createMarketService,createVerifiedMarketService,createREAService,createLiveService,createRiskWatchdog,createRiskQuotes,createAdvisory,runtimeConfig,dataUpgradeBlock,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
+function harness(fetchImpl){let handler;const sandbox={...engine,...shadow,...evidence,...company,...archives,...readiness,...reporting,...permission,...adaptive,...technical,structuredClone,portfolioCycle,createMarketService,createVerifiedMarketService,createREAService,createLiveService,exchangeFailure,createRiskWatchdog,createRiskQuotes,createAdvisory,runtimeConfig,dataUpgradeBlock,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
 const ok=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
+test('invalid Bitkub credentials return an actionable wallet conflict without logging out the app user',async()=>{
+ const calls=[],h=harness(url=>{calls.push(String(url));if(String(url).includes('/auth/v1/user'))return ok({id:'11111111-1111-4111-8111-111111111111'});if(String(url).includes('bitbot_load_exchange_key'))return ok({apiKey:'TEST_KEY',apiSecret:'TEST_SECRET'});if(String(url).endsWith('/servertime'))return ok(1800000000000);if(String(url).includes('/wallet/balances'))return new Response(JSON.stringify({code:'A1003-MK',message:'PRIVATE_RESPONSE_MUST_NOT_LEAK'}),{status:401});throw Error('Unexpected request');});
+ const r=await h.handler(new Request('https://api.test/?action=wallet',{headers:{Authorization:'Bearer test-user'}})),x=await r.json();
+ assert.equal(r.status,409);assert.equal(x.code,'BITKUB_INVALID_API_KEY');assert.equal(x.action,'RECONNECT_BITKUB');assert.equal(x.retryable,false);assert.equal(x.exchangeStatus,401);assert.equal(x.exchangeCode,'A1003-MK');assert(x.error.includes('API Key'));assert(!JSON.stringify(x).includes('PRIVATE_RESPONSE_MUST_NOT_LEAK'));assert(!calls.some(u=>u.includes('place-')));
+});
+test('Bitkub v3 and v4 credential failures are distinct from network or rate-limit ambiguity',()=>{
+ for(const value of [{error:3},{code:'A1003-MK'}]){const e=exchangeFailure(401,value);assert.equal(e.status,409);assert.equal(e.retryable,false);assert.equal(e.exchangeRejected,true);}
+ for(const status of [429,500,503]){const e=exchangeFailure(status,{message:'SECRET_DATA'});assert.equal(e.exchangeRejected,false);assert.equal(e.retryable,true);assert(!e.message.includes('SECRET_DATA'));}
+});
+test('numeric timeout codes cannot break the backend error response',async()=>{
+ const h=harness(()=>{throw Object.assign(Error('timeout'),{name:'TimeoutError',code:23});});
+ const r=await h.handler(new Request('https://api.test/?action=wallet',{headers:{Authorization:'Bearer test-user'}}));assert.equal(r.status,500);assert.equal((await r.json()).ok,false);
+});
 test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.mode,'PAPER_ONLY');assert.equal(x.liveEnabled,false);assert.equal(x.wallet,undefined);});
 test('all private operations require a verified JWT',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});for(const a of ['state','wallet','keys','start','save','stop','tick','remove-key','shadow-toggle','observe','company','analysis','report','paper-config','paper-pause','close-positions','planning','data-upgrade','rea-state','rea-control','rea-live-state','rea-live-control']){const r=await h.handler(new Request('https://api.test/?action='+a,{method:'POST',body:'{}'}));assert.equal(r.status,401,a);}});
 test('untrusted origins are blocked',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health',{headers:{Origin:'https://attacker.invalid'}}));assert.equal(r.status,403);});

@@ -61,7 +61,7 @@ jobs:
           cp index.html rea.html bitbot-v6-cloud-config.js public-site/
           cp assets/*.mjs assets/*.css public-site/assets/
           cp assets/*.json public-site/assets/
-          for file in bitkub-live.html bitkub-setup.html bitbot-login.html; do cp index.html "public-site/$file"; done
+          cp bitkub-live.html bitkub-setup.html bitbot-login.html public-site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public-site

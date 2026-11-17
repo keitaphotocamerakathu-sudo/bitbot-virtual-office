@@ -17,7 +17,7 @@ const agents=[
 {id:'strategy',name:'STRATEGY',role:'วางกลยุทธ์',color:'#ffcd88'},
 {id:'risk',name:'RISK',role:'คุมความเสี่ยง',color:'#9af5c7'},
 {id:'execution',name:'EXECUTION',role:'ส่งและตรวจคำสั่ง',color:'#ffacbe'}];
-let bundle=null,liveWallet=null,walletError='',lastWalletAttempt=0;
+let bundle=null,liveWallet=null,walletError='',lastWalletAttempt=0,walletBlocked=false;
 let plannerUI=null;let upgradeSnapshot=null;
 let mode='paper',market=null,session=null,client=null,cloud=null,cloudBusy=false,authBusy=false,actionBusy=false;
 let paperConfig=config({strategyProfile:'trend-confirmed',riskPerTrade:.005,dailyLoss:.02}),paperState=initial(paperConfig),paperTrades=[],paperJournal=[],paperRunning=false,lastCycle=0,releaseLock=null,cycleBusy=false;
@@ -40,7 +40,7 @@ async function sdk(){
  if(client)return client;
  const {createClient}=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm');
  client=createClient(CFG.url,CFG.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
- client.auth.onAuthStateChange((_type,s)=>{session=s;updateAccount();if(s)setTimeout(()=>refreshCloud().catch(e=>notice(e.message,true)),0);else{cloud=null;render();}});
+ client.auth.onAuthStateChange((_type,s)=>{if(session?.user?.id!==s?.user?.id){liveWallet=null;walletError='';walletBlocked=false;lastWalletAttempt=0;}session=s;updateAccount();if(s)setTimeout(()=>refreshCloud().catch(e=>notice(e.message,true)),0);else{cloud=null;render();}});
  return client;
 }
 async function api(action,{method='GET',data,auth=false,query={}}={}){
@@ -49,7 +49,7 @@ async function api(action,{method='GET',data,auth=false,query={}}={}){
  if(auth){const c=await sdk();const {data:res,error}=await c.auth.getSession();if(error||!res.session)throw Error('กรุณาเข้าสู่ระบบก่อน');session=res.session;headers.Authorization='Bearer '+session.access_token;}
  let r;try{r=await fetch(ENDPOINT+'?'+new URLSearchParams({action,...query}),{method,headers,...(data!==undefined?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(25000),cache:'no-store'});}
  catch(e){throw Error(e.name==='TimeoutError'||e.name==='AbortError'?'บริการตอบช้า กรุณาตรวจสถานะก่อนลองใหม่':'เชื่อมเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจอินเทอร์เน็ต');}
- const x=await r.json().catch(()=>({}));if(!r.ok||!x.ok)throw Error(x.error||'ระบบตอบกลับ '+r.status);return x;
+ const x=await r.json().catch(()=>({}));if(!r.ok||!x.ok)throw Object.assign(Error(x.error||'ระบบตอบกลับ '+r.status),{code:x.code,action:x.action,retryable:x.retryable,status:r.status});return x;
 }
 function page(name){for(const e of document.querySelectorAll('.page'))e.hidden=e.id!==name;for(const e of document.querySelectorAll('.nav-item'))e.classList.toggle('active',e.dataset.page===name);if(['settings','risk'].includes(name))fillConfig();if(name==='profit')companyUI?.loadReport();if(name==='history')renderHistory();}
 document.querySelectorAll('[data-page]').forEach(e=>e.addEventListener('click',()=>page(e.dataset.page)));
@@ -67,8 +67,17 @@ function updateAccount(){
  $('keyForm').hidden=!logged;$('loginSettings').hidden=logged;$('logoutBtn').hidden=!logged;$('walletBtn').hidden=!logged;$('removeKey').hidden=!logged||!cloud?.key?.configured;$('newRecovery').hidden=!logged;
 }
 async function refreshCloud(){if(!session||cloudBusy)return;cloudBusy=true;try{cloud=await api('state',{auth:true});
- if(cloud.key?.configured&&Date.now()-lastWalletAttempt>25000){lastWalletAttempt=Date.now();try{liveWallet=(await api('wallet',{auth:true})).wallet;walletError='';}catch(e){walletError=e.message;}}
+ if(cloud.key?.configured&&!walletBlocked&&Date.now()-lastWalletAttempt>25000){try{await refreshWallet();}catch{}}
  updateAccount();render();}finally{cloudBusy=false;}}
+async function refreshWallet(){
+ lastWalletAttempt=Date.now();
+ try{const x=await api('wallet',{auth:true});liveWallet=x.wallet;walletError='';walletBlocked=false;return x.wallet;}
+ catch(e){liveWallet=null;walletError=e.message;walletBlocked=e.retryable===false;
+  $('walletBox').hidden=false;$('walletBox').textContent=e.message;
+  if(walletBlocked){const a=document.createElement('a');a.href='./rea.html#live';a.textContent='เปิดหน้าเชื่อม Bitkub ใหม่';a.className='text-button';$('walletBox').append(document.createElement('br'),a);}
+  throw e;
+ }
+}
 function openAuth(){text('authError','');$('password').value='';$('recoverField').hidden=true;text('loginSubmit','เข้าสู่ระบบ');$('authDialog').showModal();}
 $('accountBtn').onclick=()=>{if(!session)return openAuth();info('บัญชีของคุณ','บัญชีนี้เชื่อมกับคีย์ของคุณเท่านั้น ใช้หน้า ตั้งค่าและเชื่อมบัญชี เพื่อตรวจยอดหรือออกจากระบบ');};
 $('loginSettings').onclick=openAuth;
@@ -96,11 +105,12 @@ $('recoverBtn').onclick=()=>{$('recoverField').hidden=!$('recoverField').hidden;
 $('authDialog').addEventListener('close',()=>{$('password').value='';$('recoveryCode').value='';});
 async function perform(task){if(actionBusy)return;actionBusy=true;render();try{await task();}catch(e){notice(e.message,true);}finally{actionBusy=false;render();}}
 $('keyForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
- try{await api('keys',{method:'POST',auth:true,data:{apiKey:$('apiKey').value.trim(),apiSecret:$('apiSecret').value.trim()}});notice('เชื่อม Bitkub และตรวจ Wallet สำเร็จ คีย์ถูกเข้ารหัสแล้ว');await refreshCloud();}
+ try{const x=await api('keys',{method:'POST',auth:true,data:{apiKey:$('apiKey').value.trim(),apiSecret:$('apiSecret').value.trim()}});liveWallet=x.wallet;walletError='';walletBlocked=false;lastWalletAttempt=Date.now();notice('เชื่อม Bitkub และตรวจ Wallet สำเร็จ คีย์ถูกเข้ารหัสแล้ว');await refreshCloud();}
  finally{$('apiKey').value='';$('apiSecret').value='';$('keyPermission').checked=false;}
 });};
-$('walletBtn').onclick=()=>perform(async()=>{const x=await api('wallet',{auth:true});$('walletBox').hidden=false;liveWallet=x.wallet;text('walletBox','ยอดเงินจริงจาก Bitkub\nTHB ใช้ได้ '+money(x.wallet.THB.available)+' / ติดคำสั่ง '+money(x.wallet.THB.reserved)+'\n'+Object.entries(x.wallet).filter(([k,v])=>k!=='THB'&&typeof v==='object'&&v.available+v.reserved>0).slice(0,20).map(([k,v])=>k+' ใช้ได้ '+fmt(v.available,8)+' / ติดคำสั่ง '+fmt(v.reserved,8)).join('\n')+'\nตรวจเมื่อ '+time(x.wallet.at));render();});
+$('walletBtn').onclick=()=>perform(async()=>{const w=await refreshWallet();$('walletBox').hidden=false;text('walletBox','ยอดเงินจริงจาก Bitkub\nTHB ใช้ได้ '+money(w.THB.available)+' / ติดคำสั่ง '+money(w.THB.reserved)+'\n'+Object.entries(w).filter(([k,v])=>k!=='THB'&&typeof v==='object'&&v.available+v.reserved>0).slice(0,20).map(([k,v])=>k+' ใช้ได้ '+fmt(v.available,8)+' / ติดคำสั่ง '+fmt(v.reserved,8)).join('\n')+'\nตรวจเมื่อ '+time(w.at));render();});
 function renderDataUpgrade(){
+ if(!['dataUpgradePanel','dataUpgradeBtn','dataPolicyState','dataPolicyHint','dataUpgradeBlock'].every(id=>$(id)))return;
  const b=cloud?.bot,active=b?.config?.marketDataPolicy==='verified-v17';
  $('dataUpgradePanel').hidden=mode!=='live'||!b;$('dataUpgradeBtn').hidden=active;
  text('dataPolicyState',active?'ข้อมูลตลาดใหม่พร้อมใช้งาน':'มีอัปเดตระบบข้อมูลตลาด');
@@ -108,17 +118,18 @@ function renderDataUpgrade(){
  const blocked=Number(b?.state?.qty)>0?'รอปิดสถานะของบอทก่อนอัปเดต':cloud?.orders?.some(o=>!o.settled)?'รอตรวจผลคำสั่งค้างก่อนอัปเดต':b?.state?.halted?'พอร์ตล็อกความเสี่ยง กรุณาตรวจสถานะ':'';
  $('dataUpgradeBtn').disabled=actionBusy||!!blocked;text('dataUpgradeBlock',blocked);
 }
-$('dataUpgradeBtn').onclick=()=>{
+$('dataUpgradeBtn')?.addEventListener('click',()=>{
+ if(!['dataUpgradeForm','dataUpgradeSummary','dataUpgradeDialog'].every(id=>$(id)))return notice('หน้าเว็บยังไม่ครบ กรุณารีเฟรชหน้าใหม่',true);
  const b=cloud?.bot;if(!b||mode!=='live')return;
  upgradeSnapshot=structuredClone(b.config);$('dataUpgradeForm').reset();
  text('dataUpgradeSummary',(b.running?'บอทจะใช้ข้อมูลใหม่และซื้อขายอัตโนมัติต่อ':'อัปเดตข้อมูลก่อน แล้วกดเริ่มบอทเพื่อซื้อขายอัตโนมัติ')+'\nทุนสูงสุด '+money(b.config.budget)+' · ต่อคำสั่งไม่เกิน '+money(b.config.maxOrder)+'\nซื้อรวมต่อวัน '+money(b.config.dailyBuy)+' · จำนวนเข้าไม่เกิน '+b.config.maxEntries+' ครั้ง/วัน\nหยุดขาดทุน '+fmt(b.config.stopLoss*100,1)+'% · เงินสำรอง '+fmt(b.config.walletReservePct*100,1)+'%');
  $('dataUpgradeDialog').showModal();
-};
-$('dataUpgradeForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
+});
+$('dataUpgradeForm')?.addEventListener('submit',e=>{e.preventDefault();perform(async()=>{
  if(!$('dataUpgradeAccepted').checked||!upgradeSnapshot)throw Error('กรุณายืนยันการใช้ข้อมูลใหม่');
  const result=await api('data-upgrade',{method:'POST',auth:true,data:{confirm:'อัปเดตข้อมูลตลาด',acceptRisk:true,allowUnvalidated:true,expectedConfig:upgradeSnapshot}});
  $('dataUpgradeDialog').close();upgradeSnapshot=null;await refreshCloud();await updateMarket();notice(result.note);
-});};
+});});
 $('removeKey').onclick=()=>{if(!confirm('ถอดคีย์ Bitkub ออกจากบัญชีนี้หรือไม่?'))return;perform(async()=>{await api('remove-key',{method:'POST',auth:true,data:{}});await refreshCloud();notice('ถอดคีย์แล้ว');});};
 const fields=['budget','maxOrder','dailyBuy','dailySell','stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','cashReserveTHB','riskPerTrade','minVolumeTHB','maxVolatility','maxHoldMinutes','dailyProfitTarget','maxEntries','lossStreakLimit','cooldownMinutes'];
 const percentage=new Set(['stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','riskPerTrade','maxVolatility','dailyProfitTarget']);
@@ -284,7 +295,7 @@ if(params.get('mode')==='live'||['bitkub-live.html','bitkub-setup.html','bitbot-
 if(params.get('page')&&document.getElementById(params.get('page'))?.classList.contains('page'))page(params.get('page'));
 if(params.get('page')==='settings'||['bitkub-setup.html','bitbot-login.html'].includes(legacy))page('settings');
 fillConfig();render();updateMarket();
-(async()=>{try{const c=await sdk(),{data,error}=await c.auth.getSession();if(error)throw error;session=data.session;updateAccount();if(session)await refreshCloud();}catch(e){if(mode==='live')notice(e.message,true);}})();
+(async()=>{try{const c=await sdk(),{data,error}=await c.auth.getSession();if(error)throw error;session=data.session;updateAccount();if(session)await refreshCloud();if(location.hash==='#login'){page('settings');if(!session)openAuth();}}catch(e){if(mode==='live')notice(e.message,true);}})();
 
 function renderProfit(){
  const s=state(),c=cfg(),p=performance(s,bundle?.watchlist||[],c),day=dayKey(Date.now());

@@ -10,6 +10,7 @@ import {createRiskWatchdog} from './rea-watchdog.mjs';
 import {createRiskQuotes} from './rea-risk-quotes.mjs';
 import {createAdvisory} from './rea-advisory.mjs';
 import {createLiveService} from './rea-live-service.mjs';
+import {exchangeFailure} from './exchange-errors.mjs';
 import {reportingSummary,aggregateFills} from './reporting.mjs';
 import {pack,unpack} from './archive.mjs';
 import {liveReadiness} from './evidence.mjs';
@@ -36,7 +37,7 @@ async function json(url,opts={},timeout=10000){
  if(url.startsWith(EXCHANGE+'/')&&Date.now()<marketRateLimitUntil)throw Object.assign(Error('Bitkub rate limit: รอรอบถัดไป'),{status:429});
  const r=await fetch(url,{...opts,signal:AbortSignal.timeout(timeout)});const d=await r.json().catch(()=>null);
  if(r.status===429&&url.startsWith(EXCHANGE+'/')){const retry=Number(r.headers.get('retry-after'));marketRateLimitUntil=Date.now()+Math.max(30000,Number.isFinite(retry)?retry*1000:30000);}
- if(!r.ok){if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));const exchange=url.startsWith(EXCHANGE+'/'),code=String(d?.error??d?.code??'');throw Object.assign(Error((exchange?'BITKUB_HTTP_':'BACKEND_HTTP_')+r.status+(exchange&&/^[A-Z0-9-]{1,24}$/.test(code)?'_CODE_'+code:'')),{status:r.status===429?429:502});}return d;
+ if(!r.ok){if(url.startsWith(EXCHANGE+'/'))throw exchangeFailure(r.status,d);if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));throw Object.assign(Error('BACKEND_HTTP_'+r.status),{status:r.status===429?429:502});}return d;
 }
 const headers=()=>({apikey:SERVICE,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'});
 async function db(path,body,method='POST'){
@@ -111,7 +112,7 @@ async function signed(pair,method,path,body=null,ticket=null){
  const key=await crypto.subtle.importKey('raw',enc.encode(pair.apiSecret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=hex(await crypto.subtle.sign('HMAC',key,enc.encode(ts+method+path+payload)));
  const d=await json(EXCHANGE+path,{method,headers:{Accept:'application/json','Content-Type':'application/json','X-BTK-APIKEY':pair.apiKey,'X-BTK-TIMESTAMP':ts,'X-BTK-SIGN':sig},...(payload?{body:payload}:{})},10000);
- const code=d?.error??d?.code;if(code!==undefined&&String(code)!=='0')throw Object.assign(Error('Bitkub ปฏิเสธ (รหัส '+String(code).slice(0,20)+')'),{exchangeRejected:true,status:409});
+ const code=d?.error??d?.code;if(code!==undefined&&String(code)!=='0')throw exchangeFailure(200,d);
  return d;
 }
 async function wallet(pair){
@@ -318,7 +319,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'19.0.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
+ if(req.method==='GET'&&a==='health')return{version:'19.0.1',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
@@ -439,5 +440,5 @@ Deno.serve(async req=>{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
  try{return new Response(JSON.stringify({ok:true,...await handle(req)}),{headers:{...cors,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});}
  catch(e){const message=e.name==='TimeoutError'||e.name==='AbortError'?'บริการตอบช้า กรุณาตรวจสถานะก่อนลองใหม่':e.message||'เกิดข้อผิดพลาด';
- return new Response(JSON.stringify({ok:false,error:message}),{status:e.status||500,headers:{...cors,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});}
+ return new Response(JSON.stringify({ok:false,error:message,...(typeof e.code==='string'&&e.code.startsWith('BITKUB_')?{code:e.code,action:e.action,retryable:e.retryable,exchangeStatus:e.exchangeStatus,exchangeCode:e.exchangeCode}:{})}),{status:e.status||500,headers:{...cors,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});}
 });
