@@ -37,7 +37,9 @@
 - ทดสอบกับ PostgreSQL จริงแบบ Transaction/Rollback: บันทึก Checkpoint สำเร็จ, ปฏิเสธการบันทึกซ้ำ, ไม่ให้สอง Executor จับบัญชีเดียวกัน, Pause ไม่ถูก Lease เก่าบันทึกทับ และปิดสิทธิ์ anon/authenticated ต่อ RPC ภายใน
 - ตรวจ API ที่ติดตั้งจริงคืน `mode=PAPER_ONLY` และ `liveEnabled=false`
 - ตรวจรอบ Paper ที่ทำงานจริงแล้ว: พบคู่ THB 347 คู่ วิเคราะห์เชิงลึก 20 คู่ บันทึก Agent Decisions, Equity และ Heartbeat ได้ ตัวเลขการค้นพบเปลี่ยนได้ตามตลาด
-- เครื่องทดสอบหลักเปิด Chromium ไม่ได้เพราะข้อจำกัด `socket() Operation not permitted` จึงตรวจหน้าเว็บจริงผ่าน Browser แยกและส่งชุด Playwright ไปตรวจบน GitHub Actions พบจุดล้นจอมือถือและแก้การตัดบรรทัดแล้ว ต้องอ้างอิงผล CI ของ Commit ล่าสุดสำหรับสถานะผ่าน
+- ชุด Browser บน GitHub Actions ผ่าน 18 รายการ รวมหน้า REA 6 หน้า, Mobile/Light Mode, Pause/Resume/Emergency, ผู้ไม่เข้าสู่ระบบ และ Heartbeat เก่า หลังแก้จุดตารางล้นจอมือถือแล้ว เครื่องทดสอบหลักเปิด Chromium ไม่ได้จึงใช้ Runner บน GitHub ตรวจแทน
+- [ผลตรวจโค้ดรุ่นที่เผยแพร่บน GitHub Actions](https://github.com/keitaphotocamerakathu-sudo/bitbot-virtual-office/actions/runs/44080937567): Financial Engine, Archived Research Integrity, Browser/Mobile และ Public Backend Checks ผ่านทั้งหมด
+- เปิดหน้า REA ที่เผยแพร่จริงใน Browser แล้ว ยืนยันว่าเมื่อยังไม่เข้าสู่ระบบจะไม่แสดงยอดบัญชี
 - ยังไม่ได้ทดสอบ Docker Build/Run บนเครื่องปลายทาง เนื่องจากไม่มี Docker หรือ VPS ที่เชื่อมต่อในงานนี้
 
 ## สถานะตาม Phase
@@ -47,9 +49,17 @@
 | 1 Audit | ตรวจ Source ที่ติดตั้งจริง, Supabase, Auth, Scheduler และความเสี่ยงหลักแล้ว |
 | 2 Market & Scanner | Backend REST/Cache และ Scanner ใช้งานแล้ว; Backend WebSocket บน VPS ยังไม่เสร็จ |
 | 3 Strategy & Risk | กฎ SRS สำหรับ Paper ใช้งานและทดสอบแล้ว; ยังต้อง Backtest และ Out-of-sample ด้วยข้อมูลเพียงพอ |
-| 4 Paper & Dashboard | Backend Paper ทำงานแล้ว; Dashboard พร้อมเผยแพร่; การตรวจภาพหน้าเว็บยังมีข้อจำกัด |
+| 4 Paper & Dashboard | Backend Paper ทำงานแล้ว; Dashboard เผยแพร่แล้วและผ่าน Browser/Mobile 18 รายการ |
 | 5 Operations | มี Lease/Recovery/Safe Mode; ยังต้องเดินหน้าอย่างน้อย 7 วัน, ทดสอบ VPS, Independent Watchdog และการแจ้งเตือนเจ้าของ |
 | 6 Live | ล็อกทั้งหมด ไม่มีกระบวนการเปิด Live ในรุ่นนี้ และไม่มีกำหนดเปิดอัตโนมัติ |
+
+## ผลตรวจ Security ที่ยังต้องจัดการในระบบเดิม
+
+Advisor ไม่พบปัญหาใหม่ในตาราง REA แต่ยังมีข้อสังเกตเดิม จึงยังไม่ถือว่าผ่าน Security Review สำหรับ Live:
+
+- [pg_net ลงทะเบียนอยู่ใน public](https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public): ต้องประเมินการย้ายโดยไม่ทำให้ Scheduler เดิมเสีย
+- [Leaked Password Protection ยังปิด](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection): ต้องตรวจแผนบริการและนโยบาย Auth ก่อนเปิด
+- [RLS ไม่มี Policy บน live_control](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy): เป็นตารางภายในที่ตั้งให้ปฏิเสธการอ่านโดยผู้ใช้ทั่วไป ต้องคงขอบเขตนี้ไว้
 
 ## ข้อจำกัดที่ต้องทำต่อก่อนตรวจรับ
 
