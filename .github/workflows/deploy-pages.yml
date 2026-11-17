@@ -1,7 +1,7 @@
-name: Test and deploy Bitbot 10
+name: Test and deploy Bitbot 11
 on:
   push:
-    branches: [main, rebuild-v10]
+    branches: [main, rebuild-v10, multi-asset-v11]
   workflow_dispatch:
 permissions:
   contents: read

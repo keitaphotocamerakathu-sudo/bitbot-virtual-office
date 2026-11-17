@@ -1,6 +1,8 @@
 // Bitbot 10. Credentials and HMAC signing exist only on the server.
 // @ts-nocheck
-import {config,initial,cycle,applyFill,floor8} from './engine.mjs';
+import {config,initial,cycle,applyFill,floor8,heldSymbol,assetOf,roundUnit,sizing,validSymbol} from './engine.mjs';
+import {portfolioCycle} from './selection.mjs';
+import {createMarketService} from './market.mjs';
 const ORIGIN='https://keitaphotocamerakathu-sudo.github.io';
 const PROJECT=Deno.env.get('SUPABASE_URL')||'';
 const SERVICE=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
@@ -63,23 +65,8 @@ async function authAction(req,action,b){
  const d=await r.json();if(!r.ok)fail('ชื่อผู้ใช้/อีเมล หรือรหัสผ่านไม่ตรงกัน',401);
  return{session:{access_token:d.access_token,refresh_token:d.refresh_token,expires_in:d.expires_in}};
 }
-let marketCache=null,marketPromise=null;
-async function market(){
- if(marketCache&&Date.now()-marketCache.observedAt<10000)return marketCache;
- if(marketPromise)return marketPromise;
- marketPromise=(async()=>{
- const now=Date.now(),end=Math.floor(now/1000),from=end-300*240;
- const [raw,bars]=await Promise.all([
- json(EXCHANGE+'/api/v3/market/ticker?sym=btc_thb'),
- json(EXCHANGE+'/tradingview/history?symbol=BTC_THB&resolution=5&from='+from+'&to='+end)]);
- const t=(Array.isArray(raw)?raw:raw?.result)?.find?.(x=>x.symbol==='BTC_THB');
- if(!t)fail('อ่านราคาจาก Bitkub ไม่สำเร็จ',502);
- const candles=Array.isArray(bars?.t)?bars.t.map((t,i)=>({t:Number(t)*1000,c:Number(bars.c?.[i])})).filter(x=>x.t+300000<=now):[];
- const m={symbol:'BTC_THB',last:Number(t.last),bid:Number(t.highest_bid),ask:Number(t.lowest_ask),change:Number(t.percent_change),frozen:Boolean(t.is_frozen===true||t.is_frozen===1||t.is_frozen==='1'),observedAt:Date.now(),candles,source:'BITKUB_LIVE'};
- if(![m.last,m.bid,m.ask].every(x=>Number.isFinite(x)&&x>0)||m.ask<m.bid)fail('ข้อมูลราคาจากตลาดผิดรูปแบบ',502);
- marketCache=m;return m;})();
- try{return await marketPromise;}finally{marketPromise=null;}
-}
+const markets=createMarketService({json,db,read,rpc,fetchFn:fetch});
+const market=(symbol='BTC_THB')=>markets.single(symbol);
 async function keys(uid){
  const k=await rpc('bitbot_load_exchange_key',{p_user_id:uid});if(!k?.apiKey||!k?.apiSecret)fail('กรุณาเชื่อม API Key และ Secret ก่อน',409);return k;
 }
@@ -96,8 +83,18 @@ async function signed(pair,method,path,body=null){
 }
 async function wallet(pair){
  const d=await signed(pair,'GET','/api/v4/wallet/balances');if(!Array.isArray(d.data))fail('ข้อมูล Wallet ไม่ถูกต้อง',502);
- const coin=s=>{const x=d.data.find(v=>v.currency===s);const available=Number(x?.available??0),reserved=Number(x?.reserved??0);if(![available,reserved].every(n=>Number.isFinite(n)&&n>=0))fail('ยอด Wallet ผิดรูปแบบ',502);return{available,reserved};};
- return{THB:coin('THB'),BTC:coin('BTC'),at:Date.now()};
+ const out={at:Date.now()};
+ for(const x of d.data){
+ const code=String(x.currency),available=Number(x.available),reserved=Number(x.reserved);
+ if(!/^[A-Z0-9]{1,16}$/.test(code)||![available,reserved].every(n=>Number.isFinite(n)&&n>=0))fail('ยอด Wallet ผิดรูปแบบ',502);
+ out[code]={available,reserved};
+ }
+ out.THB??={available:0,reserved:0};out.BTC??={available:0,reserved:0};return out;
+}
+function walletValue(w,quotes){
+ let total=w.THB.available+w.THB.reserved;
+ for(const m of quotes){const a=w[assetOf(m.symbol)];if(a)total+=(a.available+a.reserved)*m.bid;}
+ return{...w,equityTHB:total};
 }
 async function event(uid,kind,payload){await db('bitbot_v10_events',{user_id:uid,kind,payload});}
 async function status(uid){
@@ -121,8 +118,8 @@ function filledState(state,order,info,c){
  if(![amount,price,grossFee,credit].every(Number.isFinite)||amount<=0||price<=0||grossFee<0||credit<0)throw Error('ข้อมูลการจับคู่ไม่ครบ');
  const fee=Math.max(0,grossFee-credit);
  // Bitkub: BUY history.amount is THB; SELL history.amount is BTC.
- const qty=order.side==='BUY'?floor8((amount-fee)/price):amount;
- s=applyFill(s,{side:order.side,qty,price,fee,strategy:order.strategy,...(order.side==='BUY'?{spend:amount}:{})},c);
+ const qty=order.side==='BUY'?roundUnit((amount-fee)/price,order.qty_scale??8):amount;
+ s=applyFill(s,{symbol:order.symbol||'BTC_THB',qtyScale:order.qty_scale??8,side:order.side,qty,price,fee,strategy:order.strategy,...(order.side==='BUY'?{spend:amount}:{})},c);
  }
  if(Number(info.filled)>0&&info.history.length===0)throw Error('ตลาดรายงานจับคู่แล้วแต่ไม่มีรายการย่อย');
  return s;
@@ -131,51 +128,56 @@ async function reconcile(b,order,pair){
  let info;
  if(!order.exchange_id){
  // Never repeat a submission whose response may have been lost.
- const open=await signed(pair,'GET','/api/v3/market/my-open-orders?sym=btc_thb');
+ const open=await signed(pair,'GET','/api/v3/market/my-open-orders?sym='+order.symbol.toLowerCase());
  const list=Array.isArray(open.result)?open.result:[],match=list.find(x=>(x.client_id||x.ci)==='bb10-'+order.id.replaceAll('-','').slice(0,24));
  let recoveredId=match?.id;
  if(!recoveredId){
  const from=Date.parse(order.created_at)-60000,to=Date.now();
- const hist=await signed(pair,'GET','/api/v3/market/my-order-history?sym=btc_thb&lmt=100&pagination_type=keyset&start='+from+'&end='+to);
+ const hist=await signed(pair,'GET','/api/v3/market/my-order-history?sym='+order.symbol.toLowerCase()+'&lmt=100&pagination_type=keyset&start='+from+'&end='+to);
  const found=(Array.isArray(hist.result)?hist.result:[]).find(x=>x.client_id==='bb10-'+order.id.replaceAll('-','').slice(0,24));
  recoveredId=found?.super_order_id||found?.order_id;
  }
  if(!recoveredId){await updateOrder(order.id,b.user_id,{status:'UNKNOWN'});return await finish(b,b.state,[], 'คำสั่งไม่ทราบผล '+order.id+' — ตรวจใน Bitkub ห้ามส่งซ้ำ');}
  await updateOrder(order.id,b.user_id,{exchange_id:String(recoveredId),status:'OPEN'});order.exchange_id=String(recoveredId);
  }
- const path='/api/v3/market/order-info?sym=btc_thb&id='+encodeURIComponent(order.exchange_id)+'&sd='+(order.side==='BUY'?'buy':'sell');
+ const path='/api/v3/market/order-info?sym='+order.symbol.toLowerCase()+'&id='+encodeURIComponent(order.exchange_id)+'&sd='+(order.side==='BUY'?'buy':'sell');
  info=(await signed(pair,'GET',path)).result;
  if(!info||!['filled','unfilled','cancelled','canceled'].includes(String(info.status).toLowerCase()))throw Error('สถานะออร์เดอร์ไม่ชัดเจน');
  const st=String(info.status).toLowerCase();
  if(st==='unfilled'){
- if(!b.running||Date.now()-Date.parse(order.created_at)>120000)await signed(pair,'POST','/api/v3/market/cancel-order',{sym:'btc_thb',id:order.exchange_id,sd:order.side==='BUY'?'buy':'sell'});
+ if(!b.running||Date.now()-Date.parse(order.created_at)>120000)await signed(pair,'POST','/api/v3/market/cancel-order',{sym:order.symbol.toLowerCase(),id:order.exchange_id,sd:order.side==='BUY'?'buy':'sell'});
  return await finish(b,b.state,[{agent:'execution',reason:!b.running?'ขอยกเลิกแล้ว รอตรวจผล':'รอจับคู่ / ยกเลิกเมื่อเกิน 2 นาที'}]);
  }
  const state=filledState(b.state,order,info,b.config);
  return await finish(b,state,[{agent:'execution',reason:'ยืนยันผลจาก Bitkub: '+st,exchangeId:order.exchange_id}],null,order.id,st==='filled'?'FILLED':'CANCELED');
 }
-async function tickBot(b,m){
+async function tickBot(b,bundle){
  try{
- const pair=await keys(b.user_id);
- const pending=await read('bitbot_v10_orders?user_id=eq.'+b.user_id+'&settled=eq.false&limit=1');
+ const pair=await keys(b.user_id),pending=await read('bitbot_v10_orders?user_id=eq.'+b.user_id+'&settled=eq.false&limit=1');
  if(pending.length)return await reconcile(b,pending[0],pair);
  if(!b.running)return await finish(b,b.state);
  if(!LIVE)return await finish(b,b.state,[],'ระบบปิดการซื้อขายเงินจริง');
- const c=config(b.config,true),out=cycle(m,b.state,c,Date.now());
+ const c=config(b.config,true),w=walletValue(await wallet(pair),bundle?.watchlist||[]);
+ const data={...bundle,markets:(bundle?.markets||[]).map(m=>({...m,wallet:w}))};
+ const out=portfolioCycle(data,b.state,c,Date.now());
+ out.state.walletSnapshot={availableTHB:w.THB.available,reservedTHB:w.THB.reserved,
+ equityTHB:w.equityTHB,at:w.at,reserveTHB:w.THB.available*c.walletReservePct+c.cashReserveTHB,
+ spendableTHB:Math.max(0,w.THB.available*(1-c.walletReservePct)-c.cashReserveTHB)};
  if(out.error)return await finish(b,out.state,out.trace,out.error);
  if(!out.order)return await finish(b,out.state,out.trace);
- const o=out.order,w=await wallet(pair);
- if(o.side==='BUY'&&w.THB.available<o.amount*(1+c.fee))return await finish(b,out.state,out.trace,'ยอด THB ไม่พอรวมสำรองค่าธรรมเนียม');
- if(o.side==='SELL'&&w.BTC.available<o.amount)return await finish(b,out.state,out.trace,'ยอด BTC ที่ขายได้ไม่พอ');
+ const o=out.order,quote=out.market;
+ if(Date.now()-quote.observedAt>25000)return await finish(b,out.state,[...out.trace,{agent:'execution',reason:'ราคาเก่าเกินส่งคำสั่ง รอตรวจใหม่'}]);
+ // Re-read the actual wallet immediately before reserving any exchange write.
+ const actual=walletValue(await wallet(pair),bundle.watchlist||[]),power=sizing({...quote,wallet:actual},b.state,c,Date.now());
+ if(o.side==='BUY'&&o.amount>power.spendable)return await finish(b,out.state,[...out.trace,{agent:'risk',reason:'ยอดใช้ได้หลังสำรองเปลี่ยน รอรอบใหม่'}]);
+ if(o.side==='SELL'&&(actual[assetOf(o.symbol)]?.available||0)<o.amount)return await finish(b,out.state,out.trace,'ยอดเหรียญที่ขายได้ไม่พอ ตรวจ Wallet');
  const rid=crypto.randomUUID();
- // Durable reservation is committed before the first exchange write.
  await rpc('bitbot_v10_reserve',{p_uid:b.user_id,p_lease:b.lease,p_id:rid,p_order:o,p_state:out.state});
  try{
- const body={sym:'btc_thb',amt:o.amount,rat:o.price,typ:'limit',client_id:'bb10-'+rid.replaceAll('-','').slice(0,24)};
+ const body={sym:o.symbol.toLowerCase(),amt:o.amount,rat:o.price,typ:'limit',client_id:'bb10-'+rid.replaceAll('-','').slice(0,24)};
  const ans=await signed(pair,'POST',o.side==='BUY'?'/api/v3/market/place-bid':'/api/v3/market/place-ask',body);
  if(!ans.result?.id)throw Error('ไม่มีเลขออร์เดอร์ตอบกลับ');
- await updateOrder(rid,b.user_id,{status:'OPEN',exchange_id:String(ans.result.id)});
- await finish(b,out.state,out.trace);
+ await updateOrder(rid,b.user_id,{status:'OPEN',exchange_id:String(ans.result.id)});await finish(b,out.state,out.trace);
  }catch(e){
  await updateOrder(rid,b.user_id,{status:e.exchangeRejected?'REJECTED':'UNKNOWN',settled:e.exchangeRejected===true});
  await finish(b,out.state,out.trace,e.exchangeRejected?'Bitkub ปฏิเสธคำสั่ง':'ไม่ทราบผลคำสั่ง '+rid+' หยุดบอทและตรวจใน Bitkub');
@@ -183,11 +185,9 @@ async function tickBot(b,m){
  }catch(e){await finish(b,b.state,[],String(e.message||'ระบบผิดพลาด').slice(0,250));}
 }
 async function run(uid=null){
- const bots=await rpc('bitbot_v10_claim',{p_uid:uid});
- if(!bots.length)return{processed:0};
- let m=null;try{m=await market();}catch{/* Pending orders reconcile even while the public feed is unavailable. */}
- await Promise.all(bots.map(b=>tickBot(b,m)));
- return{processed:bots.length};
+ const bots=await rpc('bitbot_v10_claim',{p_uid:uid});if(!bots.length)return{processed:0};
+ let bundle=null;try{bundle=await markets.scan(bots.map(b=>heldSymbol(b.state)).filter(Boolean));}catch{/* Pending orders reconcile even when public data is unavailable. */}
+ await Promise.all(bots.map(b=>tickBot(b,bundle)));return{processed:bots.length};
 }
 async function body(req){
  const reader=req.body?.getReader();if(!reader)return{};
@@ -198,8 +198,9 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'10.0.0',serverTime:Date.now(),engine:'5 quantitative agents',liveEnabled:LIVE};
- if(req.method==='GET'&&a==='market')return{market:await market()};
+ if(req.method==='GET'&&a==='health')return{version:'11.0.0',serverTime:Date.now(),engine:'6 agents / multi-asset / news / wallet sizing',liveEnabled:LIVE};
+ if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
+ if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');if(hold&&!validSymbol(hold))fail('คู่เหรียญไม่ถูกต้อง');return{scan:await markets.scan(hold?[hold]:[])};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
  if(a==='run'){
  if(req.method!=='POST'||!await rpc('bitbot_v10_runner_allowed',{p_token:req.headers.get('x-bitbot-runner')||''}))fail('ไม่อนุญาต',401);
@@ -233,9 +234,11 @@ async function handle(req){
  if(!LIVE)fail('เซิร์ฟเวอร์ปิดเทรดจริง');
  if(b.confirm!=='เริ่มบอทเงินจริง'||b.acceptRisk!==true||b.noWithdraw!==true)fail('ยืนยันความเสี่ยงและปิดสิทธิ์ถอนก่อนเริ่ม');
  const st=await status(uid);if(!st.bot)fail('บันทึกวงเงินก่อนเริ่ม');
- const w=await wallet(await keys(uid)),m=await market();
- const check=cycle(m,st.bot.state,config(st.bot.config,true));if(check.error)fail(check.error);
- if(w.THB.available<Math.max(0,st.bot.config.budget-st.bot.state.cost))fail('เงิน THB ไม่พอกับเงินทุนที่กำหนด');
+ const c=config(st.bot.config,true),w=await wallet(await keys(uid)),bundle=await markets.scan([heldSymbol(st.bot.state)].filter(Boolean));
+ if(!bundle.markets.length)fail('ยังไม่มีข้อมูลตลาดพร้อมวิเคราะห์');
+ const spendable=Math.max(0,w.THB.available*(1-c.walletReservePct)-c.cashReserveTHB),funds=Math.min(c.budget,spendable);
+ if(st.bot.state.qty===0&&funds<10)fail('เงินบาทหลังสำรองต่ำกว่าขั้นต่ำตลาด กรุณาปรับเงินสำรองหรือเติมเงิน');
+ if(!st.bot.state.trades&&st.bot.state.qty===0)await rpc('bitbot_v11_fund',{p_uid:uid,p_funds:funds});
  await rpc('bitbot_v10_control',{p_uid:uid,p_action:'start'});
  return{started:true,note:'ตรวจตลาดทุก 1 นาที สัญญาณจากแท่งปิด 5 นาที'};
  }
@@ -249,7 +252,7 @@ async function handle(req){
  if(!/^[0-9a-f-]{36}$/i.test(String(b.id||''))||!/^[a-zA-Z0-9_-]{1,100}$/.test(String(b.exchangeId||'')))fail('เลขอ้างอิงไม่ถูกต้อง');
  const row=(await read('bitbot_v10_orders?user_id=eq.'+uid+'&id=eq.'+b.id+'&settled=eq.false&limit=1'))[0];
  if(!row)fail('ไม่พบคำสั่งค้างของบัญชีนี้');
- const result=(await signed(await keys(uid),'GET','/api/v3/market/order-info?sym=btc_thb&id='+encodeURIComponent(b.exchangeId)+'&sd='+(row.side==='BUY'?'buy':'sell'))).result;
+ const result=(await signed(await keys(uid),'GET','/api/v3/market/order-info?sym='+row.symbol.toLowerCase()+'&id='+encodeURIComponent(b.exchangeId)+'&sd='+(row.side==='BUY'?'buy':'sell'))).result;
  const expected='bb10-'+row.id.replaceAll('-','').slice(0,24);
  if(!result||result.client_id!==expected)fail('เลขออร์เดอร์ไม่ตรงกับรหัสป้องกันส่งซ้ำของ Bitbot');
  await updateOrder(row.id,uid,{exchange_id:b.exchangeId,status:'OPEN'});return{verified:true};
@@ -259,7 +262,7 @@ async function handle(req){
  const st=await status(uid);if(st.bot?.running||st.orders.some(o=>!o.settled))fail('หยุดบอทและตรวจคำสั่งค้างก่อนเริ่มรอบใหม่');
  if(!st.bot)fail('ยังไม่มีรอบการทำงาน');
  const w=await wallet(await keys(uid));
- if(w.BTC.available+w.BTC.reserved>0.00000001)fail('ยังมี BTC ใน Wallet จัดการที่ Bitkub ให้หมดก่อนเริ่มรอบใหม่');
+ const held=heldSymbol(st.bot.state);if(held){const m=await market(held),balance=w[assetOf(held)]||{available:0,reserved:0};if((balance.available+balance.reserved)*m.bid>=m.rules.minQuote)fail('ยังมี '+assetOf(held)+' ใน Wallet จัดการสถานะก่อนเริ่มรอบใหม่');}
  if(w.THB.available<st.bot.config.budget)fail('THB ไม่พอกับทุนเดิม');
  await rpc('bitbot_v10_reset',{p_uid:uid,p_state:initial(st.bot.config)});return{reset:true};
  }

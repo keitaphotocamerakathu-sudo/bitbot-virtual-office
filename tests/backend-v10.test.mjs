@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto,createHmac} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
-const source=fs.readFileSync(new URL('../supabase/functions/bitbot-v10/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/m,'');
-function harness(fetchImpl){let handler;const sandbox={...engine,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
+import {portfolioCycle} from '../assets/selection.mjs';
+import {createMarketService} from '../supabase/functions/bitbot-v10/market.mjs';
+const source=fs.readFileSync(new URL('../supabase/functions/bitbot-v10/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
+function harness(fetchImpl){let handler;const sandbox={...engine,portfolioCycle,createMarketService,TextEncoder,TextDecoder,Response,Request,URL,AbortSignal,fetch:fetchImpl,crypto:webcrypto,console,Date,JSON,Math,setTimeout,clearTimeout,Deno:{env:{get:n=>({SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'TEST_SERVICE',SUPABASE_ANON_KEY:'TEST_ANON'})[n]},serve:fn=>handler=fn}};vm.createContext(sandbox);vm.runInContext(source,sandbox);return{handler,eval:code=>vm.runInContext(code,sandbox)};}
 const ok=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
-test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.version,'10.0.0');assert.equal(x.wallet,undefined);});
+test('health exposes no balances',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health'));const x=await r.json();assert.equal(r.status,200);assert.equal(x.version,'11.0.0');assert.equal(x.wallet,undefined);});
 test('all private operations require a verified JWT',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});for(const a of ['state','wallet','keys','start','save','stop','tick','remove-key']){const r=await h.handler(new Request('https://api.test/?action='+a,{method:'POST',body:'{}'}));assert.equal(r.status,401,a);}});
 test('untrusted origins are blocked',async()=>{const h=harness(()=>{throw Error('unexpected fetch');});const r=await h.handler(new Request('https://api.test/?action=health',{headers:{Origin:'https://attacker.invalid'}}));assert.equal(r.status,403);});
 test('scheduler needs its Vault token',async()=>{const h=harness(url=>{assert(String(url).includes('bitbot_v10_runner_allowed'));return ok(false);});const r=await h.handler(new Request('https://api.test/?action=run',{method:'POST',body:'{}'}));assert.equal(r.status,401);});

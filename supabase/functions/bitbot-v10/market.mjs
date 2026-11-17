@@ -1,0 +1,82 @@
+// Public market and RSS sources only. No exchange credentials are accepted here.
+import {validSymbol} from './engine.mjs';
+import {parseRSS,rankUniverse,assessNews} from './selection.mjs';
+export const NEWS_SOURCES=Object.freeze([
+ {name:'CoinDesk',host:'coindesk.com',url:'https://www.coindesk.com/arc/outboundfeeds/rss/'},
+ {name:'Cointelegraph',host:'cointelegraph.com',url:'https://cointelegraph.com/rss'}
+]);
+export function normalizeSymbols(raw,now=Date.now()){
+ if(raw?.error!==0||!Array.isArray(raw.result)||raw.result.length<2)throw Error('อ่านรายชื่อคู่เหรียญไม่สำเร็จ');
+ return raw.result.filter(x=>validSymbol(x.symbol)&&x.quote_asset==='THB'&&x.market_segment==='SPOT').map(x=>{
+ const priceStep=Number(x.price_step),minQuote=Number(x.min_quote_size),priceScale=Number(x.price_scale),qtyScale=Number(x.base_quantity_scale??x.base_asset_scale);
+ if(!(priceStep>0&&minQuote>0&&Number.isInteger(priceScale)&&priceScale>=0&&priceScale<=8&&Number.isInteger(qtyScale)&&qtyScale>=0&&qtyScale<=8))return null;
+ return{symbol:x.symbol,name:String(x.name||x.base_asset).slice(0,100),status:x.status,source:x.source,
+ buyFrozen:x.freeze_buy===true,sellFrozen:x.freeze_sell===true,
+ frozen:x.status!=='active'||x.freeze_buy===true&&x.freeze_sell===true,
+ rules:{minQuote,priceStep,priceScale,qtyScale},updatedAt:now};
+ }).filter(Boolean);
+}
+export function mergeTickers(symbols,raw,now=Date.now()){
+ const tickers=Array.isArray(raw)?raw:raw?.result;if(!Array.isArray(tickers))throw Error('อ่านราคาตลาดไม่สำเร็จ');
+ const map=new Map(tickers.map(t=>[t.symbol,t]));
+ return symbols.map(meta=>{const t=map.get(meta.symbol);if(!t)return null;
+ const last=Number(t.last),bid=Number(t.highest_bid),ask=Number(t.lowest_ask),volumeTHB=Number(t.quote_volume_self??t.quote_volume),change=Number(t.percent_change);
+ if(![last,bid,ask,volumeTHB,change].every(Number.isFinite)||last<=0||bid<=0||ask<bid)return null;
+ return{...meta,last,bid,ask,volumeTHB,change,observedAt:now,source:'BITKUB_LIVE',marketSource:meta.source};
+ }).filter(Boolean);
+}
+export function candlesFrom(raw,now=Date.now()){
+ if(raw?.s!=='ok'||!Array.isArray(raw.t)||!Array.isArray(raw.c))throw Error('อ่านแท่งเทียนไม่ได้');
+ return raw.t.map((t,i)=>({t:Number(t)*1000,c:Number(raw.c[i]),h:Number(raw.h?.[i]),l:Number(raw.l?.[i])})).filter(x=>x.t+300000<=now);
+}
+export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
+ const local=new Map(),pending=new Map();
+ async function cached(key,ttl,fn){
+ const own=local.get(key);if(own&&Date.now()<own.expires)return own.value;if(pending.has(key))return pending.get(key);
+ const job=(async()=>{const rows=await read('bitbot_v11_cache?key=eq.'+encodeURIComponent(key)+'&limit=1');
+ if(rows[0]&&Date.parse(rows[0].expires_at)>Date.now()){local.set(key,{expires:Date.parse(rows[0].expires_at),value:rows[0].payload});return rows[0].payload;}
+ const value=await fn(),expires=Date.now()+ttl;
+ await rpc('bitbot_v11_cache_put',{p_key:key,p_payload:value,p_expires:new Date(expires).toISOString()});local.set(key,{expires,value});return value;})();
+ pending.set(key,job);try{return await job;}finally{pending.delete(key);}
+ }
+ async function symbols(){return cached('symbols',900000,async()=>{const data=normalizeSymbols(await json('https://api.bitkub.com/api/v3/market/symbols'));
+ await rpc('bitbot_v11_sync_markets',{p_rows:data});return data;});}
+ async function quotes(){return cached('quotes',12000,async()=>({raw:await json('https://api.bitkub.com/api/v3/market/ticker'),at:Date.now()}));}
+ async function textFeed(source){
+ const r=await fetchFn(source.url,{headers:{Accept:'application/rss+xml,application/xml,text/xml','User-Agent':'Bitbot/11 (+market risk research)'},signal:AbortSignal.timeout(10000)});
+ if(!r.ok)throw Error('RSS HTTP '+r.status);
+ const reader=r.body.getReader(),chunks=[];let size=0;
+ while(true){const p=await reader.read();if(p.done)break;size+=p.value.byteLength;if(size>1000000){await reader.cancel();throw Error('RSS ใหญ่เกินกำหนด');}chunks.push(p.value);}
+ const bytes=new Uint8Array(size);let off=0;for(const ch of chunks){bytes.set(ch,off);off+=ch.byteLength;}
+ return parseRSS(new TextDecoder().decode(bytes),source);
+ }
+ async function news(){return cached('news',300000,async()=>{
+ const results=await Promise.allSettled(NEWS_SOURCES.map(textFeed)),items=[],sources=[];
+ results.forEach((r,i)=>{const list=r.status==='fulfilled'?r.value:[],latestAt=Math.max(0,...list.map(x=>x.publishedAt)),ok=list.length>0&&Date.now()-latestAt<21600000;
+ sources.push({name:NEWS_SOURCES[i].name,url:NEWS_SOURCES[i].url,ok,latestAt});items.push(...list);});
+ const unique=[...new Map(items.map(x=>[x.url,x])).values()].sort((a,b)=>b.publishedAt-a.publishedAt);
+ return{ready:sources.some(x=>x.ok),fetchedAt:Date.now(),sources,items:unique.slice(0,100)};
+ });}
+ async function history(symbol){
+ if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');
+ return cached('bars-'+symbol,60000,async()=>{const end=Math.floor(Date.now()/1000),from=end-300*240;
+ return candlesFrom(await json('https://api.bitkub.com/tradingview/history?symbol='+symbol+'&resolution=5&from='+from+'&to='+end));});
+ }
+ async function all(){const [meta,q]=await Promise.all([symbols(),quotes()]);return mergeTickers(meta,q.raw,q.at);}
+ async function single(symbol='BTC_THB'){
+ if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');const list=await all(),m=list.find(x=>x.symbol===symbol);
+ if(!m)throw Error('ไม่มีคู่เหรียญนี้ใน Bitkub');const [candles,feed]=await Promise.all([history(symbol),news()]);return{...m,candles,news:assessNews(m,feed)};
+ }
+ async function scan(held=[]){
+ const [markets,feed]=await Promise.all([all(),news()]),ranked=rankUniverse(markets,{budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000},feed);
+ const picked=ranked.filter(x=>x.eligible).slice(0,12);
+ for(const symbol of [...held,'BTC_THB']){const m=ranked.find(x=>x.symbol===symbol);if(m&&!picked.some(x=>x.symbol===symbol))picked.push(m);}
+ if(!picked.length)picked.push(...ranked.filter(x=>x.status==='active').slice(0,3));
+ const detailed=[];
+ for(let i=0;i<picked.length;i+=4){const rows=await Promise.allSettled(picked.slice(i,i+4).map(async m=>({...m,candles:await history(m.symbol)})));for(const r of rows)if(r.status==='fulfilled')detailed.push(r.value);}
+ return{version:'11.0.0',observedAt:Date.now(),universeCount:markets.filter(x=>x.status==='active').length,
+ scannedCount:detailed.length,markets:detailed,watchlist:ranked.map(({candles,news,...m})=>({...m,news:{ready:news?.ready,blocked:news?.blocked}})),
+ news:{...feed,items:feed.items.slice(0,12)}};
+ }
+ return{single,scan,all,news,symbols};
+}
