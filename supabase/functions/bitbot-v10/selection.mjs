@@ -1,3 +1,4 @@
+import {STABLE_ASSETS} from './intraday.mjs';
 import {config,cycle,paperCycle,heldSymbol,validSymbol,trendAgent,newsAgent} from './engine.mjs';
 const esc=s=>s.replace(/[.*+?^$()|[\]\\]/g,'\\$&');
 export function plain(s=''){return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/<[^>]*>/g,' ').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Math.min(0x10ffff,Number(n)))).replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();}
@@ -22,12 +23,20 @@ export function matchesAsset(title,market){
 }
 export function assessNews(m,feed,now=Date.now()){
  const ready=feed?.ready===true&&Number.isFinite(feed.fetchedAt)&&now-feed.fetchedAt<=1800000;
- const rows=ready?(feed.items||[]).filter(x=>now-x.publishedAt<=86400000&&(matchesAsset(x.title,m)||/crypto (market|exchange).*(crash|hack|bankrupt)/i.test(x.title))):[];
+ const rows=ready?(feed.items||[]).filter(x=>Number.isFinite(x.publishedAt)&&x.publishedAt<=now+300000&&now-x.publishedAt<=86400000&&(matchesAsset(x.title+' '+(x.body||''),m)||/crypto (market|exchange).*(crash|hack|bankrupt)/i.test(x.title))):[];
  const high=/\b(hack(?:ed|s|ing|er|ers)?|exploit(?:ed|s|ation)?|delist(?:ing|ed|s)?|rug.?pull|fraud(?:ulent)?|insolven(?:t|cy)|bankrupt(?:cy)?|breach(?:es|ed)?|criminal|drain(?:ed|s)?)\b|trading (halt|suspend)|withdrawals? (halt|suspend)/i;
  const negative=/\b(tumbl|plung|crash|liquidat|sell.off|lawsuit|outflow|dump|unlock)/i;
  const positive=/\b(approv|adopt|partnership|inflow|upgrad|integrat)/i;
- let score=0;for(const h of rows){score+=high.test(h.title)?-3:negative.test(h.title)?-1:positive.test(h.title)?1:0;}
- return{ready,fetchedAt:feed?.fetchedAt||0,blocked:rows.some(x=>high.test(x.title)),score:Math.max(-1,Math.min(1,score/3)),headlines:rows.slice(0,5),method:'HEADLINE_KEYWORD_FILTER'};
+ const evidence=rows.map(h=>{
+ const body=typeof h.body==='string'?h.body:'',sentences=(h.title+'. '+body).split(/(?<=[.!?])\s+/).filter(t=>matchesAsset(t,m)||/crypto (market|exchange)/i.test(t));
+ const relevant=sentences.join(' ').slice(0,11000),severe=high.test(relevant);
+ const denial=/\b(no evidence of|not (?:been )?(?:hacked|exploited)|denies? (?:the )?(?:hack|fraud)|hack(?:ed)? (?:rumou?r|claim) (?:denied|false))\b/i.test(relevant);
+ return{...h,body:undefined,contentRead:body.length>=200,method:h.method||'HEADLINE_ONLY',risk:severe?(denial?'UNCERTAIN':'HIGH'):negative.test(relevant)?'NEGATIVE':'NEUTRAL',positive:positive.test(relevant)&&!severe};
+ });
+ const sources=new Set(evidence.map(x=>x.source)),confirmedPositive=evidence.filter(x=>x.positive&&x.contentRead).length;
+ let score=0;for(const h of evidence)score+=h.risk==='HIGH'?-3:h.risk==='UNCERTAIN'||h.risk==='NEGATIVE'?-1:0;
+ if(sources.size>=2&&confirmedPositive>=2)score++;
+ return{ready,fetchedAt:feed?.fetchedAt||0,blocked:evidence.some(x=>x.risk==='HIGH'||x.risk==='UNCERTAIN'),score:Math.max(-1,Math.min(1,score/3)),headlines:evidence.slice(0,5),sourceCount:sources.size,contentRead:evidence.filter(x=>x.contentRead).length,uncertain:evidence.some(x=>x.risk==='UNCERTAIN'),method:'ENTITY_CONTEXT_RULES_WITH_CONTENT',model:'NO_LLM'};
 }
 export function rankUniverse(markets,c,news,now=Date.now()){
  c=config(c);
@@ -35,6 +44,8 @@ export function rankUniverse(markets,c,news,now=Date.now()){
  const reasons=[],spread=(m.ask-m.bid)/m.last;
  if(m.status!=='active'||m.frozen||m.buyFrozen)reasons.push('ตลาดปิดหรือระงับซื้อ');
  if(![m.bid,m.ask,m.last,m.volumeTHB].every(Number.isFinite)||m.bid<=0||m.ask<m.bid)reasons.push('ข้อมูลตลาดไม่ครบ');
+ if(c.intraday&&STABLE_ASSETS.has(m.symbol.slice(0,-4)))reasons.push('เหรียญตรึงมูลค่า งดเปิดรอบเทรดสั้น');
+ if(m.marketSource==='broker')reasons.push('API ซื้อขายปัจจุบันไม่รองรับเหรียญ broker');
  if(m.volumeTHB<c.minVolumeTHB)reasons.push('สภาพคล่องต่ำ');
  if(!Number.isFinite(spread)||spread>c.maxSpread)reasons.push('ส่วนต่างราคาสูง');
  if(m.change>25)reasons.push('ราคาวันนี้พุ่งสูง เสี่ยงไล่ราคา');
@@ -46,8 +57,10 @@ export function rankUniverse(markets,c,news,now=Date.now()){
 }
 export function evaluate(m,state,c,now=Date.now()){
  const out=cycle(m,state,c,now),trend=out.trace.find(x=>x.agent==='trend'),n=out.trace.find(x=>x.agent==='news'),r=out.trace.find(x=>x.agent==='risk');
+ const plan=r?.plan;
+ const opportunity=plan?Math.max(-25,Math.min(15,(plan.range-plan.cost)*300)):0;
  const timing=trend?.bias==='UP'?35:trend?.bias==='FLAT'?10:0;
- const score=Math.max(0,Math.min(100,(m.preScore||0)+timing-(trend?.volatility||0)*200+(out.order?.side==='BUY'?10:0)));
+ const score=Math.max(0,Math.min(100,(m.preScore||0)+timing+opportunity-(trend?.volatility||0)*200+(out.order?.side==='BUY'?10:0)));
  return{market:m,out,score:Math.round(score*10)/10,signal:out.order?.side||'HOLD',reasons:r?.blocked?.length?r.blocked:[out.error||out.trace.find(x=>x.agent==='strategy')?.reason||'รอจังหวะ'],risk:r,news:n,trend};
 }
 export function portfolioCycle(bundle,state,c,now=Date.now(),paper=false){

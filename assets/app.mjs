@@ -1,5 +1,6 @@
-import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=11.0.0';
-import {portfolioCycle} from './selection.mjs?v=11.0.0';
+import {performance,dayKey} from './intraday.mjs?v=12.0.0';
+import {DEFAULTS,config,initial,paperCycle,heldSymbol,assetOf,sizing,portfolioValue} from './engine.mjs?v=12.0.0';
+import {portfolioCycle} from './selection.mjs?v=12.0.0';
 const $=id=>document.getElementById(id);
 const CFG=window.BITBOT_CLOUD_CONFIG;
 const ENDPOINT=CFG.url+'/functions/v1/bitbot-v10';
@@ -97,8 +98,8 @@ $('keyForm').onsubmit=e=>{e.preventDefault();perform(async()=>{
 });};
 $('walletBtn').onclick=()=>perform(async()=>{const x=await api('wallet',{auth:true});$('walletBox').hidden=false;liveWallet=x.wallet;text('walletBox','ยอดเงินจริงจาก Bitkub\nTHB ใช้ได้ '+money(x.wallet.THB.available)+' / ติดคำสั่ง '+money(x.wallet.THB.reserved)+'\n'+Object.entries(x.wallet).filter(([k,v])=>k!=='THB'&&typeof v==='object'&&v.available+v.reserved>0).slice(0,20).map(([k,v])=>k+' ใช้ได้ '+fmt(v.available,8)+' / ติดคำสั่ง '+fmt(v.reserved,8)).join('\n')+'\nตรวจเมื่อ '+time(x.wallet.at));render();});
 $('removeKey').onclick=()=>{if(!confirm('ถอดคีย์ Bitkub ออกจากบัญชีนี้หรือไม่?'))return;perform(async()=>{await api('remove-key',{method:'POST',auth:true,data:{}});await refreshCloud();notice('ถอดคีย์แล้ว');});};
-const fields=['budget','maxOrder','dailyBuy','dailySell','stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','cashReserveTHB','riskPerTrade','minVolumeTHB','maxVolatility'];
-const percentage=new Set(['stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','riskPerTrade','maxVolatility']);
+const fields=['budget','maxOrder','dailyBuy','dailySell','stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','cashReserveTHB','riskPerTrade','minVolumeTHB','maxVolatility','maxHoldMinutes','dailyProfitTarget','maxEntries','lossStreakLimit','cooldownMinutes'];
+const percentage=new Set(['stopLoss','takeProfit','allocation','dailyLoss','maxDrawdown','walletReservePct','riskPerTrade','maxVolatility','dailyProfitTarget']);
 function fillConfig(){const c=cfg();for(const k of fields)$(k).value=Number((c[k]*(percentage.has(k)?100:1)).toFixed(4));
  text('settingsMode',mode==='paper'?'ทดลอง':'เงินจริง');$('budget').max=mode==='paper'?'10000000':'100000';$('maxOrder').max=mode==='paper'?'100000':'1000';
  text('limitHint',mode==='paper'?'วันซื้อขายคิดตามเวลาไทย · ค่าธรรมเนียมทดลอง 0.25% และเผื่อราคาคลาดเคลื่อน':'เพดานเซิร์ฟเวอร์: คำสั่งละ 1,000 บาท / ซื้อวันละ 5,000 / ขายวันละ 10,000 บาท ลดเพดานได้ตามต้องการ');}
@@ -154,11 +155,12 @@ function renderDecision(container,rows){
  for(const a of agents){const x=rows.find(t=>t.agent===a.id);if(!x)continue;const d=document.createElement('div');d.className='decision';d.style.setProperty('--accent',a.color);const b=document.createElement('b');b.textContent=a.name;const p=document.createElement('p');p.textContent=x.reason||'ตรวจข้อมูลแล้ว';d.append(b,p);container.append(d);}
 }
 function render(){
- const c=cfg(),s=state(),isRunning=running(),held=heldSymbol(s),equity=portfolioValue(s,[...(bundle?.markets||[]),...(bundle?.watchlist||[])]),pnl=equity===null?null:equity-(s.startCapital??c.budget);
+ const c=cfg(),s=state(),isRunning=running(),held=heldSymbol(s),equity=portfolioValue(s,[...(bundle?.markets||[]),...(bundle?.watchlist||[])]),pnl=performance(s,bundle?.watchlist||[],c).totalNet;
  text('portfolioLabel',mode==='paper'?'จำลอง':'พอร์ตบอท');text('equity',equity===null?'รอราคาเหรียญที่ถือ':money(equity));text('pnl',pnl===null?'—':(pnl>=0?'+':'−')+money(Math.abs(pnl)));$('pnl').className=pnl<0?'negative':'green';
  text('cashHint',mode==='paper'?'ทุนจำลอง '+money(c.budget):'เงินทุนที่จัดสรร ไม่ใช่ Wallet ทั้งหมด');
  text('pnlHint',mode==='paper'?'สุทธิค่าธรรมเนียมทดลอง':'ประมาณการจากประวัติจับคู่ ไม่รวมเครดิตที่ปรับภายหลัง');
- text('qty',fmt(s.qty,s.qtyScale??8)+' '+(assetOf(held)||'เหรียญ'));text('cash',money(s.cash));text('targets',fmt(c.stopLoss*100,1)+'% / '+fmt(c.takeProfit*100,1)+'%');
+ renderProfit();
+ text('qty',fmt(s.qty,s.qtyScale??8)+' '+(assetOf(held)||'เหรียญ'));text('cash',money(s.cash));text('targets',fmt((s.entryPolicy?.stopLoss??c.stopLoss)*100,1)+'% / '+fmt((s.entryPolicy?.takeProfit??c.takeProfit)*100,1)+'%'+(s.entryPolicy?.maxHoldMinutes?' · '+s.entryPolicy.maxHoldMinutes+' นาที':''));
  text('botStatus',isRunning?(c.buyPaused?'พักซื้อใหม่':'กำลังทำงาน'):s.halted?'ล็อกความเสี่ยง':'หยุดอยู่');
  text('botHint',mode==='live'?cloud?.bot?.last_error||'เซิร์ฟเวอร์ตรวจทุก 1 นาที':paperRunning?'เปิดหน้านี้ไว้ให้บอททำงาน':'เริ่มได้ทันที ไม่ต้องล็อกอิน');
  text('teamBadge',isRunning?'TEAM ACTIVE':'STANDBY');text('startBtn',mode==='paper'?'▶ เริ่มทดลองบอท':'▶ เริ่มบอทเงินจริง');
@@ -208,8 +210,8 @@ function renderScanner(){
  }
  const n=bundle.news;$('newsFeed').replaceChildren();
  text('newsState',n?.ready?'แหล่งข่าวพร้อม':'งดซื้อใหม่: ข่าวไม่พร้อม');
- text('newsSources',(n?.sources||[]).map(x=>x.name+': '+(x.ok?'อัปเดตแล้ว':'ไม่พร้อม')).join(' • '));
- for(const item of (n?.items||[]).slice(0,6)){const div=document.createElement('div');div.className='history-entry';const a=document.createElement('a');a.textContent=item.title;a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';const small=document.createElement('small');small.textContent=item.source+' · '+time(item.publishedAt);div.append(small,document.createElement('br'),a);$('newsFeed').append(div);}
+ text('newsSources',(n?.sources||[]).map(x=>x.name+': '+(x.ok?'อัปเดตแล้ว':'ไม่พร้อม')).join(' • ')+' • อ่านเนื้อหาได้ '+(n?.contentRead||0)+' บทความจากชุดข่าวล่าสุด');
+ for(const item of (n?.items||[]).slice(0,6)){const div=document.createElement('div');div.className='history-entry';const a=document.createElement('a');a.textContent=item.title;a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';const small=document.createElement('small');small.textContent=item.source+' · '+time(item.publishedAt)+' · '+(item.method==='JSON_LD_ARTICLE'||item.method==='HTML_ARTICLE'?'อ่านเนื้อหาแล้ว':'เฉพาะหัวข่าว');div.append(small,document.createElement('br'),a);$('newsFeed').append(div);}
 }
 let marketBusy=false;
 async function updateMarket(){
@@ -227,6 +229,7 @@ async function updateMarket(){
 const statusName={RESERVED:'กำลังส่ง',OPEN:'รอจับคู่',UNKNOWN:'ไม่ทราบผล ห้ามส่งซ้ำ',FILLED:'จับคู่ครบ',CANCELED:'ยกเลิกแล้ว',REJECTED:'ตลาดปฏิเสธ'};
 function rows(){return mode==='paper'?paperTrades.slice().reverse().map(x=>({at:x.at,mode:'ทดลอง',symbol:x.symbol||'BTC_THB',side:x.side,amount:x.qty,price:x.price,status:'จับคู่จำลอง'})):(cloud?.orders||[]).map(x=>({at:x.created_at,mode:'เงินจริง',symbol:x.symbol,side:x.side,amount:x.side==='BUY'?x.amount+' THB':x.amount+' '+assetOf(x.symbol),price:x.price,status:statusName[x.status]||x.status,id:x.id}));}
 function renderHistory(){
+ renderDaily();
  $('tradesBody').replaceChildren();const rr=rows();if(!rr.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=7;td.textContent='ยังไม่มีรายการ';tr.append(td);$('tradesBody').append(tr);}
  for(const r of rr.slice(0,200)){const tr=document.createElement('tr');for(const [i,v] of [time(r.at),r.mode,r.symbol,r.side,typeof r.amount==='number'?fmt(r.amount,8)+' '+assetOf(r.symbol):r.amount,priceFmt(r.price),r.status].entries()){const td=document.createElement('td');td.textContent=v;if(i===3)td.className=r.side==='BUY'?'buy':'sell';tr.append(td);}if(r.id)tr.title='รหัสอ้างอิง '+r.id;$('tradesBody').append(tr);}
  $('historyFeed').replaceChildren();const journal=mode==='paper'?paperJournal.slice(-50).reverse():cloud?.events||[];
@@ -250,7 +253,7 @@ $('resetSession').onclick=()=>perform(async()=>{
  paperJournal=[...paperJournal,{at:Date.now(),trace:[{agent:'coordinator',reason:'จบรอบทดลองเดิม มูลค่าพอร์ต '+(portfolioValue(paperState,bundle?.watchlist||[])===null?'รอราคา':money(portfolioValue(paperState,bundle?.watchlist||[])))}]}].slice(-300);
  paperState=initial(paperConfig);checkpoint();render();notice('เริ่มรอบทดลองใหม่ได้แล้ว');
  }else{
- if(!confirm('ยืนยันว่าจัดการ BTC ที่ Bitkub แล้ว ระบบจะตรวจว่าไม่มี BTC และคำสั่งค้างก่อนจบรอบ ผลกำไรของการขายภายนอกจะไม่ถูกแต่งขึ้น'))return;
+ if(!confirm('ยืนยันว่าจัดการเหรียญที่ถือใน Bitkub แล้ว ระบบจะตรวจสถานะและคำสั่งค้างก่อนจบรอบ ผลกำไรของการขายภายนอกจะไม่ถูกแต่งขึ้น'))return;
  await api('reset-session',{method:'POST',auth:true,data:{}});await refreshCloud();notice('จบรอบเดิมและเก็บบันทึกแล้ว');
  }
 });
@@ -268,3 +271,33 @@ if(params.get('mode')==='live'||['bitkub-live.html','bitkub-setup.html','bitbot-
 if(params.get('page')==='settings'||['bitkub-setup.html','bitbot-login.html'].includes(legacy))page('settings');
 fillConfig();render();updateMarket();
 (async()=>{try{const c=await sdk(),{data,error}=await c.auth.getSession();if(error)throw error;session=data.session;updateAccount();if(session)await refreshCloud();}catch(e){if(mode==='live')notice(e.message,true);}})();
+
+function renderProfit(){
+ const s=state(),c=cfg(),p=performance(s,bundle?.watchlist||[],c),day=dayKey(Date.now());
+ for(const [id,v] of [['realizedPnl',p.realized],['unrealizedPnl',p.unrealized],['todayPnl',s.day===day?s.dayPnl:0]]){
+ text(id,v===null?'รอราคา':(v>=0?'+':'−')+money(Math.abs(v)));$(id).className=v<0?'negative':'green';
+ }
+ text('paidFees',money(p.fees));text('profitDay',day+' · ไทย');
+ text('dailyGuard','เข้าเทรดวันนี้ '+(s.day===day?s.entriesToday||0:0)+' / '+c.maxEntries+' ครั้ง · พักซื้อเมื่อกำไรที่ขายแล้วถึง '+(c.dailyProfitTarget>0?money((s.dayStart||s.cash)*c.dailyProfitTarget):'ปิดเป้าพักซื้อ')+((s.cooldownUntil||0)>Date.now()?' · พักหลังขาดทุนถึง '+time(s.cooldownUntil):''));
+}
+function renderDaily(){
+ const s=state(),p=performance(s,bundle?.watchlist||[],cfg());
+ $('dailyBody').replaceChildren();
+ for(const row of p.daily.slice(-90).reverse()){
+ const tr=document.createElement('tr');for(const v of [row.day,money(row.realized),money(row.fees),row.entries,row.rounds,row.wins+' / '+row.losses]){const td=document.createElement('td');td.textContent=String(v);tr.append(td);}$('dailyBody').append(tr);
+ }
+ if(!p.daily.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=6;td.textContent='ยังไม่มีการจับคู่หลังอัปเดตนี้';tr.append(td);$('dailyBody').append(tr);}
+ text('reportingNote',s.trackingSince?'รายละเอียดรายวันเริ่มเก็บ '+time(s.trackingSince)+' · ผลสะสมเดิมยังอยู่ในยอดกำไรที่ขายแล้ว รายการก่อนอัปเดตไม่ได้สร้างรายละเอียดขึ้นใหม่':'รายละเอียดแสดงตั้งแต่เริ่มเก็บข้อมูลรุ่นนี้ ไม่รวมการซื้อขายที่คุณทำเองนอกบอท');
+}
+async function loadBacktest(){
+ try{
+ const r=await fetch('./assets/backtest-v12.json?v=12.0.0',{cache:'no-store'});if(!r.ok)throw Error('pending');
+ const data=await r.json();if(!Array.isArray(data.folds)||!data.folds.length)throw Error('pending');
+ text('backtestSummary','ข้อมูล '+data.from+' ถึง '+data.to+' · '+data.symbols.join(', ')+' · '+data.folds.length+' ช่วงทดสอบถัดจากช่วงฝึก · '+(data.totalNet>=0?'กำไร':'ขาดทุน')+'รวม '+money(Math.abs(data.totalNet))+' จากทุนเริ่มต่อช่วง '+money(data.capitalPerFold)+' · ผลนี้ยังไม่ยืนยันกำไรทุกวัน');
+ $('backtestBody').replaceChildren();
+ for(const row of data.folds){
+ const tr=document.createElement('tr');for(const v of [row.from+' – '+row.to,row.maxHoldMinutes+' นาที',row.rounds,money(row.net),fmt(row.maxDrawdown*100)+'%',row.profitableDays+' / '+row.days]){const td=document.createElement('td');td.textContent=String(v);tr.append(td);}$('backtestBody').append(tr);
+ }
+ }catch{text('backtestSummary','ยังไม่มีผลทดสอบย้อนหลังที่ตรวจสอบได้ กำลังเก็บผลทดลองเดินหน้า ไม่ถือว่าผ่านเกณฑ์ใช้เงินจริง');}
+}
+loadBacktest();

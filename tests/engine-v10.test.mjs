@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {config,initial,cycle,paperCycle,applyFill,bangkokDay,DEFAULTS,executionAgent} from '../assets/engine.mjs';
+import {config as baseConfig,initial,cycle,paperCycle,applyFill,bangkokDay,DEFAULTS,executionAgent} from '../assets/engine.mjs';
+const config=(input={},live=false)=>baseConfig({intraday:false,...input},live);
 const NOW=1800000000000;
 function market(){return{symbol:'BTC_THB',last:3000000,bid:2999000,ask:3000000,observedAt:NOW,news:{ready:true,fetchedAt:NOW,score:0,blocked:false,headlines:[]},candles:Array.from({length:80},(_,i)=>({t:NOW-(80-i)*300000,c:2950000+i*500+(i%2)*2000}))};}
 test('five independent agents precede a paper fill with fees',()=>{const c=config(),out=paperCycle(market(),initial(c),c,NOW);assert.deepEqual(out.trace.map(x=>x.agent),['coordinator','trend','news','strategy','risk','execution']);assert.equal(out.order.side,'BUY');assert(out.fill.qty>0);assert.equal(out.state.trades,1);assert(out.state.cash>=0);assert(out.state.cost<=c.maxOrder*(1+c.fee));assert(out.state.fees>0);});

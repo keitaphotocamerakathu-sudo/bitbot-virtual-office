@@ -1,4 +1,5 @@
 // Public market and RSS sources only. No exchange credentials are accepted here.
+import {extractArticle} from './intraday.mjs';
 import {validSymbol} from './engine.mjs';
 import {parseRSS,rankUniverse,assessNews} from './selection.mjs';
 export const NEWS_SOURCES=Object.freeze([
@@ -59,31 +60,54 @@ export function createMarketService({json,db,read,rpc,fetchFn=fetch}){
  const bytes=new Uint8Array(size);let off=0;for(const ch of chunks){bytes.set(ch,off);off+=ch.byteLength;}
  return parseRSS(new TextDecoder().decode(bytes),source);
  }
- async function news(){return cached('news',300000,async()=>{
+ async function article(item){
+ const source=NEWS_SOURCES.find(x=>x.name===item.source);let url;
+ try{url=new URL(item.url);}catch{return item;}
+ if(!source||url.protocol!=='https:'||!(url.hostname===source.host||url.hostname.endsWith('.'+source.host)))return item;
+ try{
+ const r=await fetchFn(url.href,{headers:{Accept:'text/html','User-Agent':'Bitbot/12 market research'},redirect:'error',signal:AbortSignal.timeout(4000)});
+ if(!r.ok)return{...item,method:'HEADLINE_ONLY'};
+ const reader=r.body.getReader(),chunks=[];let size=0;
+ while(true){const x=await reader.read();if(x.done)break;size+=x.value.byteLength;if(size>1500000){await reader.cancel();return{...item,method:'HEADLINE_ONLY'};}chunks.push(x.value);}
+ const bytes=new Uint8Array(size);let offset=0;for(const x of chunks){bytes.set(x,offset);offset+=x.length;}
+ return{...item,...extractArticle(new TextDecoder().decode(bytes)),readAt:Date.now()};
+ }catch{return{...item,method:'HEADLINE_ONLY'};}
+ }
+ async function news(){return cached('news-v12',300000,async()=>{
  const results=await Promise.allSettled(NEWS_SOURCES.map(textFeed)),items=[],sources=[];
  results.forEach((r,i)=>{const list=r.status==='fulfilled'?r.value:[],latestAt=Math.max(0,...list.map(x=>x.publishedAt)),ok=list.length>0&&Date.now()-latestAt<21600000;
  sources.push({name:NEWS_SOURCES[i].name,url:NEWS_SOURCES[i].url,ok,latestAt});items.push(...list);});
  const unique=[...new Map(items.map(x=>[x.url,x])).values()].sort((a,b)=>b.publishedAt-a.publishedAt);
- return{ready:sources.some(x=>x.ok),fetchedAt:Date.now(),sources,items:unique.slice(0,100)};
+ const sample=NEWS_SOURCES.flatMap(src=>unique.filter(x=>x.source===src.name).slice(0,2));
+ const enriched=await Promise.all(sample.map(article)),map=new Map(enriched.map(x=>[x.url,x]));
+ return{ready:sources.some(x=>x.ok),fetchedAt:Date.now(),sources,items:unique.slice(0,100).map(x=>map.get(x.url)||x),contentRead:enriched.filter(x=>x.body?.length>=200).length,method:'ENTITY_CONTEXT_RULES_WITH_CONTENT',model:'NO_LLM'};
  });}
  async function history(symbol){
  if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');
  return cached('bars-'+symbol,60000,async()=>{const end=Math.floor(Date.now()/1000),from=end-300*240;
  return candlesFrom(await json('https://api.bitkub.com/tradingview/history?symbol='+symbol+'&resolution=5&from='+from+'&to='+end));});
  }
+ async function depth(symbol){
+ return cached('depth-'+symbol,12000,async()=>{
+ const d=await json('https://api.bitkub.com/api/v3/market/depth?sym='+symbol.toLowerCase()+'&lmt=20');
+ if(d?.error!==0||!Array.isArray(d.result?.asks)||!Array.isArray(d.result?.bids))throw Error('อ่านความลึกตลาดไม่ได้');
+ return{asks:d.result.asks,bids:d.result.bids,at:Date.now()};
+ });
+ }
+ async function detail(m){const [candles,book]=await Promise.all([history(m.symbol),depth(m.symbol).catch(()=>null)]);return{...m,candles,depth:book};}
  async function all(){const [meta,q]=await Promise.all([symbols(),quotes()]);return mergeTickers(meta,q.raw,q.at);}
  async function single(symbol='BTC_THB'){
  if(!validSymbol(symbol))throw Error('คู่เหรียญไม่ถูกต้อง');const list=await all(),m=list.find(x=>x.symbol===symbol);
- if(!m)throw Error('ไม่มีคู่เหรียญนี้ใน Bitkub');const [candles,feed]=await Promise.all([history(symbol),news()]);return{...m,candles,news:assessNews(m,feed)};
+ if(!m)throw Error('ไม่มีคู่เหรียญนี้ใน Bitkub');const [detailRow,feed]=await Promise.all([detail(m),news()]);return{...detailRow,news:assessNews(m,feed)};
  }
  async function scan(held=[]){
  const [markets,feed]=await Promise.all([all(),news()]),ranked=rankUniverse(markets,{budget:100000,maxOrder:500,dailyBuy:1500,dailySell:5000,minVolumeTHB:100000},feed);
  const picked=shortlist(ranked,held);
  const detailed=[];
- for(let i=0;i<picked.length;i+=4){const rows=await Promise.allSettled(picked.slice(i,i+4).map(async m=>({...m,candles:await history(m.symbol)})));for(const r of rows)if(r.status==='fulfilled')detailed.push(r.value);}
- return{version:'11.0.0',observedAt:Date.now(),universeCount:markets.filter(x=>x.status==='active').length,
+ for(let i=0;i<picked.length;i+=4){if(i)await new Promise(r=>setTimeout(r,600));const rows=await Promise.allSettled(picked.slice(i,i+4).map(detail));for(const r of rows)if(r.status==='fulfilled')detailed.push(r.value);}
+ return{version:'12.0.0',observedAt:Date.now(),universeCount:markets.filter(x=>x.status==='active').length,
  scannedCount:detailed.length,markets:detailed,watchlist:ranked.map(({candles,news,...m})=>({...m,news:{ready:news?.ready,blocked:news?.blocked}})),
- news:{...feed,items:feed.items.slice(0,12)}};
+ news:{...feed,items:feed.items.slice(0,12).map(({body,...item})=>item)}};
  }
  return{single,scan,all,news,symbols};
 }

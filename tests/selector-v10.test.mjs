@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {config,initial,cycle,applyFill,sizing,executionAgent,portfolioValue,fundingAmount} from '../assets/engine.mjs';
+import {config as baseConfig,initial,cycle,applyFill,sizing,executionAgent,portfolioValue,fundingAmount} from '../assets/engine.mjs';
 import {parseRSS,assessNews,matchesAsset,rankUniverse,portfolioCycle} from '../assets/selection.mjs';
 import {normalizeSymbols,mergeTickers,candlesFrom,shortlist} from '../supabase/functions/bitbot-v10/market.mjs';
+const config=(input={},live=false)=>baseConfig({intraday:false,...input},live);
 const NOW=1800000000000,feed={ready:true,fetchedAt:NOW,items:[],sources:[{name:'QA',ok:true}]};
 function market(symbol='BTC_THB',scale=1){return{symbol,name:symbol==='ETH_THB'?'Ethereum':'Bitcoin',status:'active',last:3000000*scale,bid:2999000*scale,ask:3000000*scale,volumeTHB:10000000,change:1,observedAt:NOW,preScore:20,
  rules:{minQuote:10,priceStep:.01,priceScale:2,qtyScale:8},news:{ready:true,fetchedAt:NOW,blocked:false,score:0,headlines:[]},candles:Array.from({length:80},(_,i)=>({t:NOW-(80-i)*300000,c:(2950000+i*500+(i%2)*2000)*scale}))};}

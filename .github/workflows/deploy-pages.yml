@@ -1,7 +1,7 @@
-name: Test and deploy Bitbot 11
+name: Test and deploy Bitbot 12
 on:
   push:
-    branches: [main, rebuild-v10, multi-asset-v11]
+    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12]
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +20,12 @@ jobs:
           node-version: '22'
       - name: Financial engine and server security
         run: npm test
+      - name: Walk-forward historical research (public data only)
+        run: node research/backtest.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intraday-research
+          path: assets/backtest-v12.json
       - name: Install browser dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Install Chromium
@@ -43,6 +49,7 @@ jobs:
           mkdir -p public-site/assets
           cp index.html bitbot-v6-cloud-config.js public-site/
           cp assets/*.mjs assets/*.css public-site/assets/
+          cp assets/backtest-v12.json public-site/assets/
           for file in bitkub-live.html bitkub-setup.html bitbot-login.html; do cp index.html "public-site/$file"; done
       - uses: actions/upload-pages-artifact@v3
         with:

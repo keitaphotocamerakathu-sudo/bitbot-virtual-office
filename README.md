@@ -75,3 +75,13 @@ node tests/backend-smoke.mjs
 ชุดทดสอบครอบคลุมเลือกเหรียญอื่น, เงินสำรอง/เงินติดคำสั่ง, กระเป๋าเก่า, ข่าวเสีย/อ่านไม่ได้,
 ถือเหรียญเดิม, minimum broker, ทศนิยมราคาต่ำ, auth/HMAC/UNKNOWN, browser และ mobile
 การทดสอบไม่ส่งคำสั่งเงินจริง และไม่ทดแทนการยืนยันการจับคู่ที่ Bitkub ของเจ้าของบัญชี
+
+
+## Intraday v12 (2026-11-17)
+New entries exclude stablecoins and require fresh public depth, sufficient hourly range and net reward/risk after rounded fees, spread and slippage. The entry freezes ATR-based exit levels and maximum holding time. Daily net profit target, entry cap and losing-streak cooldown pause only new buys. Existing legacy positions retain their policy and receive no retroactive deadline. Upgrade leaves the requested live account stopped.
+
+The dashboard separates realized profit, estimated unrealized profit including an exit fee, actual cash fees and Bangkok daily results. Daily detail begins at v12; historical details are not invented. Exchange settlement stores a per-fill ledger and state atomically and refuses duplicate settlement.
+
+News uses entity/context rules, two RSS sources and bounded article extraction for four recent stories. Inaccessible content is labeled headline-only; a single positive source cannot boost the score. No LLM is configured. This is a quantitative agent team.
+
+`node research/backtest.mjs` performs three chronological 14-day-training/two-day-holdout runs on six predeclared coins. Holding time is selected only on training. Real OHLCV is used with synthetic spread/depth and neutral news; costs are explicit, fills are optimistic proxies and results do not establish live profitability. Each CI run archives its report. Forward paper trading remains available while the browser is open. Only the real-money server bot continues when the computer is off.

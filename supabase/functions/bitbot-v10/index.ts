@@ -103,23 +103,27 @@ async function status(uid){
  read('bitbot_v10_orders?user_id=eq.'+uid+'&order=created_at.desc&limit=100'),
  read('bitbot_v10_events?user_id=eq.'+uid+'&order=id.desc&limit=50'),
  rpc('bitbot_exchange_setup_status',{p_user_id:uid})]);
- return{bot:bots[0]||null,orders,events,key:{configured:setup.configured,suffix:setup.keySuffix,verifiedAt:setup.verifiedAt},serverLiveEnabled:LIVE};
+ return{bot:bots[0]||null,orders,events,reporting:{trackingSince:bots[0]?.state?.trackingSince||null,history:'DAILY_DETAILS_FROM_V12'},key:{configured:setup.configured,suffix:setup.keySuffix,verifiedAt:setup.verifiedAt},serverLiveEnabled:LIVE};
 }
 async function updateOrder(id,uid,patch){return db('bitbot_v10_orders?id=eq.'+id+'&user_id=eq.'+uid,{...patch,updated_at:new Date().toISOString()},'PATCH');}
-async function finish(b,s,trace=[],error=null,id=null,status=null){
- return await rpc('bitbot_v10_finish',{p_uid:b.user_id,p_lease:b.lease,p_state:s,p_trace:trace,p_error:error,p_settle:id,p_status:status});
+async function finish(b,s,trace=[],error=null,id=null,status=null,fills=[]){
+ return await rpc('bitbot_v12_finish',{p_uid:b.user_id,p_lease:b.lease,p_state:s,p_trace:trace,p_error:error,p_settle:id,p_status:status,p_fills:fills});
 }
-function filledState(state,order,info,c){
+function filledState(state,order,info,c,ledger=[]){
+ c=config(c);
  // Per-fill history is required. Missing history never becomes a fabricated fill.
  if(!Array.isArray(info.history))throw Error('ไม่มีประวัติการจับคู่ ต้องตรวจสอบด้วยตนเอง');
  let s=state;
- for(const f of info.history){
+ const sorted=info.history.slice().sort((a,b)=>Number(a.timestamp||0)-Number(b.timestamp||0));
+ for(const [index,f] of sorted.entries()){
  const amount=Number(f.amount),price=Number(f.rate),grossFee=Number(f.fee||0),credit=Number(f.credit||0);
  if(![amount,price,grossFee,credit].every(Number.isFinite)||amount<=0||price<=0||grossFee<0||credit<0)throw Error('ข้อมูลการจับคู่ไม่ครบ');
  const fee=Math.max(0,grossFee-credit);
  // Bitkub: BUY history.amount is THB; SELL history.amount is the order's base asset.
  const qty=order.side==='BUY'?roundUnit((amount-fee)/price,order.qty_scale??8):amount;
- s=applyFill(s,{symbol:order.symbol||'BTC_THB',qtyScale:order.qty_scale??8,side:order.side,qty,price,fee,strategy:order.strategy,...(order.side==='BUY'?{spend:amount}:{})},c);
+ const before=s.realized,rawAt=Number(f.timestamp),at=Number.isFinite(rawAt)&&rawAt>1000000000000?rawAt:Date.parse(order.created_at)||Date.now();
+ s=applyFill(s,{at,entryPolicy:order.entry_policy,symbol:order.symbol||'BTC_THB',qtyScale:order.qty_scale??8,side:order.side,qty,price,fee,strategy:order.strategy,...(order.side==='BUY'?{spend:amount}:{})},c);
+ ledger.push({index,at:new Date(at).toISOString(),symbol:order.symbol||'BTC_THB',side:order.side,qty,price,fee,credit,grossFee,realized:s.realized-before,source:f.txn_id||String(f.id||index),timeSource:Number.isFinite(rawAt)&&rawAt>1000000000000?'EXCHANGE':'ORDER_CREATED'});
  }
  if(Number(info.filled)>0&&info.history.length===0)throw Error('ตลาดรายงานจับคู่แล้วแต่ไม่มีรายการย่อย');
  return s;
@@ -148,8 +152,8 @@ async function reconcile(b,order,pair){
  if(!b.running||Date.now()-Date.parse(order.created_at)>120000)await signed(pair,'POST','/api/v3/market/cancel-order',{sym:order.symbol.toLowerCase(),id:order.exchange_id,sd:order.side==='BUY'?'buy':'sell'});
  return await finish(b,b.state,[{agent:'execution',reason:!b.running?'ขอยกเลิกแล้ว รอตรวจผล':'รอจับคู่ / ยกเลิกเมื่อเกิน 2 นาที'}]);
  }
- const state=filledState(b.state,order,info,b.config);
- return await finish(b,state,[{agent:'execution',reason:'ยืนยันผลจาก Bitkub: '+st,exchangeId:order.exchange_id}],null,order.id,st==='filled'?'FILLED':'CANCELED');
+ const fills=[],state=filledState(b.state,order,info,b.config,fills);
+ return await finish(b,state,[{agent:'execution',reason:'ยืนยันผลจาก Bitkub: '+st,exchangeId:order.exchange_id}],null,order.id,st==='filled'?'FILLED':'CANCELED',fills);
 }
 async function tickBot(b,bundle){
  try{
@@ -198,7 +202,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'11.0.0',serverTime:Date.now(),engine:'6 agents / multi-asset / news / wallet sizing',liveEnabled:LIVE};
+ if(req.method==='GET'&&a==='health')return{version:'12.0.0',serverTime:Date.now(),engine:'6 agents / intraday / net costs / depth / daily limits',liveEnabled:LIVE};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');return{scan:await markets.scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
