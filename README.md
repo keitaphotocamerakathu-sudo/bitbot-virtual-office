@@ -1,3 +1,9 @@
+# REA · SRS v1.0 · PAPER_ONLY
+
+[เปิด Dashboard REA](./rea.html) · [ผลส่งมอบและข้อจำกัด](./docs/REA-DELIVERY-TH.md) · [คู่มือใช้งาน](./docs/REA-OPERATIONS-TH.md)
+
+รุ่นนี้ล็อกการซื้อขายเงินจริงที่ Backend ทั้งสองจุดแล้ว พอร์ต REA ใช้ทุนจำลอง 10,000 บาทและทำงานบน Backend แยกจากข้อมูลเดิม เอกสารด้านล่างเป็นข้อมูลรุ่นก่อน โปรดอ้างอิงนโยบาย Paper จากผลส่งมอบล่าสุด
+
 # BITBOT 16.0 — AI Trading Company
 เว็บ: https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/
 

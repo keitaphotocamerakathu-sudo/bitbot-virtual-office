@@ -6,3 +6,6 @@ research/ohlcv-v12.json
 node_modules/
 test-results/
 playwright-report/
+.secrets/
+.env
+.env.*

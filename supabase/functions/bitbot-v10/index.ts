@@ -5,6 +5,7 @@ import {SHADOW_CANDIDATES,shadowConfig,shadowInitial,shadowStep} from './shadow.
 import {assessCompany,attachReceipts} from './company.mjs';
 import {readinessProgress} from './readiness.mjs';
 import {livePermission} from './live-permission.mjs';
+import {createREAService} from './rea-service.mjs';
 import {reportingSummary,aggregateFills} from './reporting.mjs';
 import {pack,unpack} from './archive.mjs';
 import {liveReadiness} from './evidence.mjs';
@@ -19,15 +20,19 @@ const PROJECT=Deno.env.get('SUPABASE_URL')||'';
 const SERVICE=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
 const ANON=Deno.env.get('SUPABASE_ANON_KEY')||SERVICE;
 const EXCHANGE='https://api.bitkub.com';
-const LIVE=Deno.env.get('BITBOT_LIVE_ENABLED')!=='false';
+// SRS v1.0: a deployment lock. Environment flags cannot enable trading.
+const LIVE=false;
 const privatePaths=new Set(['/api/v4/wallet/balances','/api/v3/user/trading-credits','/api/v3/market/place-bid','/api/v3/market/place-ask','/api/v3/market/order-info','/api/v3/market/my-open-orders','/api/v3/market/my-order-history','/api/v3/market/cancel-order']);
 const enc=new TextEncoder();
 const hex=a=>[...new Uint8Array(a)].map(x=>x.toString(16).padStart(2,'0')).join('');
 const sha=async s=>hex(await crypto.subtle.digest('SHA-256',enc.encode(s)));
 function fail(message,status=400){throw Object.assign(Error(message),{status});}
+let marketRateLimitUntil=0;
 async function json(url,opts={},timeout=10000){
+ if(url.startsWith(EXCHANGE+'/')&&Date.now()<marketRateLimitUntil)throw Object.assign(Error('Bitkub rate limit: รอรอบถัดไป'),{status:429});
  const r=await fetch(url,{...opts,signal:AbortSignal.timeout(timeout)});const d=await r.json().catch(()=>null);
- if(!r.ok)throw Object.assign(Error('บริการตอบกลับ '+r.status),{status:r.status===429?429:502});return d;
+ if(r.status===429&&url.startsWith(EXCHANGE+'/')){const retry=Number(r.headers.get('retry-after'));marketRateLimitUntil=Date.now()+Math.max(30000,Number.isFinite(retry)?retry*1000:30000);}
+ if(!r.ok){if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));throw Object.assign(Error('บริการตอบกลับ '+r.status),{status:r.status===429?429:502});}return d;
 }
 const headers=()=>({apikey:SERVICE,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'});
 async function db(path,body,method='POST'){
@@ -78,12 +83,14 @@ async function authAction(req,action,b){
 }
 const markets=createMarketService({json,db,read,rpc,fetchFn:fetch});
 const verifiedMarkets=createVerifiedMarketService({base:markets,json,read,rpc});
+const rea=createREAService({rpc,marketService:verifiedMarkets});
 const marketServiceFor=c=>c?.marketDataPolicy==='verified-v17'?verifiedMarkets:markets;
 const market=(symbol='BTC_THB')=>markets.single(symbol);
 async function keys(uid){
  const k=await rpc('bitbot_load_exchange_key',{p_user_id:uid});if(!k?.apiKey||!k?.apiSecret)fail('กรุณาเชื่อม API Key และ Secret ก่อน',409);return k;
 }
 async function signed(pair,method,path,body=null){
+ if(/^\/api\/v3\/market\/place-(bid|ask)$/.test(path.split('?')[0]))fail('PAPER_ONLY: ปิดการส่งคำสั่งเงินจริงระหว่างตรวจรับ',423);
  if(!privatePaths.has(path.split('?')[0]))fail('ปลายทางไม่อยู่ในรายการที่อนุญาต',403);
  const time=await json(EXCHANGE+'/api/v3/servertime'),ts=String(typeof time==='number'||typeof time==='string'?time:time?.result);
  if(!/^\d{13}$/.test(ts))fail('เวลาเซิร์ฟเวอร์ Bitkub ผิดรูปแบบ',502);
@@ -191,11 +198,12 @@ async function reconcile(b,order,pair){
 }
 async function tickBot(b,bundle){
  try{
- const pair=await keys(b.user_id),pending=await read('bitbot_v10_orders?user_id=eq.'+b.user_id+'&settled=eq.false&limit=1');
- if(pending.length)return await reconcile(b,pending[0],pair);
+ const pending=await read('bitbot_v10_orders?user_id=eq.'+b.user_id+'&settled=eq.false&limit=1');
+ if(pending.length)return await reconcile(b,pending[0],await keys(b.user_id));
  if(!b.running)return await finish(b,b.state);
  if(b.close_positions&&!(b.state.qty>0)){await rpc('bitbot_v10_control',{p_uid:b.user_id,p_action:'stop'});await db('bitbot_v10_bots?user_id=eq.'+b.user_id,{close_positions:false},'PATCH');return;}
- if(!LIVE)return await finish(b,b.state,[],'ระบบปิดการซื้อขายเงินจริง');
+ if(!LIVE)return await finish(b,b.state,[],'PAPER_ONLY: ระบบปิดการซื้อขายเงินจริง');
+ const pair=await keys(b.user_id);
  const c=runtimeConfig(b.config,true),w=walletValue(await wallet(pair),bundle?.watchlist||[]),credits=c.entryPlanner==='net-v16'&&!(b.state.qty>0)?await feeCredits(pair):null;
  const data={...bundle,markets:(bundle?.markets||[]).map(m=>({...m,wallet:w,...(credits?{feeCredits:credits}:{})}))};
  let out=decide(data,b.state,c,Date.now());
@@ -297,17 +305,23 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'17.0.0',serverTime:Date.now(),engine:'quantitative company / owner live consent / risk checks',liveEnabled:LIVE};
+ if(req.method==='GET'&&a==='health')return{version:'18.0.0-paper',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / deterministic risk / live locked',liveEnabled:LIVE};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
- if(a==='run'){
+ if(a==='run'||a==='rea-run'){
  if(req.method!=='POST'||!await rpc('bitbot_v10_runner_allowed',{p_token:req.headers.get('x-bitbot-runner')||''}))fail('ไม่อนุญาต',401);
- return await run();
+ return a==='rea-run'?await rea.run():await run();
  }
  const b=req.method==='POST'?await body(req):{};
  if(['login','register','recover'].includes(a)){if(req.method!=='POST')fail('Method not allowed',405);return await authAction(req,a,b);}
  const u=await user(req),uid=u.id;
+ if(req.method==='GET'&&a==='rea-state')return{rea:await rea.view(uid)};
+ if(req.method==='POST'&&a==='rea-control'){
+  await throttle(req,'rea-control',uid,30,60);
+  if(b.action==='clear-emergency'&&b.confirm!=='ปลดหยุดฉุกเฉิน Paper')fail('กรุณายืนยันการปลดหยุดฉุกเฉิน',400);
+  return{saved:await rea.control(uid,b.action)};
+ }
  if(req.method==='GET'&&a==='state')return await status(uid);
  if(req.method==='GET'&&a==='report'){const st=await status(uid),page=await ledgerPages('bitbot_v12_fills?user_id=eq.'+uid+'&order=filled_at.asc,order_id.asc,fill_index.asc'),fills=page.rows;return{fills,summary:reportingSummary(st.bot?.state||{realized:0},fills),periods:Object.fromEntries(['day','week','month','year'].map(p=>[p,aggregateFills(fills,p)])),coverage:{limit:page.limit,possiblyTruncated:page.possiblyTruncated}};}
  if(req.method==='GET'&&a==='paper-export'){const page=await ledgerPages('bitbot_v13_shadow_events?user_id=eq.'+uid+'&order=id.desc');return{events:page.rows,coverage:{limit:page.limit,possiblyTruncated:page.possiblyTruncated}};}
@@ -355,7 +369,7 @@ async function handle(req){
  if(a==='observe'){if(!(await status(uid)).bot)fail('ตั้งค่าบัญชีก่อนเรียกวิเคราะห์');await db('bitbot_v14_company_jobs',{user_id:uid,mode:'OBSERVE',slot:Math.floor(Date.now()/300000)},'POST').catch(()=>null);await run(uid);return{observed:true};}
  if(a==='shadow-toggle'){if(typeof b.enabled!=='boolean')fail('สถานะทดลองไม่ถูกต้อง');await rpc('bitbot_v13_shadow_toggle',{p_uid:uid,p_enabled:b.enabled});return{saved:true};}
  if(a==='start'){
- if(!LIVE)fail('เซิร์ฟเวอร์ปิดเทรดจริง');
+ if(!LIVE)fail('PAPER_ONLY: เซิร์ฟเวอร์ปิดเทรดจริงระหว่างตรวจรับ',423);
  if(b.confirm!=='เริ่มบอทเงินจริง'||b.acceptRisk!==true||b.noWithdraw!==true)fail('ยืนยันความเสี่ยงและปิดสิทธิ์ถอนก่อนเริ่ม');
  const st=await status(uid);if(!st.bot)fail('บันทึกวงเงินก่อนเริ่ม');
  if(!(st.bot.state.qty>0)&&!st.evidence.allowed&&b.allowUnvalidated!==true)fail('ผลทดสอบยังไม่ครบ กรุณายืนยันตัวเลือกเริ่มเงินจริงก่อนผลทดสอบครบในหน้าต่างเริ่มบอท',409);

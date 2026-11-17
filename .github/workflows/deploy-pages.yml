@@ -1,4 +1,4 @@
-name: Test and deploy Bitbot 17.0
+name: Test and deploy REA Paper 18.0
 on:
   push:
     branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Financial engine and server security
         run: npm test
       - name: Verify archived research integrity
@@ -30,7 +30,7 @@ jobs:
             assets/research-v13.json
             assets/research-v16.json
       - name: Install browser dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Browser flows and mobile layout
@@ -50,7 +50,7 @@ jobs:
       - name: Prepare web application
         run: |
           mkdir -p public-site/assets
-          cp index.html bitbot-v6-cloud-config.js public-site/
+          cp index.html rea.html bitbot-v6-cloud-config.js public-site/
           cp assets/*.mjs assets/*.css public-site/assets/
           cp assets/*.json public-site/assets/
           for file in bitkub-live.html bitkub-setup.html bitbot-login.html; do cp index.html "public-site/$file"; done

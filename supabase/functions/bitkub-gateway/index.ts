@@ -9,7 +9,8 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 // Independent emergency kill switch: explicitly set BITBOT_LIVE_ENABLED=false in Edge Secrets to stop all orders.
 // A second DB master switch, per-account opt-in, signed-in user and typed trade confirmation are also required.
 // Conservative hard ceilings. A user can REDUCE these in setup, but cannot override them.
-const LIVE = Deno.env.get('BITBOT_LIVE_ENABLED') !== 'false';
+// SRS v1.0: environment flags and browser controls cannot enable trading.
+const LIVE = false;
 const MAX_ORDER = 100;
 const MAX_BUY_DAY = 300;
 const MAX_SELL_DAY = 1000;
@@ -73,6 +74,7 @@ async function internalPatch(requestId:string,userId:string,status:string,more:R
   return internalPost(path,{status,updated_at:new Date().toISOString(),...more},'PATCH');
 }
 async function bitkubSigned(method:'GET'|'POST',path:string,data:Record<string,unknown>|null,pair:KeyPair) {
+  if(/^\/api\/v3\/market\/place-(bid|ask)$/.test(path.split('?')[0]))fail('PAPER_ONLY: ปิดการส่งคำสั่งเงินจริงระหว่างตรวจรับ',423);
   creds(pair);
   const tsRaw=await getJson(BITKUB+'/api/v3/servertime');
   const stamp=String(typeof tsRaw==='number'||typeof tsRaw==='string'?tsRaw:tsRaw?.result??'');

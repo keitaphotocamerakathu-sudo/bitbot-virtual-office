@@ -1,0 +1,23 @@
+services:
+  rea-paper:
+    build:
+      context: .
+      dockerfile: services/rea/Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      SUPABASE_URL: https://lrxrigimdaedfemqheug.supabase.co
+      REA_SUPABASE_SERVICE_KEY_FILE: /run/secrets/supabase_service_key
+    secrets: [supabase_service_key]
+    ports: ["127.0.0.1:8080:8080"]
+    mem_limit: 512m
+    cpus: 1
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+secrets:
+  supabase_service_key:
+    file: .secrets/rea-supabase-service-key
