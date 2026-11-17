@@ -1,12 +1,14 @@
-# REA AI Trading Bot · Bitkub · 19.1
+# REA AI Trading Bot · Bitkub · 20.0
 
-[เปิดหน้า Live Trading](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#live) · [เปิด Live วงเงินจำกัด 19.1](docs/REA-19.1-LIMITED-LIVE-TH.md) · [Live Execution 19.0](docs/REA-19.0-LIVE-TH.md) · [เปิด Dashboard](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html) · [SRS v1.0](docs/REA-SRS-v1.0.md) · [ผลส่งมอบและหลักฐาน 18.1](docs/REA-18.1-DELIVERY-TH.md) · [คู่มือใช้งาน](docs/REA-OPERATIONS-TH.md)
+[เปิดพอร์ตเงินจริงและออฟฟิศ AI](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#live) · [หน้าเว็บและออฟฟิศ 20.0](docs/REA-20.0-DASHBOARD-TH.md) · [เปิด Live วงเงินจำกัด 19.1](docs/REA-19.1-LIMITED-LIVE-TH.md) · [Live Execution 19.0](docs/REA-19.0-LIVE-TH.md) · [เปิด Dashboard](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html) · [SRS v1.0](docs/REA-SRS-v1.0.md) · [ผลส่งมอบและหลักฐาน 18.1](docs/REA-18.1-DELIVERY-TH.md) · [คู่มือใช้งาน](docs/REA-OPERATIONS-TH.md)
 
 ระบบเลือกคู่ THB และจำลองการซื้อขายด้วยข้อมูลตลาดจริงที่ Backend เริ่มต้น `PAPER_ONLY` เพิ่ม Live Execution ที่ใช้ผลจับคู่จริงแยกจาก Paper แล้ว บัญชี Live เริ่ม `LIVE_LOCKED` รุ่น 19.1 เพิ่มการเปิดเงินจริงวงเงินจำกัดสูงสุด 100 บาทเมื่อเจ้าของยืนยันและรับทราบผลตรวจรับเต็มที่ยังไม่ครบ ส่วน STANDARD ยังต้องผ่านการตรวจรับเต็ม การอนุมัติและการบังคับวงเงินอยู่ที่ Server
 
 ## สถานะปัจจุบัน
 
-ตรวจ Private API ล่าสุดอ่าน Wallet ได้ THB 99.97 บาท (17 พฤศจิกายน 2569) ยอดนี้ใช้เปิด Live วงเงินจำกัดได้หลังเจ้าของยืนยันบนเว็บ การติดตั้งไม่เปิด Live หรือซื้อสินทรัพย์อัตโนมัติ หากเปลี่ยน Key ต้องตรวจ Wallet ใหม่ก่อนบันทึก
+หน้าแรกเปิดพอร์ตเงินจริงแล้ว รวม Wallet, สถานะที่ถือ, ผลจับคู่จาก Exchange, เหตุผลที่รอ และออฟฟิศ Animation 7 หน้าที่ในหน้าเดียว Scanner/ประวัติ/กำไร/ทีมงานเลือกแหล่งข้อมูลเงินจริงหรือ Paper ได้อย่างชัดเจน ระบบรุ่นเดิมเก็บไว้ที่ `legacy.html`
+
+ตรวจ Private API ล่าสุดอ่าน Wallet ได้ THB 99.97 บาท (17 พฤศจิกายน 2569) ยอดนี้ใช้เปิด Live วงเงินจำกัดได้หลังเจ้าของยืนยันบนเว็บ การบันทึก Key หรือการโหลดหน้าไม่เปิด Live หรือซื้อสินทรัพย์อัตโนมัติ หากเปลี่ยน Key ต้องตรวจ Wallet ใหม่ก่อนบันทึก
 
 - Live Strategy ทำงานบน Supabase ทุกนาทีและ Independent Live Watchdog เป้าหมายทุก 15 วินาที โดยไม่ต้องเปิดเว็บ แยกสมุดบัญชีและคำสั่งจาก Paper
 

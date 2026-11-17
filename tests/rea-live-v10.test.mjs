@@ -145,3 +145,8 @@ test('limited executor uses its own server proof and submits a bounded real bid 
   await service.run();assert.equal(writes,permitted?1:0);assert.equal(stored.fills.length,0);assert.equal(stored.positions.length,0);assert.equal(stored.cash,99.97);
  }
 });
+test('read-only live telemetry preserves strategy decisions while publishing actual held-symbol quotes',async()=>{
+ let saved;const state=held(),decision={symbol:'BTC_THB',reason:'SYMBOL_BUSY'},row={user_id:uid,mode:'LIVE_ENABLED',state,preflight:{},latest:{decisions:[decision],strategyAt:now-10000,news:{at:now-10000,readyMarkets:1}},revision:0,lease:id};
+ const service=createLiveService({clock:()=>now,keys:async()=>({apiKey:'TEST',apiSecret:'TEST_ONLY'}),wallet:async()=>wallet(),quotes:async()=>[market()],signed:async(_p,method)=>{assert.equal(method,'GET');return{result:[]};},rpc:async(name,args)=>{if(name==='rea_live_claim')return[row];if(name==='rea_live_ready')return{ready:true};if(name==='rea_live_checkpoint'){saved=args;return{...row,revision:1};}return true;}});
+ await service.run(true);assert.deepEqual(saved.p_latest.decisions,[decision]);assert.equal(saved.p_latest.strategyAt,now-10000);assert.equal(saved.p_latest.news.readyMarkets,1);assert.deepEqual(saved.p_latest.quotes,[{symbol:'BTC_THB',bid:100,ask:100.01,last:100,at:now}]);assert.equal(saved.p_state.cash,state.cash);assert.deepEqual(saved.p_state.positions,state.positions);assert.equal(saved.p_state.orders.length,0);
+});

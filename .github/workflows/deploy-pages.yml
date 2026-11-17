@@ -1,4 +1,4 @@
-name: Test and deploy REA 19.1 Limited Live
+name: Test and deploy REA 20.0 Trading Dashboard
 on:
   push:
     branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]
@@ -58,7 +58,7 @@ jobs:
       - name: Prepare web application
         run: |
           mkdir -p public-site/assets
-          cp index.html rea.html bitbot-v6-cloud-config.js public-site/
+          cp index.html legacy.html rea.html bitbot-v6-cloud-config.js public-site/
           cp assets/*.mjs assets/*.css public-site/assets/
           cp assets/*.json public-site/assets/
           cp bitkub-live.html bitkub-setup.html bitbot-login.html public-site/

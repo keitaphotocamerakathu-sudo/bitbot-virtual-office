@@ -1,6 +1,6 @@
 // Animated presentation of recorded work. No HTTP, credentials or trading calls.
 import {DEPARTMENTS} from './company.mjs?v=14.0.0';
-import {createOfficeLayout,findPath,visitPoint,officeHandoffs,workerId,workerRole,OFFICE_NAMES} from './office-model.mjs?v=14.2.0';
+import {createOfficeLayout,findPath,visitPoint,officeHandoffs,workerId,workerRole,OFFICE_NAMES} from './office-model.mjs?v=20.0.0';
 const WIDTH=1400,HEIGHT=850;
 const project=(x,y,z=0)=>({x:560+(x-y)*24,y:64+(x+y)*12-z});
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),clockText=t=>new Date(t).toLocaleTimeString('th-TH',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -20,8 +20,8 @@ export class VirtualOffice{
   this.tick=this.tick.bind(this);this.frame=requestAnimationFrame(this.tick);
  }
  setData(workers,archive,runtime={}){
-  this.runtime=runtime;this.demo=!workers?.length;
-  const list=this.demo?DEPARTMENTS.map(d=>({worker_id:d.id+'-demo',role:d.id,status:'DEMO',tools:[]})):workers;
+  this.runtime=runtime;this.demo=runtime.preview===true||!workers?.length;
+  const list=workers?.length?workers:DEPARTMENTS.map(d=>({worker_id:d.id+'-demo',role:d.id,status:'DEMO',tools:[]}));
   const ids=new Set(list.map(workerId));for(const [id] of this.actors)if(!ids.has(id))this.actors.delete(id);
   for(const w of list){const id=workerId(w),r=this.layout.rooms.find(r=>r.id===workerRole(w));if(!r)continue;const unit=Number(id.split('-').at(-1))||1,home={...r.homes[(unit-1)%r.homes.length]};const a=this.actors.get(id);if(a)a.worker=w;else this.actors.set(id,{id,worker:w,role:r.id,color:r.color,home,...home,path:[],locked:false,activity:this.demo?'ตัวอย่างบรรยากาศ':'รอรอบข้อมูล',seed:hash(id),restUntil:0});}
   const changed=this.latestKey!==(archive?archive.mode+':'+archive.finishedAt:null);if(changed){this.latestKey=archive?archive.mode+':'+archive.finishedAt:null;this.pendingArchive=archive;this.hasPending=true;if(!this.current)this.adoptArchive();}
@@ -93,7 +93,7 @@ export class VirtualOffice{
   this.box(c,2,9,4,1,15,'#476a70','#36505b');this.box(c,2,9,4,.3,32,'#5c7c7d','#36505b');this.box(c,3,11,1.5,.8,12,'#c6b594','#8b826e');this.plant(c,1.1,11.8);
   this.box(c,25,12,3,.7,24,'#acb5a4','#647c77');
   const m=project(14,8.2,17),k=project(25,8.2,20),l=project(2,8.2,20);this.text(c,'TEAM BRIEFING',m.x,m.y,13,'#e6eee5',700);this.text(c,'COFFEE / BREAK',k.x,k.y,12,'#d5e3db',600);this.text(c,'LOUNGE',l.x,l.y,12,'#d5e3db',600);
-  this.text(c,'BITBOT  /  TRADING COMPANY',440,800,16,'#83a5ad',600);this.text(c,'10 DEPARTMENTS  •  SHARED WORKSPACE',490,821,10,'#587c89');
+  this.text(c,'BITBOT  /  TRADING COMPANY',440,800,16,'#83a5ad',600);this.text(c,'SHARED WORKSPACE  •  RECORDED TEAM TASKS',490,821,10,'#587c89');
  }
  actor(c,a){const p=project(a.x,a.y),walking=a.path.length>0,step=walking?Math.sin(this.time*12+a.seed):0,bob=walking?Math.abs(step)*1.6:Math.sin(this.time*2+a.seed)*.4,talking=this.current?.speaker===a.id&&['sender','recipient'].includes(this.current.phase),skin=['#e2bda0','#c69274','#9e715b'][a.seed%3];
   c.fillStyle='#10202b55';c.beginPath();c.ellipse(p.x,p.y+2,13,6,0,0,Math.PI*2);c.fill();c.lineCap='round';c.strokeStyle='#263448';c.lineWidth=5;for(const side of [-1,1]){c.beginPath();c.moveTo(p.x+side*4,p.y-10+bob);c.lineTo(p.x+side*5+side*step*4,p.y+2);c.stroke();}c.strokeStyle='#152934';c.lineWidth=4;for(const side of [-1,1]){c.beginPath();c.moveTo(p.x+side*5+side*step*4,p.y+2);c.lineTo(p.x+side*5+side*step*4+3,p.y+3);c.stroke();}

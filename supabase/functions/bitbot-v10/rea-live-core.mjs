@@ -124,7 +124,7 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
    let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=2?'MAX_POSITIONS':s.seen[r.symbol]===r.signalAt?'SIGNAL_ALREADY_USED':null;
    const size=!reason?riskSizeREA(risk,{stopDistance:r.stopDistance,minQuote:m.rules.minQuote},markets,now):null;
    if(size&&!size.notional)reason=size.reason;
-   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason};decisions.push(decision);
+   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason};decisions.push(decision);
    if(reason)continue;
    const maxPrice=m.ask*(1+REA_LIMITS.slippage),limit=tickPrice(maxPrice,m.rules,false);
    if(limit<m.ask){decision.reason='PRICE_TICK_EXCEEDS_CHASE_LIMIT';continue;}

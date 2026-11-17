@@ -60,7 +60,8 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,clock=()=>
      const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&permitted,operationalLock:!permitted||!!scanError});
      state=out.state;intents=out.intents;
      latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state),reason:scanError||out.reason,
-      ...(riskOnly?{}:{decisions:out.decisions}),accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
+      quotes:(bundle.markets||[]).filter(m=>state.positions.some(p=>p.symbol===m.symbol)).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,last:m.last,at:m.observedAt})),
+      ...(riskOnly?{}:{decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
     }else latest={...latest,at:clock(),mode:'LIVE_LOCKED',health:'OK',reason:'AWAITING_LIVE_ACCEPTANCE_AND_OWNER_ACTIVATION',accounting:'NO_LIVE_CAPITAL_ALLOCATED',lane};
     if(!await checkpoint()){results.push({committed:false,reason:'REVISION_CHANGED'});continue;}
     for(const intent of intents){

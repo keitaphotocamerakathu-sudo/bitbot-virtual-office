@@ -34,6 +34,7 @@ const first=o=>Object.entries(o||{})[0];
 const value=(n,d=1)=>typeof n==='number'&&Number.isFinite(n)?n.toFixed(d):'ไม่พร้อม';
 export function describeOfficeTask(task){
  if(!task)return'รอผลที่บันทึกไว้';if(task.status==='FAILED')return'งานไม่สำเร็จ: '+String(task.error||task.output?.error||'ตรวจรายละเอียดงาน');
+ if(task.source==='REA_BACKEND'&&typeof task.summary==='string')return task.summary.slice(0,600);
  const o=task.output||{};
  switch(task.role){
  case'ceo':return'รอบนี้คัดกรอง '+(o.universe??'—')+' คู่ • '+(o.mode||'รอข้อมูล');
@@ -53,6 +54,6 @@ export function officeHandoffs(archive,workers){
  const ids=new Set(workers.map(workerId));return(archive?.messages||[]).flatMap(m=>{
  const task=archive.tasks?.find(t=>t.id===m.taskId&&t.worker===m.from),reply=archive.tasks?.find(t=>t.worker===m.to);
  if(!task||!ids.has(m.from)||!ids.has(m.to))return[];
- return[{...m,summary:describeOfficeTask(task),reply:reply?describeOfficeTask(reply):null,replyTaskId:reply?.id,sourceAt:archive.finishedAt,mode:archive.mode,taskStatus:task.status}];
+ return[{...m,summary:describeOfficeTask(task),reply:reply?describeOfficeTask(reply):null,replyTaskId:reply?.id,sourceAt:task.source==='REA_BACKEND'?task.finishedAt:archive.finishedAt,mode:archive.mode,taskStatus:task.status}];
  });
 }
