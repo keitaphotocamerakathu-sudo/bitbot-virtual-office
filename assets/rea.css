@@ -4,3 +4,4 @@ progress{width:100%;height:15px;accent-color:#55d7a1}.rea-agent-grid{display:gri
 [data-rea-section="safety"] table{min-width:0;table-layout:fixed}
 [data-rea-section="safety"] th{width:43%;overflow-wrap:anywhere}
 .rea-page .table-scroll{min-width:0;max-width:100%}
+.rea-live-activation{display:grid;gap:14px;max-width:580px;margin-top:20px}.rea-live-activation label{display:block;line-height:1.7}.rea-live-activation input:not([type="checkbox"]){display:block;width:100%;box-sizing:border-box;margin-top:6px}.rea-live-activation input[type="checkbox"]{width:auto;display:inline;margin-right:6px}#reaLiveChecks p{overflow-wrap:anywhere}#reaLiveActivate:disabled{opacity:.45;cursor:not-allowed}

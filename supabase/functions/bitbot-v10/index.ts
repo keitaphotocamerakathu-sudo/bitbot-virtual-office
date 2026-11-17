@@ -9,6 +9,7 @@ import {createREAService} from './rea-service.mjs';
 import {createRiskWatchdog} from './rea-watchdog.mjs';
 import {createRiskQuotes} from './rea-risk-quotes.mjs';
 import {createAdvisory} from './rea-advisory.mjs';
+import {createLiveService} from './rea-live-service.mjs';
 import {reportingSummary,aggregateFills} from './reporting.mjs';
 import {pack,unpack} from './archive.mjs';
 import {liveReadiness} from './evidence.mjs';
@@ -35,7 +36,7 @@ async function json(url,opts={},timeout=10000){
  if(url.startsWith(EXCHANGE+'/')&&Date.now()<marketRateLimitUntil)throw Object.assign(Error('Bitkub rate limit: รอรอบถัดไป'),{status:429});
  const r=await fetch(url,{...opts,signal:AbortSignal.timeout(timeout)});const d=await r.json().catch(()=>null);
  if(r.status===429&&url.startsWith(EXCHANGE+'/')){const retry=Number(r.headers.get('retry-after'));marketRateLimitUntil=Date.now()+Math.max(30000,Number.isFinite(retry)?retry*1000:30000);}
- if(!r.ok){if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));throw Object.assign(Error('บริการตอบกลับ '+r.status),{status:r.status===429?429:502});}return d;
+ if(!r.ok){if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));const exchange=url.startsWith(EXCHANGE+'/'),code=String(d?.error??d?.code??'');throw Object.assign(Error((exchange?'BITKUB_HTTP_':'BACKEND_HTTP_')+r.status+(exchange&&/^[A-Z0-9-]{1,24}$/.test(code)?'_CODE_'+code:'')),{status:r.status===429?429:502});}return d;
 }
 const headers=()=>({apikey:SERVICE,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'});
 async function db(path,body,method='POST'){
@@ -88,20 +89,28 @@ const markets=createMarketService({json,db,read,rpc,fetchFn:fetch});
 const verifiedMarkets=createVerifiedMarketService({base:markets,json,read,rpc});
 const rea=createREAService({rpc,marketService:verifiedMarkets,advisor:createAdvisory({rpc})});
 const riskWatchdog=createRiskWatchdog({rpc,quotes:createRiskQuotes({markets,json,rpc})});
+const reaLive=createLiveService({rpc,keys,wallet,signed,scan:held=>verifiedMarkets.scan(held),quotes:createRiskQuotes({markets,json,rpc})});
 const marketServiceFor=c=>c?.marketDataPolicy==='verified-v17'?verifiedMarkets:markets;
 const market=(symbol='BTC_THB')=>markets.single(symbol);
 async function keys(uid){
  const k=await rpc('bitbot_load_exchange_key',{p_user_id:uid});if(!k?.apiKey||!k?.apiSecret)fail('กรุณาเชื่อม API Key และ Secret ก่อน',409);return k;
 }
-async function signed(pair,method,path,body=null){
- if(/^\/api\/v3\/market\/place-(bid|ask)$/.test(path.split('?')[0]))fail('PAPER_ONLY: ปิดการส่งคำสั่งเงินจริงระหว่างตรวจรับ',423);
+async function signed(pair,method,path,body=null,ticket=null){
+ const place=/^\/api\/v3\/market\/place-(bid|ask)$/.test(path.split('?')[0]);
+ if(place&&!ticket)fail('PAPER_ONLY: เส้นทางเดิมปิดเทรดจริง ต้องผ่าน REA Live และการตรวจรับ',423);
  if(!privatePaths.has(path.split('?')[0]))fail('ปลายทางไม่อยู่ในรายการที่อนุญาต',403);
+ if(ticket){
+  if(method!=='POST'||!['PLACE','CANCEL'].includes(ticket.action))fail('INVALID_LIVE_DISPATCH',403);
+  const grant=await rpc('rea_live_dispatch',{p_uid:ticket.uid,p_lease:ticket.lease,p_revision:ticket.revision,p_order:ticket.id,p_action:ticket.action,p_body:body,p_path:path});
+  if(grant?.allowed!==true)fail('LIVE_GUARD: '+(grant?.reason||'NOT_AUTHORIZED'),423);
+  ticket.dispatched=true;ticket.revision=grant.revision;
+ }
  const time=await json(EXCHANGE+'/api/v3/servertime'),ts=String(typeof time==='number'||typeof time==='string'?time:time?.result);
  if(!/^\d{13}$/.test(ts))fail('เวลาเซิร์ฟเวอร์ Bitkub ผิดรูปแบบ',502);
  const payload=method==='POST'&&body!==null?JSON.stringify(body):'';
  const key=await crypto.subtle.importKey('raw',enc.encode(pair.apiSecret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=hex(await crypto.subtle.sign('HMAC',key,enc.encode(ts+method+path+payload)));
- const d=await json(EXCHANGE+path,{method,headers:{'Content-Type':'application/json','X-BTK-APIKEY':pair.apiKey,'X-BTK-TIMESTAMP':ts,'X-BTK-SIGN':sig},...(payload?{body:payload}:{})},10000);
+ const d=await json(EXCHANGE+path,{method,headers:{Accept:'application/json','Content-Type':'application/json','X-BTK-APIKEY':pair.apiKey,'X-BTK-TIMESTAMP':ts,'X-BTK-SIGN':sig},...(payload?{body:payload}:{})},10000);
  const code=d?.error??d?.code;if(code!==undefined&&String(code)!=='0')throw Object.assign(Error('Bitkub ปฏิเสธ (รหัส '+String(code).slice(0,20)+')'),{exchangeRejected:true,status:409});
  return d;
 }
@@ -309,18 +318,25 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'18.1.0-paper',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / independent risk / deterministic limits / advisory LLM',liveEnabled:LIVE};
+ if(req.method==='GET'&&a==='health')return{version:'19.0.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);
- if(a==='run'||a==='rea-run'||a==='rea-risk'){
+ if(a==='run'||a==='rea-run'||a==='rea-risk'||a==='rea-live-run'||a==='rea-live-risk'){
  if(req.method!=='POST'||!await rpc('bitbot_v10_runner_allowed',{p_token:req.headers.get('x-bitbot-runner')||''}))fail('ไม่อนุญาต',401);
+ if(a==='rea-live-run'||a==='rea-live-risk')return await reaLive.run(a==='rea-live-risk');
  return a==='rea-run'?await rea.run():a==='rea-risk'?await riskWatchdog.run():await run();
  }
  const b=req.method==='POST'?await body(req):{};
  if(['login','register','recover'].includes(a)){if(req.method!=='POST')fail('Method not allowed',405);return await authAction(req,a,b);}
  const u=await user(req),uid=u.id;
  if(req.method==='GET'&&a==='rea-state')return{rea:await rea.view(uid)};
+ if(req.method==='GET'&&a==='rea-live-state')return{live:await reaLive.view(uid)};
+ if(req.method==='POST'&&a==='rea-live-control'){
+  await throttle(req,'rea-live-control',uid,12,60);
+  if(b.action==='activate')return await reaLive.activate(uid,b);
+  return await reaLive.control(uid,b.action,b.confirm);
+ }
  if(req.method==='POST'&&a==='rea-control'){
   await throttle(req,'rea-control',uid,30,60);
   if(b.action==='clear-emergency'&&b.confirm!=='ปลดหยุดฉุกเฉิน Paper')fail('กรุณายืนยันการปลดหยุดฉุกเฉิน',400);
@@ -351,6 +367,7 @@ async function handle(req){
  return{...result,note:result.running?'อัปเดตข้อมูลแล้ว บอททำงานอัตโนมัติต่อด้วยวงเงินเดิม':'อัปเดตข้อมูลแล้ว กดเริ่มบอทเพื่อทำงานอัตโนมัติ'};
  }
  if(a==='keys'){
+ if(!await rpc('rea_live_key_change_allowed',{p_uid:uid}))fail('บัญชี Live ยังมีทุนที่จัดสรรไว้ ต้องตรวจและปิดการใช้งานก่อนเปลี่ยนกุญแจ',409);
  const apiKey=String(b.apiKey||'').trim(),apiSecret=String(b.apiSecret||'').trim();
  if(apiKey.length<8||apiKey.length>512||apiSecret.length<8||apiSecret.length>1024)fail('API Key หรือ Secret ไม่ครบ');
  const live=(await read('bitbot_v10_bots?user_id=eq.'+uid))[0];
@@ -358,6 +375,7 @@ async function handle(req){
  const w=await wallet({apiKey,apiSecret});await rpc('bitbot_store_exchange_key',{p_user_id:uid,p_api_key:apiKey,p_api_secret:apiSecret});return{verified:true,wallet:w};
  }
  if(a==='remove-key'){
+ if(!await rpc('rea_live_key_change_allowed',{p_uid:uid}))fail('บัญชี Live ยังมีทุนที่จัดสรรไว้ ห้ามถอดกุญแจระหว่างดูแลพอร์ต',409);
  const st=await status(uid);if(st.bot?.running||st.orders.some(x=>!x.settled)||Number(st.bot?.state?.qty)>0)fail('ยังมีบอทหรือสถานะค้าง จัดการก่อนถอดคีย์');
  await rpc('bitbot_remove_exchange_key',{p_user_id:uid});return{removed:true};
  }
