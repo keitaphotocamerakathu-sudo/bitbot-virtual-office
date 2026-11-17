@@ -47,7 +47,7 @@ language sql security invoker set search_path='' as $$
 $$;
 create function public.rea_live_ready(p_uid uuid) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare a rea.live_accounts%rowtype;e jsonb;c jsonb='[]';n text;x rea.live_checks%rowtype;begin
+declare a rea.live_accounts%rowtype;e jsonb;c jsonb='[]';n text;x rea.live_checks%rowtype;reviewed boolean;begin
  select * into a from rea.live_accounts where user_id=p_uid;
  if not found then return jsonb_build_object('ready',false,'checks','[]'::jsonb,'reason','LIVE_ACCOUNT_NOT_PREPARED');end if;
  e=public.rea_view(p_uid)->'paperEvidence';
@@ -58,7 +58,9 @@ declare a rea.live_accounts%rowtype;e jsonb;c jsonb='[]';n text;x rea.live_check
  c=c||jsonb_build_array(jsonb_build_object('name','INDEPENDENT_LIVE_WATCHDOG','passed',exists(select 1 from rea.live_heartbeats where user_id=p_uid and lane='risk' and status in('OK','IDLE') and at_ms>extract(epoch from now()-interval '180 seconds')*1000)));
  foreach n in array array['EXECUTION_TESTS','RECOVERY_TESTS','RECONCILIATION_REVIEW','SECURITY_REVIEW','NO_WITHDRAW_SCOPE','OWNER_ALERT_DELIVERY'] loop
   select * into x from rea.live_checks where user_id=p_uid and check_name=n;
-  c=c||jsonb_build_array(jsonb_build_object('name',n,'passed',coalesce(x.passed and x.spec='REA-LIVE-19.0' and (x.expires_at is null or x.expires_at>now()),false),'evidence',coalesce(x.evidence,'{}')));
+  reviewed=coalesce(x.passed and x.spec='REA-LIVE-19.0' and (x.expires_at is null or x.expires_at>now()),false);
+  if n in('NO_WITHDRAW_SCOPE','RECONCILIATION_REVIEW') then reviewed=reviewed and a.preflight ? 'keyFingerprint' and x.evidence->>'keyFingerprint'=a.preflight->>'keyFingerprint';end if;
+  c=c||jsonb_build_array(jsonb_build_object('name',n,'passed',coalesce(reviewed,false),'evidence',coalesce(x.evidence,'{}')));
  end loop;
  return jsonb_build_object('ready',not exists(select 1 from jsonb_array_elements(c)v where not coalesce((v->>'passed')::boolean,false)),'checks',c,'spec','REA-LIVE-19.0');
 end$$;

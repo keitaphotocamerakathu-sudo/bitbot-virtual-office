@@ -23,10 +23,13 @@ do $$declare u uuid;l uuid=gen_random_uuid();other uuid=gen_random_uuid();oid uu
  insert into rea.equity_snapshots(user_id,at_ms,equity)
  select u,t-604800000+g*60000,10000 from generate_series(0,10080)g on conflict do nothing;
  foreach n in array array['EXECUTION_TESTS','RECOVERY_TESTS','RECONCILIATION_REVIEW','SECURITY_REVIEW','NO_WITHDRAW_SCOPE','OWNER_ALERT_DELIVERY'] loop
-  insert into rea.live_checks(user_id,check_name,passed,evidence) values(u,n,true,'{"testOnly":true}') on conflict(user_id,check_name) do update set passed=true,spec='REA-LIVE-19.0',expires_at=null;
+  insert into rea.live_checks(user_id,check_name,passed,evidence) values(u,n,true,'{"testOnly":true,"keyFingerprint":"TEST_ONLY"}') on conflict(user_id,check_name) do update set passed=true,spec='REA-LIVE-19.0',expires_at=null,evidence=excluded.evidence;
  end loop;
  perform public.rea_live_heartbeat(u,'risk','OK',t);
  if not (public.rea_live_ready(u)->>'ready')::boolean then raise exception 'COMPLETE_FIXTURE_NOT_READY: %',public.rea_live_ready(u);end if;
+ update rea.live_accounts set preflight=jsonb_set(preflight,'{keyFingerprint}','"CHANGED_KEY"') where user_id=u;
+ if (public.rea_live_ready(u)->>'ready')::boolean then raise exception 'KEY_SCOPE_REVIEW_REUSED_FOR_DIFFERENT_KEY';end if;
+ update rea.live_accounts set preflight=jsonb_set(preflight,'{keyFingerprint}','"TEST_ONLY"') where user_id=u;
  if (public.rea_live_dispatch(u,l,rev,oid,'PLACE',b,'/api/v3/market/place-ask')->>'allowed')::boolean then raise exception 'BUY_SENT_TO_ASK';end if;
  if (public.rea_live_dispatch(u,l,rev,oid,'PLACE',b||'{"amt":2000}','/api/v3/market/place-bid')->>'allowed')::boolean then raise exception 'CHANGED_WIRE_AMOUNT_ALLOWED';end if;
  r=public.rea_live_dispatch(u,l,rev,oid,'PLACE',b,'/api/v3/market/place-bid');
