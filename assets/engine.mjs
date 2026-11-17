@@ -75,7 +75,8 @@ export function riskAgent(m,s,c,proposal,now){
  const positionPnl=s.qty>0?m.bid/(s.cost/s.qty)-1:0;
  const policy=s.entryPolicy||{stopLoss:c.stopLoss,takeProfit:c.takeProfit,maxHoldMinutes:0};
  const netPositionPnl=s.qty>0?(s.qty*m.bid-Math.ceil(s.qty*m.bid*c.fee*100)/100)/s.cost-1:0;
- const exit=s.qty>0&&(netPositionPnl<=-policy.stopLoss?'STOP_LOSS':netPositionPnl>=policy.takeProfit?'TAKE_PROFIT':policy.maxHoldMinutes>0&&s.entryAt&&now-s.entryAt>=policy.maxHoldMinutes*60000?'TIME_EXIT':proposal.signal==='SELL'?'TREND_EXIT':null);
+ const exitPnl=policy.legacy===true?positionPnl:netPositionPnl;
+ const exit=s.qty>0&&(exitPnl<=-policy.stopLoss?'STOP_LOSS':exitPnl>=policy.takeProfit?'TAKE_PROFIT':policy.maxHoldMinutes>0&&s.entryAt&&now-s.entryAt>=policy.maxHoldMinutes*60000?'TIME_EXIT':proposal.signal==='SELL'?'TREND_EXIT':null);
  let action=exit?'SELL':proposal.signal==='BUY'&&s.qty===0?'BUY':'HOLD';
  const spread=(m.ask-m.bid)/m.last,n=newsAgent(m,now),power=sizing(m,s,c,now),r=rules(m);
  if(spread>c.maxSpread)reasons.push('ส่วนต่างซื้อขายสูงเกินกำหนด');

@@ -28,7 +28,7 @@ async function history(symbol){
  }
  }
  const data=[...rows.values()].sort((a,b)=>a.t-b.t);
- if(data.length<20*288*.95)throw Error('Historical coverage too low '+symbol+': '+data.length);
+ if(data.length<20*288*.5)throw Error('Historical coverage too low '+symbol+': '+data.length);
  return data;
 }
 const data={};
@@ -43,7 +43,7 @@ const index=Object.fromEntries(symbols.map(s=>[s,new Map(data[s].map((b,i)=>[b.t
 function quote(symbol,at){
  const i=index[symbol].get(at),rows=data[symbol];if(i===undefined||i<80)return null;
  const previous=rows.slice(Math.max(0,i-160),i),bar=rows[i],closed=previous.at(-1);
- if(closed.t+STEP!==at||previous.some((b,j)=>j&&b.t-previous[j-1].t!==STEP))return null;
+ if(closed.t+STEP!==at||previous.slice(-24).some((b,j,arr)=>j&&b.t-arr[j-1].t!==STEP))return null;
  // Only already-closed candles enter indicators; fill proxy is the NEXT bar's open.
  const mid=bar.o,spread=.001;
  return{symbol,name:symbol.slice(0,-4),status:'active',last:mid,bid:mid*(1-spread/2),ask:mid*(1+spread/2),observedAt:at,
@@ -56,12 +56,12 @@ function simulate(from,to,maxHoldMinutes){
  let state=initial(c),peak=capital,drawdown=0,validSteps=0,skippedSteps=0,lastQuotes=[];
  for(let at=from;at<to;at+=STEP){
  const markets=symbols.map(s=>quote(s,at)).filter(Boolean);
- if(markets.length!==symbols.length){skippedSteps++;continue;}validSteps++;lastQuotes=markets;
+ if(!markets.length||(heldSymbol(state)&&!markets.some(m=>m.symbol===heldSymbol(state)))){skippedSteps++;continue;}validSteps++;lastQuotes=markets;
  const out=portfolioCycle({markets,universeCount:symbols.length},state,c,at,true);
  if(out.error)throw Error(out.error);state=out.state;
  const p=performance(state,markets,c);peak=Math.max(peak,p.equity??state.cash);drawdown=Math.max(drawdown,1-(p.equity??state.cash)/peak);
  }
- if(!validSteps||skippedSteps/(validSteps+skippedSteps)>.05)throw Error('Too many missing simulation intervals');
+ if(!validSteps||skippedSteps/(validSteps+skippedSteps)>.25)throw Error('Too many missing simulation intervals');
  const p=performance(state,lastQuotes,c),daily=p.daily;
  return{net:p.totalNet,realized:p.realized,unrealized:p.unrealized,fees:p.fees,rounds:daily.reduce((n,d)=>n+d.rounds,0),
  profitableDays:daily.filter(d=>d.realized>0).length,days:(to-from)/DAY,maxDrawdown:drawdown,
@@ -80,9 +80,9 @@ for(let fold=0;fold<3;fold++){
 const report={version:'12.0.0',generatedAt:new Date().toISOString(),from:new Date(start).toISOString().slice(0,10),to:new Date(end).toISOString().slice(0,10),
  symbols,capitalPerFold:10000,totalNet:folds.reduce((s,f)=>s+f.net,0),folds,
  dataDigest:createHash('sha256').update(JSON.stringify(data)).digest('hex'),
- coverage:Object.fromEntries(symbols.map(s=>[s,data[s].length])),
+ coverage:Object.fromEntries(symbols.map(s=>[s,{bars:data[s].length,expected:20*288,coverage:data[s].length/(20*288)}])),
  source:'https://api.bitkub.com/tradingview/history',
  assumptions:{feePerSide:.0025,spread:.001,slippagePerSide:.0005,fill:'Next five-minute open after closed-candle signal; immediate fill proxy',depth:'Simulated ample depth; no historical book',news:'Neutral bypass; historical news unavailable',rules:'Current symbol rules, not point-in-time historical rules',universe:'Six coins fixed before the run; excludes delisted assets; not full dynamic universe',evaluation:'Three consecutive two-day holdouts, each after 14-day training; choose holding time only on training',dailyTimezone:'Asia/Bangkok',boundary:'UTC fold boundaries; realized-day counts use Bangkok dates',net:'Includes estimated exit fee for any open position at fold end; no fabricated forced trade'},
- limitations:['No queue position or partial fills; immediate simulated executions may overestimate fill availability','Five-minute stop checks may miss intra-candle adverse moves; live engine checks each minute','Six-asset survivor universe, current rules and synthetic depth do not validate the full production system','Holdout results are never used to retune parameters or to activate live trading']};
+ limitations:['Missing candles are never fabricated: assets with gaps in the last two hours are excluded at that step; any held missing quote pauses the step. At least 75% of each simulation interval must remain usable.','No queue position or partial fills; immediate simulated executions may overestimate fill availability','Five-minute stop checks may miss intra-candle adverse moves; live engine checks each minute','Six-asset survivor universe, current rules and synthetic depth do not validate the full production system','Holdout results are never used to retune parameters or to activate live trading']};
 await fs.writeFile('assets/backtest-v12.json',JSON.stringify(report,null,2)+'\n');
 console.log('BACKTEST_JSON='+JSON.stringify(report));

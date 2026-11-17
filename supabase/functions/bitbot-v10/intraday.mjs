@@ -67,7 +67,9 @@ export function extractArticle(html){
  function search(x,depth=0){if(!x||depth>8)return;if(Array.isArray(x)){for(const y of x)search(y,depth+1);}else if(typeof x==='object'){if(typeof x.articleBody==='string'&&x.articleBody.length>body.length)body=x.articleBody;for(const [k,v] of Object.entries(x))if(k!=='articleBody'&&typeof v==='object')search(v,depth+1);}}
  for(const match of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){try{search(JSON.parse(match[1]));}catch{}}
  if(body.length>=200)return{body:clean(body).slice(0,10000),method:'JSON_LD_ARTICLE'};
- const article=html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
- if(article){body=clean(article);if(body.length>=200)return{body:body.slice(0,10000),method:'HTML_ARTICLE'};}
+ for(const match of html.matchAll(/<article\b([^>]*)>([\s\S]*?)<\/article>/gi)){
+ if(/article-card|group\/card|related|recommend/i.test(match[1]))continue;
+ body=clean(match[2]);if(body.length>=200)return{body:body.slice(0,10000),method:'HTML_ARTICLE'};
+ }
  return{body:'',method:'HEADLINE_ONLY'};
 }

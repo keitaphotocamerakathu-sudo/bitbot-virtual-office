@@ -69,3 +69,8 @@ test('malformed depth and unsafe intraday settings fail closed',()=>{
  assert.equal(bookImpact({at:now,asks:[[3000,-1]],bids:[[2999,10]]},100,now).ready,false);
  for(const input of [{maxEntries:1.5},{slippage:0},{maxHoldMinutes:0},{minNetRR:1}])assert.throws(()=>config(input));
 });
+
+test('related story cards cannot be misread as article content',()=>{
+ const x=extractArticle('<article data-testid="article-card">'+'Unrelated Bitcoin fraud. '.repeat(30)+'</article>');
+ assert.equal(x.method,'HEADLINE_ONLY');
+});
