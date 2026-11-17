@@ -23,7 +23,7 @@ export function bookImpact(book,notional,now){
  }
  const buy=walk(book.asks,true),sell=walk(book.bids,false);
  if(!buy||!sell)return{ready:false,reason:'สมุดคำสั่งผิดรูปแบบ'};
- return{ready:true,covered:buy.covered&&sell.covered,buyImpact:Math.max(0,buy.impact),sellImpact:Math.max(0,sell.impact),buyDepth:buy.available,sellDepth:sell.available};
+ return{ready:true,covered:buy.covered&&sell.covered,buyImpact:Math.max(0,buy.impact),sellImpact:Math.max(0,sell.impact),buyDepth:buy.available,sellDepth:sell.available,bestAsk:book.asks[0][0],bestBid:book.bids[0][0]};
 }
 export function entryPlan(m,c,notional,now=Date.now()){
  const spread=(m.ask-m.bid)/m.last,book=bookImpact(m.depth,notional,now);
@@ -36,8 +36,10 @@ export function entryPlan(m,c,notional,now=Date.now()){
  const netReward=target-cost,netRisk=stop+cost,netRR=netReward/netRisk;
  const reasons=[];
  if(c.intraday){
+  if(!bars.every(b=>Number.isFinite(b.h)&&Number.isFinite(b.l)&&b.l>0&&b.h>=Math.max(b.l,b.c)&&b.l<=b.c))reasons.push('ข้อมูล High/Low ไม่ครบสำหรับประเมินช่วงราคา');
   if(STABLE_ASSETS.has(m.symbol.slice(0,-4)))reasons.push('เหรียญตรึงมูลค่าไม่เหมาะกับรอบเทรดสั้น');
   if(!book.ready)reasons.push(book.reason);
+  else if(Math.abs(book.bestAsk/m.ask-1)>c.maxDepthImpact||Math.abs(book.bestBid/m.bid-1)>c.maxDepthImpact)reasons.push('ราคาสมุดคำสั่งเปลี่ยนจากราคาเสนอ รอตรวจใหม่');
   else if(!book.covered||book.buyImpact>c.maxDepthImpact||book.sellImpact>c.maxDepthImpact)reasons.push('ความลึกซื้อขายไม่พอสำหรับวงเงินนี้');
   if(!Number.isFinite(range)||range<cost*c.minRangeCostRatio||target>range*1.5)reasons.push('ช่วงราคา 1 ชั่วโมงไม่พอชดเชยต้นทุนและเป้าขาย');
  }

@@ -61,28 +61,34 @@ function simulate(from,to,maxHoldMinutes){
  if(out.error)throw Error(out.error);state=out.state;
  const p=performance(state,markets,c);peak=Math.max(peak,p.equity??state.cash);drawdown=Math.max(drawdown,1-(p.equity??state.cash)/peak);
  }
- if(!validSteps||skippedSteps/(validSteps+skippedSteps)>.25)throw Error('Too many missing simulation intervals');
+ const coverage=validSteps/(validSteps+skippedSteps);
+ const qualified=validSteps>0&&coverage>=.75;
  const p=performance(state,lastQuotes,c),daily=p.daily;
- return{net:p.totalNet,realized:p.realized,unrealized:p.unrealized,fees:p.fees,rounds:daily.reduce((n,d)=>n+d.rounds,0),
- profitableDays:daily.filter(d=>d.realized>0).length,days:(to-from)/DAY,maxDrawdown:drawdown,
+ return{status:qualified?'QUALIFIED':'INSUFFICIENT_DATA',coverage,net:qualified?p.totalNet:null,realized:qualified?p.realized:null,unrealized:qualified?p.unrealized:null,fees:p.fees,rounds:daily.reduce((n,d)=>n+d.rounds,0),
+ profitableDays:daily.filter(d=>d.realized>0).length,days:daily.length,intervalDays:(to-from)/DAY,maxDrawdown:drawdown,
  openPosition:heldSymbol(state),validSteps,skippedSteps};
 }
 const folds=[];
 for(let fold=0;fold<3;fold++){
  const testFrom=end-(6-fold*2)*DAY,testTo=testFrom+2*DAY,trainFrom=testFrom-14*DAY;
  const trained=[60,30,120].map(maxHoldMinutes=>({maxHoldMinutes,metrics:simulate(trainFrom,testFrom,maxHoldMinutes)}));
- trained.sort((a,b)=>b.metrics.net-a.metrics.net||a.metrics.maxDrawdown-b.metrics.maxDrawdown);
- const selected=trained[0],result=simulate(testFrom,testTo,selected.maxHoldMinutes);
+ const qualified=trained.filter(x=>x.metrics.status==='QUALIFIED');
+ qualified.sort((a,b)=>b.metrics.net-a.metrics.net||a.metrics.maxDrawdown-b.metrics.maxDrawdown);
+ const selected=qualified[0];
+ if(!selected){folds.push({from:new Date(testFrom).toISOString().slice(0,10),to:new Date(testTo).toISOString().slice(0,10),status:'INSUFFICIENT_DATA',reason:'Training coverage below 75%; no parameter selected',training:trained.map(x=>({maxHoldMinutes:x.maxHoldMinutes,coverage:x.metrics.coverage,status:x.metrics.status}))});continue;}
+ const result=simulate(testFrom,testTo,selected.maxHoldMinutes);
  folds.push({from:new Date(testFrom).toISOString().slice(0,10),to:new Date(testTo).toISOString().slice(0,10),
  trainFrom:new Date(trainFrom).toISOString().slice(0,10),trainTo:new Date(testFrom).toISOString().slice(0,10),
  maxHoldMinutes:selected.maxHoldMinutes,trainNet:selected.metrics.net,training:trained.map(x=>({maxHoldMinutes:x.maxHoldMinutes,net:x.metrics.net})),...result});
 }
-const report={version:'12.0.0',generatedAt:new Date().toISOString(),from:new Date(start).toISOString().slice(0,10),to:new Date(end).toISOString().slice(0,10),
- symbols,capitalPerFold:10000,totalNet:folds.reduce((s,f)=>s+f.net,0),folds,
+const qualifiedAll=folds.every(x=>x.status==='QUALIFIED');
+const report={status:qualifiedAll?'RESEARCH_ONLY':'INSUFFICIENT_DATA',version:'12.0.0',generatedAt:new Date().toISOString(),from:new Date(start).toISOString().slice(0,10),to:new Date(end).toISOString().slice(0,10),
+ symbols,capitalPerFold:10000,totalNet:qualifiedAll?folds.reduce((s,f)=>s+f.net,0):null,folds,
  dataDigest:createHash('sha256').update(JSON.stringify(data)).digest('hex'),
  coverage:Object.fromEntries(symbols.map(s=>[s,{bars:data[s].length,expected:20*288,coverage:data[s].length/(20*288)}])),
  source:'https://api.bitkub.com/tradingview/history',
  assumptions:{feePerSide:.0025,spread:.001,slippagePerSide:.0005,fill:'Next five-minute open after closed-candle signal; immediate fill proxy',depth:'Simulated ample depth; no historical book',news:'Neutral bypass; historical news unavailable',rules:'Current symbol rules, not point-in-time historical rules',universe:'Six coins fixed before the run; excludes delisted assets; not full dynamic universe',evaluation:'Three consecutive two-day holdouts, each after 14-day training; choose holding time only on training',dailyTimezone:'Asia/Bangkok',boundary:'UTC fold boundaries; realized-day counts use Bangkok dates',net:'Includes estimated exit fee for any open position at fold end; no fabricated forced trade'},
  limitations:['Missing candles are never fabricated: assets with gaps in the last two hours are excluded at that step; any held missing quote pauses the step. At least 75% of each simulation interval must remain usable.','No queue position or partial fills; immediate simulated executions may overestimate fill availability','Five-minute stop checks may miss intra-candle adverse moves; live engine checks each minute','Six-asset survivor universe, current rules and synthetic depth do not validate the full production system','Holdout results are never used to retune parameters or to activate live trading']};
+await fs.writeFile('research/ohlcv-v12.json',JSON.stringify({start,end,data}));
 await fs.writeFile('assets/backtest-v12.json',JSON.stringify(report,null,2)+'\n');
 console.log('BACKTEST_JSON='+JSON.stringify(report));

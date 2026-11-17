@@ -25,7 +25,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: intraday-research
-          path: assets/backtest-v12.json
+          path: |
+            assets/backtest-v12.json
+            research/ohlcv-v12.json
       - name: Install browser dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Install Chromium

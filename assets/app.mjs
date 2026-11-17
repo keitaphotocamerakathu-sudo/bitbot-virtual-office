@@ -293,10 +293,11 @@ async function loadBacktest(){
  try{
  const r=await fetch('./assets/backtest-v12.json?v=12.0.0',{cache:'no-store'});if(!r.ok)throw Error('pending');
  const data=await r.json();if(!Array.isArray(data.folds)||!data.folds.length)throw Error('pending');
- text('backtestSummary','ข้อมูล '+data.from+' ถึง '+data.to+' · '+data.symbols.join(', ')+' · '+data.folds.length+' ช่วงทดสอบถัดจากช่วงฝึก · '+(data.totalNet>=0?'กำไร':'ขาดทุน')+'รวม '+money(Math.abs(data.totalNet))+' จากทุนเริ่มต่อช่วง '+money(data.capitalPerFold)+' · ผลนี้ยังไม่ยืนยันกำไรทุกวัน');
+ text('backtestSummary',data.status==='INSUFFICIENT_DATA'?'ข้อมูล '+data.from+' ถึง '+data.to+' ยังขาดช่วงจนไม่ผ่านเกณฑ์ความครอบคลุม 75% จึงยังสรุปกำไรจากการทดสอบย้อนหลังไม่ได้':'ข้อมูล '+data.from+' ถึง '+data.to+' · '+data.symbols.join(', ')+' · '+data.folds.length+' ช่วงทดสอบถัดจากช่วงฝึก · '+(data.totalNet>=0?'กำไร':'ขาดทุน')+'รวม '+money(Math.abs(data.totalNet))+' จากทุนเริ่มต่อช่วง '+money(data.capitalPerFold)+' · ผลนี้ยังไม่ยืนยันกำไรทุกวัน');
  $('backtestBody').replaceChildren();
  for(const row of data.folds){
- const tr=document.createElement('tr');for(const v of [row.from+' – '+row.to,row.maxHoldMinutes+' นาที',row.rounds,money(row.net),fmt(row.maxDrawdown*100)+'%',row.profitableDays+' / '+row.days]){const td=document.createElement('td');td.textContent=String(v);tr.append(td);}$('backtestBody').append(tr);
+ const values=row.status==='INSUFFICIENT_DATA'?[row.from+' – '+row.to,'ข้อมูลไม่พอ','—','ยังสรุปไม่ได้','—','—']:[row.from+' – '+row.to,row.maxHoldMinutes+' นาที',row.rounds,money(row.net),fmt(row.maxDrawdown*100)+'%',row.profitableDays+' / '+row.days];
+ const tr=document.createElement('tr');for(const v of values){const td=document.createElement('td');td.textContent=String(v);tr.append(td);}$('backtestBody').append(tr);
  }
  }catch{text('backtestSummary','ยังไม่มีผลทดสอบย้อนหลังที่ตรวจสอบได้ กำลังเก็บผลทดลองเดินหน้า ไม่ถือว่าผ่านเกณฑ์ใช้เงินจริง');}
 }

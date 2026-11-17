@@ -18,3 +18,8 @@ test('net profits and intraday controls are visible without starting live tradin
  await page.locator('.nav-item[data-page=settings]').click();await expect(page.locator('#maxHoldMinutes')).toHaveValue('60');await expect(page.locator('#maxEntries')).toHaveValue('3');
  await page.locator('.nav-item[data-page=history]').click();await expect(page.locator('#dailyBody')).toContainText('ยังไม่มีการจับคู่');await expect(page.locator('#backtestSummary')).toBeVisible();
 });
+
+test('insufficient research data is displayed without invented returns',async({page})=>{
+ await page.route('**/assets/backtest-v12.json?**',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({status:'INSUFFICIENT_DATA',from:'2026-10-28',to:'2026-11-17',symbols:['BTC_THB'],totalNet:null,folds:[{from:'2026-11-11',to:'2026-11-13',status:'INSUFFICIENT_DATA'}]})}));
+ await setup(page);await page.locator('.nav-item[data-page=history]').click();await expect(page.locator('#backtestSummary')).toContainText('ยังสรุปกำไร');await expect(page.locator('#backtestBody')).toContainText('ข้อมูลไม่พอ');
+});

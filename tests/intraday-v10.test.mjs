@@ -74,3 +74,8 @@ test('related story cards cannot be misread as article content',()=>{
  const x=extractArticle('<article data-testid="article-card">'+'Unrelated Bitcoin fraud. '.repeat(30)+'</article>');
  assert.equal(x.method,'HEADLINE_ONLY');
 });
+
+test('missing OHLC ranges and a shifted book cannot justify a fresh entry',()=>{
+ const c=config(),m=market();m.candles.forEach(b=>delete b.h);assert.equal(cycle(m,initial(c),c,now).order,null);
+ const shifted=market();shifted.depth.asks=[[3100,100]];assert.equal(cycle(shifted,initial(c),c,now).order,null);
+});
