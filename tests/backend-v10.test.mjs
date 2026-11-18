@@ -150,3 +150,8 @@ test('Codex state and requests use verified JWT identity, never a body-supplied 
 test('Codex cron requires the server runner token and cannot be triggered by a user JWT',async()=>{
  for(const allowed of [false,true]){const calls=[],h=harness((url,opts)=>{const p=String(url);calls.push(p);if(p.includes('bitbot_v10_runner_allowed'))return ok(allowed);if(p.includes('rea_codex_claim'))return ok(null);throw Error('Unexpected worker capability '+p);});const r=await h.handler(new Request('https://api.test/?action=rea-codex-run',{method:'POST',headers:{Authorization:'Bearer owner'},body:'{}'}));assert.equal(r.status,allowed?200:401);assert.equal(calls.length,allowed?2:1);}
 });
+
+test('Codex database permission errors are actionable and never masquerade as an invalid OpenAI key',async()=>{
+ const h=harness(url=>{const p=String(url);if(p.includes('/auth/v1/user'))return ok({id:'11111111-1111-4111-8111-111111111111'});if(p.includes('bitbot_v10_rate'))return ok(true);if(p.includes('rea_codex_configure'))return new Response(JSON.stringify({code:'42501',message:'permission denied for schema bitbot_private',details:'PRIVATE_DIAGNOSTIC'}),{status:403});throw Error('No provider or exchange call expected');});
+ const r=await h.handler(new Request('https://api.test/?action=rea-codex-config',{method:'POST',headers:{Authorization:'Bearer test'},body:JSON.stringify({enabled:false,consent:true})})),d=await r.json();assert.equal(r.status,503);assert.equal(d.error,'CODEX_BACKEND_PERMISSION');assert(!JSON.stringify(d).includes('PRIVATE_DIAGNOSTIC'));
+});

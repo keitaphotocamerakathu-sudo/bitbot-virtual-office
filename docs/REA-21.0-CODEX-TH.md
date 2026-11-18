@@ -35,3 +35,11 @@ Edge: เพิ่ม `rea-codex.mjs` ใน `bitbot-v10` ตัวขับ `re
 ทดสอบด้วย `npm test`, Browser/Mobile CI และ `tests/rea-codex-database.sql` แบบ transaction rollback (สร้างผู้ใช้/Key สังเคราะห์ชั่วคราว ไม่เรียก HTTP หรือส่งคำสั่งเทรด) การทดสอบกับ OpenAI จริงต้องใช้ Key ที่เจ้าของเชื่อมพร้อม consent แล้ว จึงยังไม่อ้างว่า inference สำเร็จก่อนมีผล Session จริง
 
 เอกสาร: https://developers.openai.com/api/docs/guides/agents-api/overview.md และ https://developers.openai.com/api/docs/guides/agents-api/quickstart.md
+
+## แพตช์ 21.0.1 — บันทึก Key แล้วไม่เกิดผล
+
+พบคำขอ rea-codex-config ตอบ 502 เพราะ RPC ของ Backend ตอบ 403 จากการขาด USAGE ของ service_role บน schema bitbot_private แม้มี EXECUTE บนฟังก์ชันแล้ว เพิ่มสิทธิ์เฉพาะ service_role ด้วย rea_codex_backend_access_v5.sql โดย anon/authenticated ยังไม่มีสิทธิ์เข้า schema
+
+เพิ่มการทดสอบ tests/rea-codex-backend-role.sql ด้วย SET LOCAL ROLE service_role: บันทึก Key สังเคราะห์ เข้า Queue, Claim, โหลด Key และ Checkpoint แล้ว rollback ทั้งหมด ไม่เรียก Provider หรือ Exchange
+
+หน้าเว็บเก็บข้อความข้อผิดพลาดไว้แม้มีการอัปเดตสถานะอัตโนมัติ แจ้งขั้นตอนถัดไปหลังบันทึก Key และรองรับ Enter เพื่อบันทึก คำขอวิเคราะห์ยังต้องมี consent และคำสั่งจากเจ้าของหรือการเปิดอัตโนมัติ

@@ -38,7 +38,7 @@ async function json(url,opts={},timeout=10000){
  if(url.startsWith(EXCHANGE+'/')&&Date.now()<marketRateLimitUntil)throw Object.assign(Error('Bitkub rate limit: รอรอบถัดไป'),{status:429});
  const r=await fetch(url,{...opts,signal:AbortSignal.timeout(timeout)});const d=await r.json().catch(()=>null);
  if(r.status===429&&url.startsWith(EXCHANGE+'/')){const retry=Number(r.headers.get('retry-after'));marketRateLimitUntil=Date.now()+Math.max(30000,Number.isFinite(retry)?retry*1000:30000);}
- if(!r.ok){if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_codex_')&&/^CODEX_[A-Z_]+$/.test(d?.message||''))throw Object.assign(Error(d.message),{status:409});if(url.startsWith(EXCHANGE+'/'))throw exchangeFailure(r.status,d);if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));throw Object.assign(Error('BACKEND_HTTP_'+r.status),{status:r.status===429?429:502});}return d;
+ if(!r.ok){if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_codex_')&&d?.code==='42501')throw Object.assign(Error('CODEX_BACKEND_PERMISSION'),{status:503});if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_codex_')&&/^CODEX_[A-Z_]+$/.test(d?.message||''))throw Object.assign(Error(d.message),{status:409});if(url.startsWith(EXCHANGE+'/'))throw exchangeFailure(r.status,d);if(url.startsWith(PROJECT+'/rest/v1/rpc/rea_'))console.error('REA_DATABASE_ERROR',d?.code,String(d?.message||'').slice(0,250));throw Object.assign(Error('BACKEND_HTTP_'+r.status),{status:r.status===429?429:502});}return d;
 }
 const headers=()=>({apikey:SERVICE,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'});
 async function db(path,body,method='POST'){
@@ -321,7 +321,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'21.0.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
+ if(req.method==='GET'&&a==='health')return{version:'21.0.1',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);

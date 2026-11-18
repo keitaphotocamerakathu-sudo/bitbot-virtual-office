@@ -1,5 +1,6 @@
 -- Codex managed analysis is isolated from exchange execution and financial controls.
 begin;
+grant usage on schema bitbot_private to service_role;
 create table rea.codex_settings(
  user_id uuid primary key references auth.users(id) on delete cascade,
  model text not null default 'gpt-6.1-sol' check(model='gpt-6.1-sol'),

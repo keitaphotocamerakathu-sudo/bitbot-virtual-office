@@ -1,4 +1,4 @@
-import {createCodexPanel} from './rea-codex-ui.mjs?v=21.0.0';
+import {createCodexPanel} from './rea-codex-ui.mjs?v=21.0.1';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
 import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=20.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
