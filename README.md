@@ -1,5 +1,7 @@
 # REA 26.0 — Profit protection and selective-entry study
 
+[ตั้งค่า / Settings](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#settings): ดูวงเงินเงินจริงที่ใช้อยู่ เชื่อม Bitkub และใช้ปุ่มควบคุมเดิม รองรับลิงก์เก่า #safety และ bitkub-setup.html
+
 เพิ่มชุดทดลองจุดออก 3 พอร์ตเริ่มพร้อมกัน รวม Paper 10 พอร์ต เก็บ 7 พอร์ตเดิมต่อ เปรียบเทียบจุดออกเดิมกับการเลื่อน Stop ตามกำไรสุทธิ และแบบคัดจังหวะเข้าเพิ่ม ฝั่งจริงแสดงแผนเปรียบเทียบแบบอ่านอย่างเดียว ดู [รายละเอียด REA 26.0](docs/REA-26.0-PROFIT-STUDY-TH.md) · [ผลทดลอง](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#agents)
 
 # REA 25.0 — Post-trade knowledge and parallel Paper experience
