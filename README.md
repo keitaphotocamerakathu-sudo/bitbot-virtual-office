@@ -1,3 +1,7 @@
+# REA 27.0 — Owner-approved five live positions
+
+เพิ่มเพดานเงินจริงของบัญชีที่เจ้าของอนุมัติจาก 2 เป็น 5 สถานะ รวมคำสั่งซื้อที่ยังไม่จบ แบ่งงบเสี่ยงต่อไม้ใหม่ตามจำนวนช่อง โดยคงเพดานความเสี่ยงรวมเทียบเท่า 2 ไม้เดิม ทุนที่อนุมัติ เพดานถือครอง และขาดทุนรายวันไม่เพิ่ม การถือเดิมใช้จุดออกเดิมต่อ ฐานข้อมูลตรวจสิทธิ์และเพดานซ้ำก่อนออกตั๋วส่งคำสั่ง ดู [รายละเอียด REA 27.0](docs/REA-27.0-POSITIONS-TH.md)
+
 # REA 26.0 — Profit protection and selective-entry study
 
 [ตั้งค่า / Settings](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#settings): ดูวงเงินเงินจริงที่ใช้อยู่ เชื่อม Bitkub และใช้ปุ่มควบคุมเดิม รองรับลิงก์เก่า #safety และ bitkub-setup.html

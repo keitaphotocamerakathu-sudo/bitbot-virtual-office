@@ -1,6 +1,6 @@
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=26.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=27.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -87,7 +87,8 @@ function renderLive(data){
  text('reaLiveWallet',w?baht(w.available):'—');text('reaLiveReserved',w?'Bitkub จองไว้ '+baht(w.reserved):'ยังอ่าน Wallet ไม่สำเร็จ');
  text('reaLiveEquity',s?baht(s.equity):'—');text('reaLiveCapital',s?'จัดสรรให้บอท '+baht(s.allocatedCapital)+(s.policy==='OWNER_LIMITED_LIVE'?' · วงเงินจำกัด':''):'ยังไม่ได้จัดสรรทุนให้บอท');
  text('reaLivePnl',s?baht(s.dayPnl):'—');$('reaLivePnl').classList.toggle('negative',s?.dayPnl<0);text('reaLivePnlDetail',s?'ปิดแล้ว '+baht(a.realized??s.realized)+' · ยังถือ '+baht(a.unrealized):'ยังไม่มีพอร์ต Live');
- text('reaLiveSlots',s?(a.slots??new Set(s.positions.map(p=>p.symbol)).size)+' / 2':'— / 2');text('reaLiveRiskBudget',s?'เสี่ยงต่อรายการ '+baht(a.riskBudget)+' · ขาดทุนรายวัน '+baht(a.dailyLossLimit):'ยังไม่ใช้วงเงิน');text('reaLiveHeartbeat',!session?'เข้าสู่ระบบเพื่อดูเวลาทำงานล่าสุด':'Backend ล่าสุด '+time(l.at)+(vm.stale?' · ข้อมูลเก่า':''));$('reaLiveControlsPanel').hidden=!s;
+ const maxPositions=data?.maxPositions??s?.maxPositions??a.maxPositions??2;
+ text('reaLiveSlots',s?(a.slots??new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>o.side==='BUY'&&['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status)).map(o=>o.symbol)]).size)+' / '+maxPositions:'— / '+maxPositions);text('reaLiveRiskBudget',s?'เสี่ยงต่อรายการ '+baht(a.riskBudget)+' · ขาดทุนรายวัน '+baht(a.dailyLossLimit)+(maxPositions>2?' · งบเสี่ยงเปิดเพิ่มเหลือ '+baht(a.portfolioRiskRemaining):''):'ยังไม่ใช้วงเงิน');text('reaLiveHeartbeat',!session?'เข้าสู่ระบบเพื่อดูเวลาทำงานล่าสุด':'Backend ล่าสุด '+time(l.at)+(vm.stale?' · ข้อมูลเก่า':''));$('reaLiveControlsPanel').hidden=!s;
  if(!liveBudgetEdited&&w)$('reaLiveBudget').value=String(s?.allocatedCapital??Math.floor(Math.min(w.available,livePolicy()==='OWNER_LIMITED_LIVE'?100:10000)*100)/100);
  rows('reaLivePositions',vm.positions,[p=>p.symbol,p=>number(p.qty,8),p=>price(p.entry),p=>baht(p.cost),p=>price(p.current),p=>p.unrealized===null?'รอราคาสด':baht(p.unrealized),p=>price(p.stop)+' / '+price(p.target)],s?'ยังไม่มีเหรียญที่บอทถืออยู่':'ยังไม่เปิดพอร์ต Live');
  rows('reaLiveOrders',data?.orders||[],[o=>o.client_id,o=>o.exchange_id||'ยังไม่มีการตอบรับ',o=>o.payload.symbol+' / '+o.payload.side,o=>o.status,o=>number(o.payload.amount,8)+' / '+number(o.payload.limit,6)]);
@@ -107,7 +108,7 @@ function renderLive(data){
 }
 function renderCapitalAdvice(data,now){
  const a=data?.latest?.capitalAdvice,s=data?.state,openOrders=(s?.orders||[]).filter(o=>['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status)),slots=new Set([...(s?.positions||[]).map(p=>p.symbol),...openOrders.filter(o=>o.side==='BUY').map(o=>o.symbol)]).size;
- const actionable=['USE_AVAILABLE_CASH','CONSIDER_TOP_UP','REVIEW_ALLOCATION'].includes(a?.status),entryReady=!!s&&data.mode==='LIVE_ENABLED'&&data.latest?.health==='OK'&&!s.buyPaused&&!s.dailyLocked&&!s.baselinePending&&s.kill==='NONE'&&slots<2&&!openOrders.length;
+ const actionable=['USE_AVAILABLE_CASH','CONSIDER_TOP_UP','REVIEW_ALLOCATION'].includes(a?.status),entryReady=!!s&&data.mode==='LIVE_ENABLED'&&data.latest?.health==='OK'&&!s.buyPaused&&!s.dailyLocked&&!s.baselinePending&&s.kill==='NONE'&&slots<(data?.maxPositions??s?.maxPositions??2)&&!openOrders.length;
  const valid=!!session&&fresh(a?.at,now,45000)&&fresh(data?.latest?.at,now,45000)&&(!actionable||entryReady&&(a.entries||[]).some(e=>e.eligible&&fresh(e.priceAt,now,30000))),f=valid?a.financials:null;
  text('reaCapitalHeadline',!session?'เข้าสู่ระบบเพื่อดูคำแนะนำเงินทุน':!a?'รอ Backend ประเมินเงินทุน':!valid?'รอคำแนะนำรอบใหม่':a.headline);
  text('reaCapitalMessage',valid?a.message:'คำแนะนำจะแสดงเมื่อมีข้อมูลบัญชีและผลตรวจ Backend ที่ยังสด');text('reaCapitalNext',valid?a.nextStep:'รอข้อมูลที่ตรวจสอบได้');
@@ -179,8 +180,9 @@ function renderSettings(){
  $('reaSettingsLivePanel').hidden=scope!=='LIVE';$('reaSettingsControlHost').hidden=scope!=='LIVE';
  text('reaSettingsMode',!session?'รอเข้าสู่ระบบ':s?(s.policy==='OWNER_LIMITED_LIVE'?'LIVE · วงเงินจำกัด':'LIVE · เงินจริง'):'ยังไม่เปิด Live');
  text('reaSettingsStatus',!session?'เข้าสู่ระบบเพื่อดูการตั้งค่าของบัญชีคุณ':liveLoadError||status.description);
- text('reaSettingsCapital',s?baht(s.allocatedCapital):'—');text('reaSettingsSlots',s?'2 สถานะ':'—');text('reaSettingsRisk',s?baht(a.riskBudget):'—');text('reaSettingsDailyLimit',s?baht(a.dailyLossLimit):'—');
- text('reaSettingsPolicy',s?'สถานะ: '+status.label+' · ใช้ Spot 1x · งบต่อเหรียญไม่เกิน '+baht(a.maxPosition)+' · ถือรวมไม่เกิน '+baht(a.maxExposure):'เชื่อม Bitkub และเปิดพอร์ตเงินจริงตามขั้นตอนเจ้าของ');
+ const maxPositions=data?.maxPositions??s?.maxPositions??a.maxPositions??2;
+ text('reaSettingsCapital',s?baht(s.allocatedCapital):'—');text('reaSettingsSlots',s?maxPositions+' สถานะ':'—');text('reaSettingsRisk',s?baht(a.riskBudget):'—');text('reaSettingsDailyLimit',s?baht(a.dailyLossLimit):'—');
+ text('reaSettingsPolicy',s?'สถานะ: '+status.label+' · ใช้ Spot 1x · งบต่อเหรียญไม่เกิน '+baht(a.maxPosition)+' · ถือรวมไม่เกิน '+baht(a.maxExposure)+(maxPositions>2?' · งบเสี่ยงรวม '+baht(a.portfolioRiskBudget)+' · ใช้อยู่ '+baht(a.portfolioRiskUsed)+' · เพิ่มช่องโดยแบ่งงบเสี่ยงเดิม ไม้ที่ถืออยู่คงจุดออกเดิม':''):'เชื่อม Bitkub และเปิดพอร์ตเงินจริงตามขั้นตอนเจ้าของ');
  text('reaSettingsUpdated',session&&l.at?'ข้อมูล Backend '+time(l.at)+(!fresh(l.at,Date.now())?' · ข้อมูลเก่า รอการอัปเดต':''):'');
 }
 function renderOffice(){

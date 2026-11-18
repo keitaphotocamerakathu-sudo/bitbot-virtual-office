@@ -11,14 +11,39 @@ export const LIMITED_SPEC='REA-LIMITED-19.1';
 export const liveActive=o=>['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status);
 const money=n=>Math.round((n+Number.EPSILON)*100)/100;
 const down=n=>Math.floor((n+1e-9)*100)/100;
+const up=n=>Math.ceil((n-1e-9)*100)/100;
 const fraction=o=>Math.max(0,o.amount-(o.executed||0));
+export function livePositionLimit(s){
+ const n=s?.maxPositions??2;
+ if(!Number.isInteger(n)||n<1||n>5)throw Error('INVALID_LIVE_POSITION_LIMIT');
+ return n;
+}
 export function initialLive(capital,now=Date.now(),policy='STANDARD'){
  if(!['STANDARD',LIMITED_POLICY].includes(policy)||!Number.isFinite(capital)||capital<10||capital>(policy===LIMITED_POLICY?100:10000)||Math.abs(capital-down(capital))>1e-7)throw Error('INVALID_LIVE_CAPITAL');
  return{...initialREA(now),mode:'LIVE',policy,cash:capital,equity:capital,dayStart:capital,peak:capital,allocatedCapital:capital,accounting:'EXCHANGE_RECEIPTS',lastAt:now};
 }
 export function liveLimits(s){
  const limited=s.policy===LIMITED_POLICY,base=Math.min(10000,s.dayStart,s.equity,...(limited?[s.allocatedCapital]:[]));
- return{riskBudget:down(Math.min(100,Math.max(0,base)*.01)),dailyLossLimit:down(Math.min(300,s.dayStart*.03,...(limited?[s.allocatedCapital*.03]:[]))),maxPosition:limited?down(s.allocatedCapital*.4):4000,maxExposure:limited?down(s.allocatedCapital*.8):8000};
+ return{riskBudget:down(down(Math.min(100,Math.max(0,base)*.01))*Math.min(1,2/livePositionLimit(s))),dailyLossLimit:down(Math.min(300,s.dayStart*.03,...(limited?[s.allocatedCapital*.03]:[]))),maxPosition:limited?down(s.allocatedCapital*.4):4000,maxExposure:limited?down(s.allocatedCapital*.8):8000};
+}
+// Expanded slots share the original two-position risk envelope. Existing holdings
+// retain their stops and consume this envelope until exchange receipts close them.
+export function livePositionRisk(s){
+ const maxPositions=livePositionLimit(s),unit=liveLimits({...s,maxPositions:2}).riskBudget;
+ const portfolioRiskBudget=down(unit*Math.min(2,maxPositions));
+ const held=s.positions.reduce((n,p)=>{
+  const entry=s.orders.find(o=>o.side==='BUY'&&o.id===p.positionId),original=entry?.amount>0&&Number.isFinite(entry.modeledLoss)?entry.modeledLoss*p.cost/entry.amount:0;
+  return n+up(Math.max(original,Math.max(0,p.cost-p.qty*p.stop*(1-REA_LIMITS.fee-REA_LIMITS.slippage))+.10));
+ },0);
+ const pending=s.orders.filter(o=>liveActive(o)&&o.side==='BUY'&&fraction(o)>0).reduce((n,o)=>{
+  const f=Number.isFinite(o.riskFraction)&&o.riskFraction>0?o.riskFraction:Number.isFinite(o.stop)&&o.limit>o.stop&&o.stop>0?1-o.stop/o.limit+REA_LIMITS.fee*2+REA_LIMITS.slippage:Infinity;
+  return n+up(fraction(o)*f+.10);
+ },0);
+ const portfolioRiskUsed=Number.isFinite(held+pending)?money(held+pending):null;
+ return{maxPositions,portfolioRiskBudget,portfolioRiskUsed,portfolioRiskRemaining:portfolioRiskUsed===null?0:down(Math.max(0,portfolioRiskBudget-portfolioRiskUsed)),riskBaselinePositions:2};
+}
+export function liveSizingCaps(s){
+ return livePositionLimit(s)>2?{riskBudgetCap:liveLimits(s).riskBudget,openRiskRoom:livePositionRisk(s).portfolioRiskRemaining}:{};
 }
 export function riskProjection(s){
  return{...s,orders:s.orders.map(o=>({...o,status:liveActive(o)?'OPEN':o.status,remaining:fraction(o),reserved:o.side==='BUY'&&liveActive(o)?fraction(o):0}))};
@@ -28,7 +53,7 @@ export function validateLive(s){
  if(new Set(s.orders.map(o=>o.id)).size!==s.orders.length||new Set(s.positions.map(p=>p.symbol)).size!==s.positions.length)throw Error('DUPLICATE_LIVE_STATE');
  if(s.positions.some(p=>!validSymbol(p.symbol)||![p.qty,p.cost,p.stop,p.target].every(Number.isFinite)||p.qty<=0||p.cost<=0))throw Error('INVALID_LIVE_POSITION');
  const slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]);
- if(slots.size>2)throw Error('LIVE_POSITION_LIMIT');
+ if(slots.size>livePositionLimit(s))throw Error('LIVE_POSITION_LIMIT');
  return s;
 }
 export function markLive(state,markets,now=Date.now()){
@@ -50,7 +75,7 @@ export function walletMatches(s,w,now=Date.now()){
  if(w.THB.available+w.THB.reserved+.1<s.cash)return false;
  return s.positions.every(p=>{const a=w[assetOf(p.symbol)];return a&&a.available+a.reserved+1e-8>=p.qty;});
 }
-export function liveSummary(s){return s?{...analyticsREA(riskProjection(s)),...liveLimits(s),policy:s.policy||'STANDARD'}:null;}
+export function liveSummary(s){return s?{...analyticsREA(riskProjection(s)),...liveLimits(s),...livePositionRisk(s),policy:s.policy||'STANDARD'}:null;}
 export function applyExchangeInfo(state,orderId,info,now=Date.now()){
  const s=structuredClone(validateLive(state)),o=s.orders.find(x=>x.id===orderId),fills=[];
  if(!o||!info||!Array.isArray(info.history)||!['filled','unfilled','cancelled','canceled'].includes(String(info.status).toLowerCase()))throw Error('EXCHANGE_ORDER_INFO_INVALID');
@@ -125,8 +150,9 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
    const m=markets.find(m=>m.symbol===r.symbol),risk=riskProjection(s),limits=liveLimits(s),slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]);
    if(s.policy===LIMITED_POLICY)risk.dayStart=Math.min(risk.dayStart,s.allocatedCapital);
    const ownLesson=lossReentryGuard(s,r.symbol,r.strategy,now),paperLesson=paperExperienceGuard(experience,r.symbol,r.strategy,now),lesson=ownLesson.blocked?ownLesson:paperLesson;
-   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=2?'MAX_POSITIONS':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':ownLesson.blocked?ownLesson.reason:paperLesson.blocked?paperLesson.reason:policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
-   const size=!reason?riskSizeREA(risk,{stopDistance:r.stopDistance,minQuote:m.rules.minQuote},markets,now):null;
+   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=livePositionLimit(s)?'MAX_POSITIONS':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':ownLesson.blocked?ownLesson.reason:paperLesson.blocked?paperLesson.reason:policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
+   const caps=liveSizingCaps(s);if(!reason&&caps.openRiskRoom===0)reason='PORTFOLIO_RISK_EXHAUSTED';
+   const size=!reason?riskSizeREA(risk,{stopDistance:r.stopDistance,minQuote:m.rules.minQuote,...caps},markets,now):null;
    if(size&&!size.notional)reason=size.reason;
    const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason,learning:{checked:true,...(lesson.blocked?{restriction:lesson}:{paperReason:paperLesson.reason})},...(policy.state==='ACTIVE'?{codex:{sessionId:policy.sessionId,action:policy.actions.find(a=>a.symbol===r.symbol)?.action||'NUMERICAL_FALLBACK',reason:policy.actions.find(a=>a.symbol===r.symbol)?.reason||'ไม่พบข้อเสนอเฉพาะเหรียญ ใช้กลยุทธ์เชิงตัวเลข'}}:{})};decisions.push(decision);
    if(reason)continue;
@@ -136,7 +162,7 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
    const symbolExposure=s.positions.filter(p=>p.symbol===r.symbol).reduce((v,p)=>v+p.cost,0)+pending.filter(o=>o.symbol===r.symbol).reduce((v,o)=>v+fraction(o),0);
    const amount=down(Math.min(size.notional,limits.maxExposure-exposure,limits.maxPosition-symbolExposure,wallet.THB.available-pending.reduce((a,o)=>a+fraction(o),0)));
    if(amount<m.rules.minQuote){decision.reason='AVAILABLE_WALLET_TOO_SMALL';continue;}
-   const o={...orderBase(s,m,'BUY',id(),now),amount,remaining:amount,type:'limit',limit,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:size.riskFraction,modeledLoss:money(amount*size.riskFraction+.10),reason:'RISK_APPROVED',signalId:decision.signalId,strategy:r.strategy,entryEvidence:entryEvidence(r,m,now),learning:decision.learning};
+   const o={...orderBase(s,m,'BUY',id(),now),amount,remaining:amount,type:'limit',limit,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:size.riskFraction,modeledLoss:livePositionLimit(s)>2?up(amount*size.riskFraction+.10):money(amount*size.riskFraction+.10),reason:'RISK_APPROVED',signalId:decision.signalId,strategy:r.strategy,entryEvidence:entryEvidence(r,m,now),learning:decision.learning};
    s.orders.push(o);s.seen[r.symbol]=r.signalAt;decision.reason='RISK_APPROVED';decision.approved=true;intents.push({action:'PLACE',order:o});
   }
  }

@@ -49,6 +49,21 @@ function fundedLive(){
 function capitalFixture(live,extra={}){
  const at=Date.now();return{at,analyzedAt:at,status:'WAIT_SLOTS',headline:'ยังไม่ต้องเติมเงิน',message:'ครบ 2 สถานะรวมคำสั่งซื้อค้างแล้ว',nextStep:'รอช่องว่างและสัญญาณที่ผ่าน',topUpTHB:0,budgetIncreaseTHB:0,suggestedAllocationTHB:null,recommendedEntryTHB:0,financials:{usableTHB:33.52,riskBudget:.99,maxPosition:39.98},positions:live.state.positions.map(p=>({symbol:p.symbol,costTHB:p.cost})),entries:[{symbol:'BTC_THB',amountTHB:0,stopDistance:.02,riskBudget:.99,modeledLoss:0,reason:'WAIT_SLOTS',eligible:true,priceAt:at}],...extra};
 }
+test('owner-approved five-slot account shows real limits in Live and Settings without altering Paper',async({page})=>{
+ const live=fundedLive();live.maxPositions=5;live.state.maxPositions=5;
+ live.state.orders.push({id:'QA_PENDING',symbol:'ETH_THB',side:'BUY',status:'CANCEL_PENDING',amount:10,executed:0});
+ Object.assign(live.latest.summary,{slots:2,maxPositions:5,riskBudget:.39,portfolioRiskBudget:1.98,portfolioRiskUsed:1.98,portfolioRiskRemaining:0,maxPosition:39.98,maxExposure:79.97});
+ live.latest.decisions=[{symbol:'BTC_THB',reason:'PORTFOLIO_RISK_EXHAUSTED',at:Date.now()}];
+ const {calls,errors}=await setup(page,{live,path:'/rea.html#live'});
+ await expect(page.locator('#reaLiveSlots')).toHaveText('2 / 5');await expect(page.locator('#reaLiveRiskBudget')).toContainText('฿0.39');await expect(page.locator('#reaLiveRiskBudget')).toContainText('฿2.99');await expect(page.locator('#reaLiveRiskBudget')).toContainText('เหลือ ฿0.00');await expect(page.locator('#reaLiveReasons')).toContainText('งบเสี่ยงรวมถูกใช้แล้ว');
+ await page.locator('#reaSettingsShortcut').click();await expect(page.locator('#reaSettingsSlots')).toHaveText('5 สถานะ');await expect(page.locator('#reaSettingsRisk')).toHaveText('฿0.39');await expect(page.locator('#reaSettingsPolicy')).toContainText('งบเสี่ยงรวม ฿1.98');await expect(page.locator('#reaSettingsCapital')).toHaveText('฿99.97');
+ await page.locator('[data-rea-page=overview]').click();await expect(page.locator('#reaSlots')).toHaveText('0 / 2');expect(calls.every(c=>['rea-state','rea-live-state','rea-codex-state'].includes(c.a))).toBe(true);expect(errors).toEqual([]);
+});
+test('five-slot capital advice is visible with two holdings and room, without a frontend trade',async({page})=>{
+ const live=fundedLive(),at=Date.now();live.maxPositions=5;live.state.maxPositions=5;live.latest.summary.slots=2;
+ live.latest.capitalAdvice=capitalFixture(live,{status:'USE_AVAILABLE_CASH',headline:'ยังไม่ต้องเติมเงิน',message:'มีงบรองรับไม้ใหม่ตามความเสี่ยง',recommendedEntryTHB:10.74,financials:{usableTHB:33.54,riskBudget:.39,maxPosition:39.98},entries:[{symbol:'BTC_THB',eligible:true,amountTHB:10.74,riskBudget:.39,modeledLoss:.39,stopDistance:.02,reason:'RISK_APPROVED',priceAt:at}]});
+ const {calls,errors}=await setup(page,{live,path:'/rea.html#live'});await expect(page.locator('#reaCapitalMessage')).toContainText('มีงบรองรับไม้ใหม่');await expect(page.locator('#reaCapitalLot')).toHaveText('฿10.74');expect(calls.every(c=>['rea-state','rea-live-state','rea-codex-state'].includes(c.a))).toBe(true);expect(errors).toEqual([]);
+});
 test('Settings aliases and old query links open the actual settings page for guests without account calls',async({page})=>{
  for(const path of ['/rea.html#settings','/rea.html#setting','/rea.html#safety','/rea.html?page=settings']){const {calls,errors}=await setup(page,{signed:false,path});await expect(page.locator('#reaSettingsPage')).toBeVisible();await expect(page.locator('#reaPageTitle')).toHaveText('ตั้งค่าและความปลอดภัย');await expect(page.locator('[data-rea-page=safety]')).toHaveAttribute('aria-current','page');await expect(page.locator('#reaSettingsCapital')).toHaveText('—');await expect(page.locator('#reaLiveSaveKey')).toBeDisabled();expect(calls).toHaveLength(0);expect(errors).toEqual([]);}
 });

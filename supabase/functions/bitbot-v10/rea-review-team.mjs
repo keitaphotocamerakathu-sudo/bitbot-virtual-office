@@ -3,6 +3,7 @@ import {indicators,resample} from './technical.mjs';
 import {REA_LIMITS,scoreREA} from './rea-core.mjs';
 import {correlationReview,CORRELATION_ROLE} from './rea-correlation.mjs';
 import {lossReview,LOSS_ROLE} from './rea-loss-diagnostics.mjs';
+import {livePositionLimit} from './rea-live-core.mjs';
 export const REVIEW_ROLES=['Data Integrity Auditor','Liquidity Reviewer','Multi-timeframe Analyst','Signal Challenger','Cost & Exit Reviewer','Portfolio Auditor','Performance Monitor',CORRELATION_ROLE,LOSS_ROLE];
 const finite=x=>typeof x==='number'&&Number.isFinite(x);
 const active=o=>['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status);
@@ -35,7 +36,8 @@ export function reviewTeam({bundle,state,wallet=null,now=Date.now(),timings={}})
  const costs=signals.filter(s=>finite(s.stopDistance)).map(s=>{const friction=REA_LIMITS.fee*2+REA_LIMITS.slippage,reward=s.stopDistance*2-friction,risk=s.stopDistance+friction;return{symbol:s.symbol,roundTripFee:REA_LIMITS.fee*2,slippage:REA_LIMITS.slippage,netRewardFraction:round(reward),modeledRiskFraction:round(risk),netRewardToRisk:round(reward/risk)};});
  rows.push(review(REVIEW_ROLES[4],costs.length?'COMPLETED':'WAITING','ตรวจต้นทุนค่าธรรมเนียมและระยะจุดออก '+costs.length+' คู่',{assumption:'MODEL_ALLOWANCE_NOT_A_PROFIT_FORECAST',examples:sample(costs)}));
  const positions=Array.isArray(state?.positions)?state.positions:[],pending=(state?.orders||[]).filter(o=>active(o)&&o.side==='BUY'),slots=new Set([...positions.map(p=>p.symbol),...pending.map(o=>o.symbol)]).size,exposure=positions.reduce((n,p)=>n+(finite(p.cost)?p.cost:0),0)+pending.reduce((n,o)=>n+Math.max(0,finite(o.reserved)?o.reserved:finite(o.remaining)?o.remaining:(o.amount||0)-(o.executed||0)),0);
- rows.push(review(REVIEW_ROLES[5],!state?'WAITING':slots>2?'DEGRADED':'COMPLETED','ตรวจพอร์ต '+positions.length+' สถานะ · รวมซื้อค้าง '+slots+'/2 ช่อง',{positions:positions.length,pendingBuys:pending.length,slots,exposureTHB:round(exposure),botCash:finite(state?.cash)?state.cash:null,walletTHB:finite(wallet?.THB?.available)?wallet.THB.available:null,readOnly:true}));
+ const maxPositions=state?.mode==='LIVE'?livePositionLimit(state):2;
+ rows.push(review(REVIEW_ROLES[5],!state?'WAITING':slots>maxPositions?'DEGRADED':'COMPLETED','ตรวจพอร์ต '+positions.length+' สถานะ · รวมซื้อค้าง '+slots+'/'+maxPositions+' ช่อง',{positions:positions.length,pendingBuys:pending.length,slots,maxPositions,exposureTHB:round(exposure),botCash:finite(state?.cash)?state.cash:null,walletTHB:finite(wallet?.THB?.available)?wallet.THB.available:null,readOnly:true}));
  const measured=Object.fromEntries(Object.entries(timings).filter(([,v])=>finite(v)&&v>=0)),slow=Object.values(measured).some(v=>v>20000);
  rows.push(review(REVIEW_ROLES[6],Object.keys(measured).length?slow?'DEGRADED':'COMPLETED':'WAITING',Object.keys(measured).length?'วัดเวลา Backend · ก่อนส่งแผน '+Math.round(measured.pipelineMs||0)+' ms · อ่าน Wallet '+(measured.walletReads??'—')+' ครั้ง':'รอเวลาที่วัดจาก Backend',{...measured,privateReadMode:finite(measured.preflightMs)?'PARALLEL_WALLET_AND_OPEN_ORDERS':'NOT_USED',accuracyClaim:'NOT_A_WIN_RATE'}));
  rows.push(correlationReview({bundle:guarded,state,signals,now}),lossReview({bundle:guarded,state,now}));

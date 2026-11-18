@@ -1,13 +1,13 @@
 // Read-only capital readiness advice. No credentials, network, LLM, orders or setting writes.
 import {REA_LIMITS,scoreREA,riskSizeREA} from './rea-core.mjs';
-import {liveLimits,riskProjection,walletMatches,liveActive,LIMITED_POLICY} from './rea-live-core.mjs';
+import {liveLimits,riskProjection,walletMatches,liveActive,LIMITED_POLICY,livePositionLimit,livePositionRisk,liveSizingCaps} from './rea-live-core.mjs';
 import {tickPrice} from './engine.mjs';
 const finite=Number.isFinite,down=n=>Math.floor((n+1e-9)*100)/100,up=n=>Math.max(0,Math.ceil((n-1e-9)*100)/100);
 const remaining=o=>Math.max(0,o.amount-(o.executed||0));
 const thb=n=>n.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})+' บาท';
 function financials(s,w){
  const limits=liveLimits(s),pending=s.orders.filter(o=>liveActive(o)&&o.side==='BUY'),reserved=down(pending.reduce((n,o)=>n+remaining(o),0)),botFree=down(Math.max(0,s.cash-reserved));
- return{...limits,allocatedCapital:s.allocatedCapital,equity:s.equity,dayPnl:s.dayPnl,botFreeTHB:botFree,walletAvailableTHB:finite(w?.THB?.available)?w.THB.available:null,walletReservedTHB:finite(w?.THB?.reserved)?w.THB.reserved:null,usableTHB:finite(w?.THB?.available)?down(Math.max(0,Math.min(botFree,w.THB.available-reserved))):null,reservedTHB:reserved,slots:new Set([...s.positions.map(p=>p.symbol),...pending.map(o=>o.symbol)]).size,policyCap:s.policy===LIMITED_POLICY?100:10000};
+ return{...limits,...livePositionRisk(s),allocatedCapital:s.allocatedCapital,equity:s.equity,dayPnl:s.dayPnl,botFreeTHB:botFree,walletAvailableTHB:finite(w?.THB?.available)?w.THB.available:null,walletReservedTHB:finite(w?.THB?.reserved)?w.THB.reserved:null,usableTHB:finite(w?.THB?.available)?down(Math.max(0,Math.min(botFree,w.THB.available-reserved))):null,reservedTHB:reserved,slots:new Set([...s.positions.map(p=>p.symbol),...pending.map(o=>o.symbol)]).size,policyCap:s.policy===LIMITED_POLICY?100:10000};
 }
 function gate({state:s,wallet:w,now,mode,health,entriesPermitted}){
  if(!s||mode!=='LIVE_ENABLED')return['WAIT_SETUP','รอจัดสรรทุนและตรวจบัญชี','ยังไม่ประเมินการเติมเงินก่อนเปิดบัญชีบอทที่ได้รับอนุมัติ'];
@@ -16,7 +16,7 @@ function gate({state:s,wallet:w,now,mode,health,entriesPermitted}){
  if(s.orders.some(o=>['UNKNOWN','SUBMITTING'].includes(o.status)))return['WAIT_RECONCILIATION','รอกระทบยอดคำสั่งก่อน','ยังไม่ทราบผลคำสั่งเดิม จึงยังไม่แนะนำเติมหรือเพิ่มขนาดไม้'];
  if(!finite(w?.THB?.available)||!finite(w?.THB?.reserved)||w.THB.available<0||w.THB.reserved<0||!walletMatches(s,w,now))return['WAIT_WALLET','รอตรวจยอด Wallet','ยอดหรือเวลาของ Wallet ยังตรวจสอบไม่ได้ จึงยังไม่คำนวณเงินที่ควรเติม'];
  const slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]).size;
- if(slots>=2)return['WAIT_SLOTS','ยังไม่ต้องเติมเงิน','ครบ 2 สถานะรวมคำสั่งซื้อค้างแล้ว ต้องมีช่องว่างก่อนเปิดไม้ใหม่'];
+ if(slots>=livePositionLimit(s))return['WAIT_SLOTS','ยังไม่ต้องเติมเงิน','ครบ '+livePositionLimit(s)+' สถานะรวมคำสั่งซื้อค้างแล้ว ต้องมีช่องว่างก่อนเปิดไม้ใหม่'];
  if(s.orders.some(liveActive))return['WAIT_ORDERS','รอคำสั่งเดิมเสร็จก่อน','รอผลจับคู่หรือยกเลิกให้ชัดก่อนประเมินการเติมเงิน'];
  return null;
 }
@@ -27,7 +27,7 @@ function sizeEntry(e,{state:s,wallet:w,bundle,now},blocked){
  if(!reason&&s.seen[e.symbol]===e.signalAt)reason='SIGNAL_ALREADY_USED';
  if(!reason&&e.strategyBlocked)reason='STRATEGY_RESTRICTION';
  const risk=riskProjection(s);if(s.policy===LIMITED_POLICY)risk.dayStart=Math.min(risk.dayStart,s.allocatedCapital);
- const size=riskSizeREA(risk,{stopDistance:e.stopDistance,minQuote:e.minQuote},bundle?.markets||[],now),limits=liveLimits(s),pending=s.orders.filter(o=>liveActive(o)&&o.side==='BUY'),reserved=pending.reduce((n,o)=>n+remaining(o),0),exposure=s.positions.reduce((n,p)=>n+p.cost,0)+reserved;
+ const size=riskSizeREA(risk,{stopDistance:e.stopDistance,minQuote:e.minQuote,...liveSizingCaps(s)},bundle?.markets||[],now),limits=liveLimits(s),pending=s.orders.filter(o=>liveActive(o)&&o.side==='BUY'),reserved=pending.reduce((n,o)=>n+remaining(o),0),exposure=s.positions.reduce((n,p)=>n+p.cost,0)+reserved;
  const maxByRisk=finite(size.riskFraction)?down(Math.max(0,(size.risk-.10)/size.riskFraction)):0;
  const ceiling=down(Math.max(0,Math.min(maxByRisk,(4000-.10)/(1+REA_LIMITS.fee),(8000-exposure-.10)/(1+REA_LIMITS.fee),limits.maxPosition,limits.maxExposure-exposure)));
  let amount=reason?0:down(Math.max(0,Math.min(size.notional,limits.maxExposure-exposure,limits.maxPosition,(w?.THB?.available||0)-reserved)));

@@ -23,7 +23,7 @@ export function correlateMarkets(a,b,now=Date.now()){
 }
 export function correlationReview({bundle,state,signals=[],now=Date.now()}){
  const markets=bundle?.markets||[],held=[...new Set([...(state?.positions||[]).map(p=>p.symbol),...(state?.orders||[]).filter(o=>active(o)&&o.side==='BUY').map(o=>o.symbol)])],requests=[];
- if(held.length>=2)requests.push({a:held[0],b:held[1],kind:'HELD_OR_PENDING'});
+ if(held.length>=2){for(let i=0;i<held.length;i++)for(let j=i+1;j<held.length;j++)requests.push({a:held[i],b:held[j],kind:'HELD_OR_PENDING'});}
  else{const candidates=signals.filter(s=>s.eligible&&!held.includes(s.symbol)).sort((a,b)=>b.score-a.score).slice(0,3).map(s=>s.symbol);
   if(held.length)for(const b of candidates)requests.push({a:held[0],b,kind:'CANDIDATE_COMPARISON'});
   else for(let i=0;i<candidates.length;i++)for(let j=i+1;j<candidates.length;j++)requests.push({a:candidates[i],b:candidates[j],kind:'CANDIDATE_COMPARISON'});
