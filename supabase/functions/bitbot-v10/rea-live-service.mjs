@@ -80,7 +80,7 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
      const experience=experiences.get(row.user_id)||null;
      const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&permitted,operationalLock:!permitted||!!scanError,brain:brains.get(row.user_id),experience});
      state=out.state;intents=out.intents;
-     latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state),reason:scanError||out.reason,
+     latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state,clock()),reason:scanError||out.reason,
       quotes:(bundle.markets||[]).filter(m=>state.positions.some(p=>p.symbol===m.symbol)).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,last:m.last,at:m.observedAt})),
       ...(riskOnly?{}:{team,codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),performance:{...timings,pipelineMs:clock()-began,lane},accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
      const capitalContext={state,bundle,wallet:pf.wallet,now:clock(),mode:row.mode,health:latest.health,entriesPermitted:permitted&&!scanError,decisions:out.decisions};

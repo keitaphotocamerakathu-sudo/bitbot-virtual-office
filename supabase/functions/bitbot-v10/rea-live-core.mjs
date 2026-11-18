@@ -4,6 +4,7 @@ import {codexPlan} from './rea-codex-policy.mjs';
 import {initialREA,REA_LIMITS,scoreREA,quoteOK,riskSizeREA,markREA,dayKey,analyticsREA} from './rea-core.mjs';
 import {tickPrice,roundUnit,validSymbol,assetOf} from './engine.mjs';
 import {entryEvidence,exitEvidence,lossReentryGuard,paperExperienceGuard} from './rea-learning.mjs';
+import {capitalGuard,guardScale,guardedRisk,GUARD_RULES,stopExitEstimate,RISK_POLICY_SPEC} from './rea-risk-policy.mjs';
 export const LIVE_SPEC='REA-LIVE-19.0';
 export const LIVE_CONFIRM='เปิดซื้อขายจริง Bitkub';
 export const LIMITED_POLICY='OWNER_LIMITED_LIVE';
@@ -23,8 +24,8 @@ export function initialLive(capital,now=Date.now(),policy='STANDARD'){
  return{...initialREA(now),mode:'LIVE',policy,cash:capital,equity:capital,dayStart:capital,peak:capital,allocatedCapital:capital,accounting:'EXCHANGE_RECEIPTS',lastAt:now};
 }
 export function liveLimits(s){
- const limited=s.policy===LIMITED_POLICY,base=Math.min(10000,s.dayStart,s.equity,...(limited?[s.allocatedCapital]:[]));
- return{riskBudget:down(down(Math.min(100,Math.max(0,base)*.01))*Math.min(1,2/livePositionLimit(s))),dailyLossLimit:down(Math.min(300,s.dayStart*.03,...(limited?[s.allocatedCapital*.03]:[]))),maxPosition:limited?down(s.allocatedCapital*.4):4000,maxExposure:limited?down(s.allocatedCapital*.8):8000};
+ const limited=s.policy===LIMITED_POLICY,guard=guardedRisk(s),base=Math.min(10000,s.dayStart,s.equity,...(limited||guard?[s.allocatedCapital]:[])),unit=down(down(Math.min(100,Math.max(0,base)*.01))*guardScale(s));
+ return{riskBudget:down(unit*Math.min(1,2/livePositionLimit(s))),dailyLossLimit:down(Math.min(300,s.dayStart*.03,...(limited?[s.allocatedCapital*.03]:[]))),maxPosition:Math.min(limited?down(s.allocatedCapital*.4):4000,guard?down(base*GUARD_RULES.positionFraction):Infinity),maxExposure:Math.min(limited?down(s.allocatedCapital*.8):8000,guard?down(base*GUARD_RULES.exposureFraction):Infinity)};
 }
 // Expanded slots share the original two-position risk envelope. Existing holdings
 // retain their stops and consume this envelope until exchange receipts close them.
@@ -43,7 +44,15 @@ export function livePositionRisk(s){
  return{maxPositions,portfolioRiskBudget,portfolioRiskUsed,portfolioRiskRemaining:portfolioRiskUsed===null?0:down(Math.max(0,portfolioRiskBudget-portfolioRiskUsed)),riskBaselinePositions:2};
 }
 export function liveSizingCaps(s){
- return livePositionLimit(s)>2?{riskBudgetCap:liveLimits(s).riskBudget,openRiskRoom:livePositionRisk(s).portfolioRiskRemaining}:{};
+ return livePositionLimit(s)>2||guardedRisk(s)?{riskBudgetCap:liveLimits(s).riskBudget,openRiskRoom:livePositionRisk(s).portfolioRiskRemaining}:{};
+}
+export function liveRiskManager(s,now=Date.now()){
+ const guard=capitalGuard(s,now);if(!guard)return null;
+ const limits=liveLimits(s),portfolio=livePositionRisk(s),pending=s.orders.filter(o=>liveActive(o)&&o.side==='BUY'),reserved=pending.reduce((n,o)=>n+fraction(o),0),exposure=s.positions.reduce((n,p)=>n+p.cost,0)+reserved;
+ const spendableAfterReserveTHB=down(Math.max(0,s.cash-reserved-guard.cashReserveTHB));
+ const overEnvelope=portfolio.portfolioRiskUsed===null||portfolio.portfolioRiskUsed>portfolio.portfolioRiskBudget||exposure>limits.maxExposure||s.cash-reserved<guard.cashReserveTHB||pending.some(o=>up(fraction(o)*(o.riskFraction||0)+.10)>limits.riskBudget);
+ const reason=s.dailyLocked?'DAILY_LOSS_LOCK':s.buyPaused?'OWNER_PAUSED':s.kill!=='NONE'?'ENTRY_LOCKED':s.baselinePending?'MIDNIGHT_BASELINE_UNVERIFIED':guard.cooldownActive?'LOSS_STREAK_COOLDOWN':overEnvelope||portfolio.portfolioRiskRemaining===0?'PORTFOLIO_RISK_EXHAUSTED':spendableAfterReserveTHB===0?'CASH_RESERVE_PROTECTED':null;
+ return{...guard,...limits,...portfolio,spendableAfterReserveTHB,exposureTHB:money(exposure),canOpenEntries:reason===null,reason,tier:guard.cooldownActive?'COOLDOWN':guard.cautious?'CAUTIOUS':'NORMAL',status:reason?'PAUSED':guard.cautious?'CAUTIOUS':'READY',cancelPendingBuys:guard.cooldownActive||overEnvelope,canIncreaseLimits:false};
 }
 export function riskProjection(s){
  return{...s,orders:s.orders.map(o=>({...o,status:liveActive(o)?'OPEN':o.status,remaining:fraction(o),reserved:o.side==='BUY'&&liveActive(o)?fraction(o):0}))};
@@ -54,6 +63,7 @@ export function validateLive(s){
  if(s.positions.some(p=>!validSymbol(p.symbol)||![p.qty,p.cost,p.stop,p.target].every(Number.isFinite)||p.qty<=0||p.cost<=0))throw Error('INVALID_LIVE_POSITION');
  const slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]);
  if(slots.size>livePositionLimit(s))throw Error('LIVE_POSITION_LIMIT');
+ if(guardedRisk(s))capitalGuard(s);
  return s;
 }
 export function markLive(state,markets,now=Date.now()){
@@ -75,7 +85,7 @@ export function walletMatches(s,w,now=Date.now()){
  if(w.THB.available+w.THB.reserved+.1<s.cash)return false;
  return s.positions.every(p=>{const a=w[assetOf(p.symbol)];return a&&a.available+a.reserved+1e-8>=p.qty;});
 }
-export function liveSummary(s){return s?{...analyticsREA(riskProjection(s)),...liveLimits(s),...livePositionRisk(s),policy:s.policy||'STANDARD'}:null;}
+export function liveSummary(s,now=Date.now()){return s?{...analyticsREA(riskProjection(s)),...liveLimits(s),...livePositionRisk(s),riskManager:liveRiskManager(s,now),policy:s.policy||'STANDARD'}:null;}
 export function applyExchangeInfo(state,orderId,info,now=Date.now()){
  const s=structuredClone(validateLive(state)),o=s.orders.find(x=>x.id===orderId),fills=[];
  if(!o||!info||!Array.isArray(info.history)||!['filled','unfilled','cancelled','canceled'].includes(String(info.status).toLowerCase()))throw Error('EXCHANGE_ORDER_INFO_INVALID');
@@ -126,7 +136,7 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
  const unknown=s.orders.some(o=>['UNKNOWN','SUBMITTING'].includes(o.status)),walletOK=walletMatches(s,wallet,now);
  const healthy=marked.healthy&&walletOK&&!unknown;
  if(s.kill==='ALL')return{state:s,intents,decisions,healthy,reason:'EMERGENCY_STOP'};
- const cancelBuys=s.dailyLocked||s.buyPaused||s.kill==='ENTRY'||!healthy||operationalLock;
+ const riskManager=liveRiskManager(s,now),cancelBuys=s.dailyLocked||s.buyPaused||s.kill==='ENTRY'||!healthy||operationalLock||riskManager?.cancelPendingBuys;
  for(const o of s.orders.filter(liveActive)){
   if(o.exchangeId&&o.status!=='CANCEL_PENDING'&&(now-o.createdAt>=120000||o.side==='BUY'&&cancelBuys))intents.push({action:'CANCEL',id:o.id,reason:cancelBuys?'ENTRY_SAFETY_LOCK':'ORDER_TIMEOUT'});
  }
@@ -150,19 +160,21 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
    const m=markets.find(m=>m.symbol===r.symbol),risk=riskProjection(s),limits=liveLimits(s),slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]);
    if(s.policy===LIMITED_POLICY)risk.dayStart=Math.min(risk.dayStart,s.allocatedCapital);
    const ownLesson=lossReentryGuard(s,r.symbol,r.strategy,now),paperLesson=paperExperienceGuard(experience,r.symbol,r.strategy,now),lesson=ownLesson.blocked?ownLesson:paperLesson;
-   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=livePositionLimit(s)?'MAX_POSITIONS':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':ownLesson.blocked?ownLesson.reason:paperLesson.blocked?paperLesson.reason:policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
+   const guard=liveRiskManager(s,now);
+   let reason=guard&&!guard.canOpenEntries?guard.reason:!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=livePositionLimit(s)?'MAX_POSITIONS':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':ownLesson.blocked?ownLesson.reason:paperLesson.blocked?paperLesson.reason:policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
    const caps=liveSizingCaps(s);if(!reason&&caps.openRiskRoom===0)reason='PORTFOLIO_RISK_EXHAUSTED';
    const size=!reason?riskSizeREA(risk,{stopDistance:r.stopDistance,minQuote:m.rules.minQuote,...caps},markets,now):null;
    if(size&&!size.notional)reason=size.reason;
-   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason,learning:{checked:true,...(lesson.blocked?{restriction:lesson}:{paperReason:paperLesson.reason})},...(policy.state==='ACTIVE'?{codex:{sessionId:policy.sessionId,action:policy.actions.find(a=>a.symbol===r.symbol)?.action||'NUMERICAL_FALLBACK',reason:policy.actions.find(a=>a.symbol===r.symbol)?.reason||'ไม่พบข้อเสนอเฉพาะเหรียญ ใช้กลยุทธ์เชิงตัวเลข'}}:{})};decisions.push(decision);
+   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason,...(guard?{riskPolicy:{spec:RISK_POLICY_SPEC,tier:guard.tier,riskScale:guard.riskScale,cooldownUntil:guard.cooldownUntil}}:{}),learning:{checked:true,...(lesson.blocked?{restriction:lesson}:{paperReason:paperLesson.reason})},...(policy.state==='ACTIVE'?{codex:{sessionId:policy.sessionId,action:policy.actions.find(a=>a.symbol===r.symbol)?.action||'NUMERICAL_FALLBACK',reason:policy.actions.find(a=>a.symbol===r.symbol)?.reason||'ไม่พบข้อเสนอเฉพาะเหรียญ ใช้กลยุทธ์เชิงตัวเลข'}}:{})};decisions.push(decision);
    if(reason)continue;
    const maxPrice=m.ask*(1+REA_LIMITS.slippage),limit=tickPrice(maxPrice,m.rules,false);
    if(limit<m.ask){decision.reason='PRICE_TICK_EXCEEDS_CHASE_LIMIT';continue;}
    const pending=s.orders.filter(o=>liveActive(o)&&o.side==='BUY'),exposure=s.positions.reduce((v,p)=>v+p.cost,0)+pending.reduce((v,o)=>v+fraction(o),0);
    const symbolExposure=s.positions.filter(p=>p.symbol===r.symbol).reduce((v,p)=>v+p.cost,0)+pending.filter(o=>o.symbol===r.symbol).reduce((v,o)=>v+fraction(o),0);
-   const amount=down(Math.min(size.notional,limits.maxExposure-exposure,limits.maxPosition-symbolExposure,wallet.THB.available-pending.reduce((a,o)=>a+fraction(o),0)));
+   const amount=down(Math.min(size.notional,limits.maxExposure-exposure,limits.maxPosition-symbolExposure,wallet.THB.available-pending.reduce((a,o)=>a+fraction(o),0),guard?Math.min(s.cash,wallet.THB.available)-pending.reduce((a,o)=>a+fraction(o),0)-guard.cashReserveTHB:Infinity));
    if(amount<m.rules.minQuote){decision.reason='AVAILABLE_WALLET_TOO_SMALL';continue;}
    const o={...orderBase(s,m,'BUY',id(),now),amount,remaining:amount,type:'limit',limit,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:size.riskFraction,modeledLoss:livePositionLimit(s)>2?up(amount*size.riskFraction+.10):money(amount*size.riskFraction+.10),reason:'RISK_APPROVED',signalId:decision.signalId,strategy:r.strategy,entryEvidence:entryEvidence(r,m,now),learning:decision.learning};
+   if(guard){const exit=stopExitEstimate(o,Math.max(10,m.rules.minQuote));if(!exit.allowed){decision.reason=exit.reason;continue;}o.modeledLoss=up(amount*size.riskFraction+.10);o.riskEvidence={spec:RISK_POLICY_SPEC,profile:guard.profile,minQuote:Math.max(10,m.rules.minQuote),stopExitQuote:exit.stopExitQuote,quoteAt:m.observedAt,tier:guard.tier,riskScale:guard.riskScale};}
    s.orders.push(o);s.seen[r.symbol]=r.signalAt;decision.reason='RISK_APPROVED';decision.approved=true;intents.push({action:'PLACE',order:o});
   }
  }

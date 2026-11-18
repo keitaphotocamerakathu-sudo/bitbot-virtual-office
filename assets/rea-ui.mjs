@@ -1,6 +1,6 @@
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=27.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=28.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -100,11 +100,19 @@ function renderLive(data){
  $('reaLiveSaveKey').disabled=!!s||!session;text('reaKeySummary',receipt?'· บันทึกแล้ว รอ Backend':pf.ok?'· เชื่อมต่อแล้ว ไม่ต้องกรอกซ้ำ':s?'· ใช้ Key ที่เจ้าของอนุมัติ':'· ยังไม่เชื่อมต่อ');
  if(!s&&pf.ok!==true&&session)$('reaLiveConnectionPanel').open=true;
  $('reaWalletAssets').replaceChildren();for(const [symbol,amount] of Object.entries(receipt?.wallet||pf.wallet||{})){if(symbol==='at'||!amount||!(amount.available>0||amount.reserved>0))continue;const p=document.createElement('p');p.textContent=symbol+' · ใช้ได้ '+number(amount.available,symbol==='THB'?2:8)+' · ถูกจอง '+number(amount.reserved,symbol==='THB'?2:8);$('reaWalletAssets').append(p);}
- renderCapitalAdvice(data,now);renderLossReview(data,now);renderLearning(data,now);renderProfitReview(data,now);liveActivationState();renderShared();
+ renderCapitalAdvice(data,now);renderRiskManager(data,now);renderLossReview(data,now);renderLearning(data,now);renderProfitReview(data,now);liveActivationState();renderShared();
  if(pageName==='live'){
   text('reaMode',s?'LIVE · เงินจริง':'รอเปิด Live');
   if(!session)notice('กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม');else if(liveLoadError||status.tone==='bad')notice(liveLoadError||liveReason(status.description),true);else notice('');
  }
+}
+function renderRiskManager(data,now){
+ const r=session&&data?.state?data.latest?.summary?.riskManager:null,valid=r&&fresh(data.latest?.at,now,45000);
+ $('reaRiskManagerPanel').hidden=!r;
+ text('reaRiskManagerStatus',!valid?'รอข้อมูลสด':r.reason?explainReason(r.reason):r.tier==='CAUTIOUS'?'ลดงบเสี่ยงหลังขาดทุน':'ใช้กฎปกติ');
+ text('reaRiskManagerBudget',valid?baht(r.riskBudget):'—');text('reaRiskManagerReserve',valid?baht(r.cashReserveTHB):'—');text('reaRiskManagerStreak',valid?r.consecutiveLosses+' ไม้':'—');
+ text('reaRiskManagerCooldown',valid&&r.cooldownActive?'พักตามกฎถึง '+time(r.cooldownUntil)+' · ปุ่มทำงานต่อไม่ข้ามเวลาพัก':valid?'ไม่มีเวลาพักจากการแพ้ต่อเนื่องที่ยังค้างอยู่':'รอผลตรวจ Backend');
+ text('reaRiskManagerPolicy',valid?'เสี่ยงต่อไม้ '+(r.riskScale===.5?'ลดครึ่งหนึ่ง':'ตามเพดานปกติ')+' · เปิดเพิ่มได้หลังตรวจเงิน สัญญาณ และมูลค่าขายที่ Stop · พักซื้อที่เจ้าของสั่งยังคงอยู่จนกดทำงานต่อ':'');
 }
 function renderCapitalAdvice(data,now){
  const a=data?.latest?.capitalAdvice,s=data?.state,openOrders=(s?.orders||[]).filter(o=>['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status)),slots=new Set([...(s?.positions||[]).map(p=>p.symbol),...openOrders.filter(o=>o.side==='BUY').map(o=>o.symbol)]).size;
@@ -184,6 +192,8 @@ function renderSettings(){
  text('reaSettingsCapital',s?baht(s.allocatedCapital):'—');text('reaSettingsSlots',s?maxPositions+' สถานะ':'—');text('reaSettingsRisk',s?baht(a.riskBudget):'—');text('reaSettingsDailyLimit',s?baht(a.dailyLossLimit):'—');
  text('reaSettingsPolicy',s?'สถานะ: '+status.label+' · ใช้ Spot 1x · งบต่อเหรียญไม่เกิน '+baht(a.maxPosition)+' · ถือรวมไม่เกิน '+baht(a.maxExposure)+(maxPositions>2?' · งบเสี่ยงรวม '+baht(a.portfolioRiskBudget)+' · ใช้อยู่ '+baht(a.portfolioRiskUsed)+' · เพิ่มช่องโดยแบ่งงบเสี่ยงเดิม ไม้ที่ถืออยู่คงจุดออกเดิม':''):'เชื่อม Bitkub และเปิดพอร์ตเงินจริงตามขั้นตอนเจ้าของ');
  text('reaSettingsUpdated',session&&l.at?'ข้อมูล Backend '+time(l.at)+(!fresh(l.at,Date.now())?' · ข้อมูลเก่า รอการอัปเดต':''):'');
+ const manager=s?a.riskManager:null;
+ text('reaSettingsRiskProfile',manager?'Risk Manager · '+(manager.reason?explainReason(manager.reason):manager.tier==='CAUTIOUS'?'ลดงบเสี่ยง':'ปกติ')+' · สำรองเงินสด '+baht(manager.cashReserveTHB)+' · แพ้ต่อเนื่อง '+manager.consecutiveLosses+' ไม้'+(manager.cooldownActive?' · พักถึง '+time(manager.cooldownUntil):''):'');
 }
 function renderOffice(){
  officeModel=buildREAOffice({live:liveCurrent,paper:current,scope});const label=scope==='LIVE'?'เงินจริง':'Paper';
