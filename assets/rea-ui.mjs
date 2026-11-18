@@ -159,7 +159,7 @@ function renderOffice(){
  text('reaAgentsScope','กำลังดู '+label+' · '+officeModel.roles.length+' หน้าที่จากบันทึก Backend · การทดลองกลยุทธ์ใช้ Paper แยกเสมอ');
  const team=portfolioView({live:liveCurrent,paper:current,scope}).latest.team;
  text('reaTeamCoverage',team?'ตรวจเพิ่ม '+team.reviewers+' หน้าที่ · บันทึก '+time(team.at):'รอผลทีมตรวจสอบจาก Backend');
- text('reaTeamBlocked',team?team.blockedSymbols.length+' คู่':'—');
+ text('reaTeamBlocked',Array.isArray(team?.blockedSymbols)?team.blockedSymbols.length+' คู่':'—');
  text('reaTeamTime',Number.isFinite(team?.timings?.pipelineMs)?number(team.timings.pipelineMs,0)+' ms':'—');
  text('reaTeamWallet',Number.isFinite(team?.timings?.walletReads)?team.timings.walletReads+' ครั้ง':'—');
  $('reaAgents').replaceChildren();const names={DONE:'มีผลบันทึกแล้ว',COMPLETED:'มีผลบันทึกแล้ว',WAITING:'รอข้อมูล',STALE:'ข้อมูลเก่า',FAILED:'ต้องตรวจสอบ'};
