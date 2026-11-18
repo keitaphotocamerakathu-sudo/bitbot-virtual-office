@@ -1,6 +1,7 @@
 import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBody,LIVE_CONFIRM,LIMITED_POLICY} from './rea-live-core.mjs';
 import {codexPlan} from './rea-codex-policy.mjs';
 import {reviewTeam} from './rea-review-team.mjs';
+import {capitalAdvice,refreshCapitalAdvice} from './rea-capital-advisor.mjs';
 const symbols=s=>[...new Set([...(s?.positions||[]).map(p=>p.symbol),...(s?.orders||[]).filter(liveActive).map(o=>o.symbol)])];
 const hash=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const safeError=e=>e.exchangeRejected?'BITKUB_REJECTED_'+String(e.message).slice(0,80):String(e.message||'LIVE_SERVICE_UNAVAILABLE').slice(0,160);
@@ -77,6 +78,9 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
      latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state),reason:scanError||out.reason,
       quotes:(bundle.markets||[]).filter(m=>state.positions.some(p=>p.symbol===m.symbol)).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,last:m.last,at:m.observedAt})),
       ...(riskOnly?{}:{team,codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),performance:{...timings,pipelineMs:clock()-began,lane},accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
+     const capitalContext={state,bundle,wallet:pf.wallet,now:clock(),mode:row.mode,health:latest.health,entriesPermitted:permitted&&!scanError,decisions:out.decisions};
+     latest.capitalAdvice=riskOnly?refreshCapitalAdvice(latest.capitalAdvice,capitalContext):capitalAdvice(capitalContext);
+     if(!riskOnly&&team){team.capitalAdvice=latest.capitalAdvice;const reviewer=team.reviews.find(r=>r.role==='Portfolio Auditor');if(reviewer)reviewer.summary=reviewer.reason=reviewer.summary+' · '+latest.capitalAdvice.headline;}
     }else latest={...latest,at:clock(),mode:'LIVE_LOCKED',health:'OK',reason:'AWAITING_LIVE_ACCEPTANCE_AND_OWNER_ACTIVATION',accounting:'NO_LIVE_CAPITAL_ALLOCATED',lane};
     if(!await checkpoint()){results.push({committed:false,reason:'REVISION_CHANGED'});continue;}
     for(const intent of intents){
@@ -104,6 +108,7 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
    }catch(e){
     error=safeError(e);pf={...pf,ok:false,reason:error,at:clock()};
     latest={...latest,at:clock(),mode:row.mode,health:'SAFE_MODE',reason:error,lane,accounting:state?'EXCHANGE_RECEIPTS':'NO_LIVE_CAPITAL_ALLOCATED'};
+    latest.capitalAdvice=refreshCapitalAdvice(latest.capitalAdvice,{state,wallet:pf.wallet,bundle:null,now:clock(),mode:row.mode,health:'SAFE_MODE',entriesPermitted:false});
     await checkpoint();results.push({committed:false,health:'SAFE_MODE',reason:error});
    }finally{await rpc('rea_live_release',{p_uid:row.user_id,p_lease:row.lease});}
   }return{service:'REA_LIVE',lane,processed:rows.length,results};

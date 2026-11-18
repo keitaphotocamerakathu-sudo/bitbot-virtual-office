@@ -99,11 +99,21 @@ function renderLive(data){
  $('reaLiveSaveKey').disabled=!!s||!session;text('reaKeySummary',receipt?'· บันทึกแล้ว รอ Backend':pf.ok?'· เชื่อมต่อแล้ว ไม่ต้องกรอกซ้ำ':s?'· ใช้ Key ที่เจ้าของอนุมัติ':'· ยังไม่เชื่อมต่อ');
  if(!s&&pf.ok!==true&&session)$('reaLiveConnectionPanel').open=true;
  $('reaWalletAssets').replaceChildren();for(const [symbol,amount] of Object.entries(receipt?.wallet||pf.wallet||{})){if(symbol==='at'||!amount||!(amount.available>0||amount.reserved>0))continue;const p=document.createElement('p');p.textContent=symbol+' · ใช้ได้ '+number(amount.available,symbol==='THB'?2:8)+' · ถูกจอง '+number(amount.reserved,symbol==='THB'?2:8);$('reaWalletAssets').append(p);}
- liveActivationState();renderShared();
+ renderCapitalAdvice(data,now);liveActivationState();renderShared();
  if(pageName==='live'){
   text('reaMode',s?'LIVE · เงินจริง':'รอเปิด Live');
   if(!session)notice('กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม');else if(liveLoadError||status.tone==='bad')notice(liveLoadError||liveReason(status.description),true);else notice('');
  }
+}
+function renderCapitalAdvice(data,now){
+ const a=data?.latest?.capitalAdvice,valid=!!session&&fresh(a?.at,now,45000)&&fresh(data?.latest?.at,now,45000),f=valid?a.financials:null;
+ text('reaCapitalHeadline',!session?'เข้าสู่ระบบเพื่อดูคำแนะนำเงินทุน':!a?'รอ Backend ประเมินเงินทุน':!valid?'รอคำแนะนำรอบใหม่':a.headline);
+ text('reaCapitalMessage',valid?a.message:'คำแนะนำจะแสดงเมื่อมีข้อมูลบัญชีและผลตรวจ Backend ที่ยังสด');text('reaCapitalNext',valid?a.nextStep:'รอข้อมูลที่ตรวจสอบได้');
+ text('reaCapitalUsable',f?baht(f.usableTHB):'—');text('reaCapitalRisk',f?baht(f.riskBudget):'—');text('reaCapitalLimit',f?baht(f.maxPosition):'—');text('reaCapitalLot',valid&&a.recommendedEntryTHB>0?baht(a.recommendedEntryTHB):'รอเงื่อนไข');
+ text('reaCapitalFunding',valid&&a.budgetIncreaseTHB>0?'Wallet ขาดเพิ่ม '+baht(a.topUpTHB)+' · ต้องอนุมัติเพิ่มงบบอท '+baht(a.budgetIncreaseTHB)+' เป็น '+baht(a.suggestedAllocationTHB):valid?'ยังไม่มีข้อเสนอให้เพิ่มงบในตอนนี้':'รอข้อมูลเงินทุน');
+ text('reaCapitalAt',valid?'ตรวจทุน '+time(a.at)+' · วิเคราะห์สัญญาณ '+time(a.analyzedAt):'ยังไม่มีผลประเมินที่สด');text('reaCapitalHeld',valid&&a.positions?.length?'ไม้ที่ถืออยู่: '+a.positions.map(p=>p.symbol+' '+baht(p.costTHB)).join(' · '):'');
+ const reasons={AVAILABLE_CASH_TOO_SMALL:'เงินที่ใช้ได้ยังต่ำกว่าไม้ขั้นต่ำ',BELOW_RISK_MINIMUM:'วงเงินเสี่ยงต่ำกว่าขั้นต่ำตลาด',STRATEGY_RESTRICTION:'กลยุทธ์ยังไม่อนุมัติ'};
+ rows('reaCapitalEntries',valid?a.entries||[]:[],[e=>e.symbol,e=>e.amountTHB>0?baht(e.amountTHB):'ยังไม่เปิดไม้ใหม่',e=>number(e.stopDistance*100)+'%',e=>baht(e.riskBudget),e=>e.amountTHB>0?baht(e.modeledLoss):'—',e=>e.reason===a.status?a.message:reasons[e.reason]||explainReason(e.reason)],'รอผลวิเคราะห์สัญญาณจาก Backend');
 }
 function daily(vm){
  const periods=new Map(),kind=$('reaPeriod').value;
