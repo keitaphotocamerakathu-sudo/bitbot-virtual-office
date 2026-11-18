@@ -6,7 +6,14 @@ export const REA_TEAM=[
  {role:'Strategy Agent',room:'cio',name:'เลือกกลยุทธ์',method:'กฎเชิงตัวเลข'},
  {role:'Risk Manager',room:'risk',name:'ควบคุมความเสี่ยง',method:'กฎวงเงินที่ AI แก้ไม่ได้'},
  {role:'Execution Engine',room:'execution',name:'ซื้อขายและติดตาม',method:'ผลตอบรับจาก Exchange'},
- {role:'Supervisor & Auditor',room:'audit',name:'ตรวจสอบระบบ',method:'Heartbeat + สมุดบัญชี'}
+ {role:'Supervisor & Auditor',room:'audit',name:'ตรวจสอบระบบ',method:'Heartbeat + สมุดบัญชี'},
+ {role:'Data Integrity Auditor',room:'market',unit:2,reviewer:true,name:'ตรวจความถูกต้องข้อมูล',method:'แท่งปิด · ลำดับเวลา · หน่วยราคา'},
+ {role:'Liquidity Reviewer',room:'market',unit:3,reviewer:true,name:'ตรวจสภาพคล่อง',method:'Spread · สมุดคำสั่ง · เงินในกรอบราคา'},
+ {role:'Multi-timeframe Analyst',room:'quant',unit:2,reviewer:true,name:'เทียบหลายกรอบเวลา',method:'รวมแท่งปิดจริงเป็น 15 นาที / 1 ชั่วโมง'},
+ {role:'Signal Challenger',room:'cio',unit:2,reviewer:true,name:'ทักท้วงสัญญาณ',method:'ตรวจเหตุผลที่ยังไม่ควรซื้อ'},
+ {role:'Cost & Exit Reviewer',room:'risk',unit:2,reviewer:true,name:'ตรวจต้นทุนและจุดออก',method:'ค่าธรรมเนียม · Slippage · ระยะ Stop'},
+ {role:'Portfolio Auditor',room:'portfolio',reviewer:true,name:'ตรวจพอร์ตและเงินจอง',method:'สถานะค้าง · Exposure · เงินที่ใช้ได้'},
+ {role:'Performance Monitor',room:'audit',unit:2,reviewer:true,name:'วัดความเร็ว Backend',method:'เวลาที่วัดจริง · จำนวนครั้งอ่าน Wallet'}
 ];
 export const fresh=(at,now,max=180000)=>Number.isFinite(at)&&at<=now+5000&&now-at<=max;
 const fixed=n=>Number.isFinite(n)?n.toFixed(2):'—';
@@ -45,7 +52,8 @@ export function buildREAOffice({live,paper,scope='LIVE',now=Date.now()}){
  const strategyAt=l.strategyAt||(!s&&scope==='LIVE'?null:l.at),riskAt=l.riskAt||l.at;
  const roles=REA_TEAM.map(def=>{
   let at=null,summary='รอข้อมูลจาก Backend',status='WAITING';
-  if(scope==='PAPER'){
+  if(def.reviewer){const record=l.team?.reviews?.find(a=>a.role===def.role);at=record?.at;summary=record?.summary||summary;status=record?.status==='COMPLETED'?'DONE':record?.status==='DEGRADED'?'FAILED':record?.status||'WAITING';}
+  else if(scope==='PAPER'){
    const record=paper?.latest?.agents?.find(a=>a.role===def.role);at=record?.at;summary=record?.reason||summary;status=record?.status==='COMPLETED'?'DONE':record?.status||status;
   }else if(def.role==='Market Scanner'&&decisions.length){at=strategyAt;summary='ประเมิน '+decisions.length+' คู่ในรอบล่าสุด จากตลาด '+(l.marketCount??'ที่อ่านได้')+' คู่';status='DONE';}
   else if(def.role==='Technical Analyst'&&decisions.length){at=strategyAt;const signal=decisions.find(d=>d.strategy)||decisions[0];summary=signal.symbol+' · คะแนน '+fixed(signal.score)+(Number.isFinite(signal.indicators?.rsi)?' · RSI '+fixed(signal.indicators.rsi):' · ผลอินดิเคเตอร์อยู่ในสัญญาณที่บันทึก');status='DONE';}
@@ -59,10 +67,10 @@ export function buildREAOffice({live,paper,scope='LIVE',now=Date.now()}){
   if(def.role==='News Analyst'&&advice.summary){summary+=(summary==='รอข้อมูลจาก Backend'?'':' · ')+(advice.status==='CACHED'?'LLM ใช้แคช':'LLM '+advice.status)+' · '+advice.summary;at=at||advice.at;if(status==='WAITING')status='DONE';}
   const maxAge=def.role==='News Analyst'?3900000:def.role==='Execution Engine'&&latestFill?Infinity:180000;
   if(at&&!fresh(at,now,maxAge))status='STALE';
-  return{...def,...(def.role==='Strategy Agent'&&l.codex?.state==='ACTIVE'?{method:'Codex จัดลำดับ + สัญญาณเชิงตัวเลข'}:{}),at:at||null,summary,status,worker_id:def.room+'-1',tools:[],lastSeenAt:at||null};
+  return{...def,...(def.role==='Strategy Agent'&&l.codex?.state==='ACTIVE'?{method:'Codex จัดลำดับ + สัญญาณเชิงตัวเลข'}:{}),at:at||null,summary,status,worker_id:def.room+'-'+(def.unit||1),tools:[],lastSeenAt:at||null};
  });
  const workers=roles.map(r=>({...r,role:r.room,title:r.role}));
- const tasks=roles.filter(r=>r.at&&r.status!=='WAITING').map((r,i)=>({id:'rea:'+scope+':'+r.room+':'+r.at,worker:r.worker_id,role:r.room,status:r.status==='FAILED'?'FAILED':'DONE',error:r.status==='FAILED'?r.summary:null,summary:r.summary,source:'REA_BACKEND',finishedAt:r.at,output:{}}));
+ const tasks=roles.filter(r=>r.at&&r.status!=='WAITING').map((r,i)=>({id:'rea:'+scope+':'+r.worker_id+':'+r.at,worker:r.worker_id,role:r.room,status:r.status==='FAILED'?'FAILED':'DONE',error:r.status==='FAILED'?r.summary:null,summary:r.summary,source:'REA_BACKEND',finishedAt:r.at,output:{}}));
  const messages=tasks.slice(0,-1).map((t,i)=>({from:t.worker,to:tasks[i+1].worker,taskId:t.id,at:t.finishedAt,kind:'RECORDED_RESULT',text:t.summary}));
  const archive=tasks.length&&!vm.stale?{mode:scope,source:'REA_BACKEND',finishedAt:Math.max(...tasks.map(t=>t.finishedAt)),tasks,messages}:null;
  return{roles,workers,archive,preview:!vm.data,stale:vm.stale,advice};

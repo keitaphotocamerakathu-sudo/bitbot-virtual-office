@@ -1,6 +1,6 @@
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=21.1.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=22.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -125,7 +125,12 @@ function renderShared(){
 }
 function renderOffice(){
  officeModel=buildREAOffice({live:liveCurrent,paper:current,scope});const label=scope==='LIVE'?'เงินจริง':'Paper';
- text('reaAgentsScope','กำลังดู '+label+' · สถานะจากบันทึก Backend · Codex วางแผนอัตโนมัติ · Risk Manager ตรวจตามกฎ');
+ text('reaAgentsScope','กำลังดู '+label+' · '+officeModel.roles.length+' หน้าที่จากบันทึก Backend · ตัวตรวจเพิ่มใช้กฎเชิงตัวเลข');
+ const team=portfolioView({live:liveCurrent,paper:current,scope}).latest.team;
+ text('reaTeamCoverage',team?'ตรวจเพิ่ม '+team.reviewers+' หน้าที่ · บันทึก '+time(team.at):'รอผลทีมตรวจสอบจาก Backend');
+ text('reaTeamBlocked',team?team.blockedSymbols.length+' คู่':'—');
+ text('reaTeamTime',Number.isFinite(team?.timings?.pipelineMs)?number(team.timings.pipelineMs,0)+' ms':'—');
+ text('reaTeamWallet',Number.isFinite(team?.timings?.walletReads)?team.timings.walletReads+' ครั้ง':'—');
  $('reaAgents').replaceChildren();const names={DONE:'มีผลบันทึกแล้ว',COMPLETED:'มีผลบันทึกแล้ว',WAITING:'รอข้อมูล',STALE:'ข้อมูลเก่า',FAILED:'ต้องตรวจสอบ'};
  for(const agent of officeModel.roles){const card=document.createElement('article');card.className='rea-agent';card.dataset.status=agent.status;for(const [tag,value] of [['h3',agent.name],['span',names[agent.status]||agent.status],['p',agent.summary],['small',agent.role+' · '+agent.method],['small',time(agent.at)]]){const el=document.createElement(tag);el.textContent=value;card.append(el);}$('reaAgents').append(card);}
  text('reaOfficeStatus',!session?'รอเข้าสู่ระบบ':officeModel.stale?'Backend ไม่สด':label+' · ข้อมูลจาก Backend');

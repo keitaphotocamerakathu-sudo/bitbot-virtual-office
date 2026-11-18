@@ -1,11 +1,16 @@
 import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBody,LIVE_CONFIRM,LIMITED_POLICY} from './rea-live-core.mjs';
 import {codexPlan} from './rea-codex-policy.mjs';
+import {reviewTeam} from './rea-review-team.mjs';
 const symbols=s=>[...new Set([...(s?.positions||[]).map(p=>p.symbol),...(s?.orders||[]).filter(liveActive).map(o=>o.symbol)])];
 const hash=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const safeError=e=>e.exchangeRejected?'BITKUB_REJECTED_'+String(e.message).slice(0,80):String(e.message||'LIVE_SERVICE_UNAVAILABLE').slice(0,160);
 export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=async()=>null,clock=()=>Date.now()}){
  async function preflight(uid,pair){
-  const open=await signed(pair,'GET','/api/v3/market/my-open-orders?sym=btc_thb'),w=await wallet(pair);
+  // Independent authenticated reads share the same executor lease.
+  const [ordersResult,walletResult]=await Promise.allSettled([signed(pair,'GET','/api/v3/market/my-open-orders?sym=btc_thb'),wallet(pair)]);
+  if(ordersResult.status==='rejected')throw ordersResult.reason;
+  if(walletResult.status==='rejected')throw walletResult.reason;
+  const open=ordersResult.value,w=walletResult.value;
   if(!Array.isArray(open.result))throw Error('PRIVATE_ORDERS_UNVERIFIED');
   return{ok:true,at:clock(),keyFingerprint:await hash(pair.apiKey),wallet:w,privateReads:true,tradePermission:'REQUIRES_KEY_SCOPE_REVIEW',withdrawPermission:'NOT_REQUESTED'};
  }
@@ -26,23 +31,27 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
   }return null;
  }
  async function run(riskOnly=false,uid=null){
+  const began=clock();
   const lane=riskOnly?'risk':'strategy';if(riskOnly)await rpc('rea_live_idle',{});
   // Candle/news scanning runs outside the executor lease. A stalled scanner cannot
   // hold the independent stop worker's execution lock.
-  let prepared=null,scanError=null;const brains=new Map();
+  let prepared=null,scanError=null,scanMs=0;const brains=new Map();
   if(!riskOnly){const targets=await rpc('rea_live_scan_targets',{p_uid:uid});if(!Array.isArray(targets))throw Error('LIVE_SCAN_TARGETS_INVALID');
    await Promise.all(targets.map(async t=>{try{brains.set(t.user_id,await brain(t.user_id));}catch{brains.set(t.user_id,null);}}));
-   if(targets.length)try{prepared=await scan([...new Set(targets.flatMap(x=>symbols(x.state)))]);}catch(e){scanError=safeError(e);}
+   if(targets.length){const scanAt=clock();try{prepared=await scan([...new Set(targets.flatMap(x=>symbols(x.state)))]);}catch(e){scanError=safeError(e);}finally{scanMs=clock()-scanAt;}}
   }
   const rows=await rpc('rea_live_claim',{p_lane:lane,p_uid:uid}),results=[];
   for(let row of rows){
    let state=structuredClone(row.state),pf=row.preflight||{},latest={...row.latest},fills=[],intents=[],pair=null,error=null;
+   const timings={scanMs,walletReads:0};
    const checkpoint=async()=>{const saved=await rpc('rea_live_checkpoint',{p_uid:row.user_id,p_lease:row.lease,p_revision:row.revision,p_state:state,p_preflight:pf,p_latest:latest,p_fills:fills,p_lane:lane,p_error:error});if(saved){row=saved;fills=[];}return saved;};
    try{
     try{pair=await keys(row.user_id);}catch(e){throw Error('EXCHANGE_KEY_STORE: '+safeError(e));}
-    try{pf=await preflight(row.user_id,pair);}catch(e){throw Error('BITKUB_PRIVATE_READ: '+safeError(e));}
+    const privateAt=clock();
+    try{pf=await preflight(row.user_id,pair);timings.walletReads++;timings.preflightMs=clock()-privateAt;}catch(e){throw Error('BITKUB_PRIVATE_READ: '+safeError(e));}
     if(row.approval&&row.approval.keyFingerprint!==pf.keyFingerprint)throw Error('APPROVED_EXCHANGE_KEY_CHANGED');
     if(state){
+     const reconciliationAt=clock(),hadActiveOrders=state.orders.some(liveActive);
      // RESERVED has no dispatch receipt. A recovered old signal is abandoned, never replayed.
      for(const orderId of state.orders.filter(liveActive).map(o=>o.id)){
       const o=state.orders.find(o=>o.id===orderId);
@@ -54,16 +63,20 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
       const refreshed=state.orders.find(x=>x.id===o.id);
       if(pendingCancel&&['OPEN','PARTIAL'].includes(refreshed.status)&&clock()-(lastCancelAt||0)<30000)refreshed.status='CANCEL_PENDING';
      }
-     // Refresh actual balances after applying partial or final exchange receipts.
-     pf={...pf,wallet:await wallet(pair),at:clock()};
-     const bundle=riskOnly||!prepared?{markets:await quotes(symbols(state))}:prepared;
+     // Re-read after any potentially unsettled order. An idle account can reuse
+     // its fresh, timestamped preflight wallet; unknown or old data always refreshes.
+     if(hadActiveOrders||!Number.isFinite(pf.wallet?.at)||clock()-pf.wallet.at>5000||pf.wallet.at>clock()+5000){pf={...pf,wallet:await wallet(pair),at:clock()};timings.walletReads++;}
+     timings.reconciliationMs=clock()-reconciliationAt;
+     let bundle=riskOnly||!prepared?{markets:await quotes(symbols(state))}:prepared;
+     let team=null;
+     if(!riskOnly){timings.pipelineMs=clock()-began;const analysis=reviewTeam({bundle,state,wallet:pf.wallet,now:clock(),timings});bundle=analysis.bundle;team=analysis.receipt;}
      const ready=await rpc('rea_live_ready',{p_uid:row.user_id});
      const permitted=state.policy===LIMITED_POLICY?ready.limited?.ready===true:ready.ready===true;
      const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&permitted,operationalLock:!permitted||!!scanError,brain:brains.get(row.user_id)});
      state=out.state;intents=out.intents;
      latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state),reason:scanError||out.reason,
       quotes:(bundle.markets||[]).filter(m=>state.positions.some(p=>p.symbol===m.symbol)).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,last:m.last,at:m.observedAt})),
-      ...(riskOnly?{}:{codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
+      ...(riskOnly?{}:{team,codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),performance:{...timings,pipelineMs:clock()-began,lane},accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
     }else latest={...latest,at:clock(),mode:'LIVE_LOCKED',health:'OK',reason:'AWAITING_LIVE_ACCEPTANCE_AND_OWNER_ACTIVATION',accounting:'NO_LIVE_CAPITAL_ALLOCATED',lane};
     if(!await checkpoint()){results.push({committed:false,reason:'REVISION_CHANGED'});continue;}
     for(const intent of intents){
