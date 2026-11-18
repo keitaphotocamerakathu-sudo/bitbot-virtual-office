@@ -36,6 +36,10 @@ export function codexResult(session,turns,items,context,now=Date.now()){
  const limitations=strings(a.limitations,6,250);if(!context.dataFresh)limitations.unshift('ข้อมูลรอบวิเคราะห์เก่า ต้องรอข้อมูลสดก่อนพิจารณาแผนใหม่');
  return{provider:CODEX_PROVIDER,model:CODEX_MODEL,sessionId:session.id,turnId:root.id,at:now,sourceAt:context.asOf,dataFresh:context.dataFresh,summary:safeText(a.summary,1000),regime:a.regime,marketRisk:context.dataFresh?a.marketRisk:'UNKNOWN',confidence:a.confidence,actions,limitations:limitations.slice(0,6),canTrade:false,canChangeLimits:false};
 }
+export function codexFailure(remote,root){
+ const e=root?.error||remote?.error||{},code=typeof e.code==='string'?e.code.replace(/[^a-zA-Z0-9_]/g,'_').slice(0,65).toUpperCase():'UNKNOWN';
+ return{code:'CODEX_PROVIDER_'+code,details:{code,message:safeText(e.message||'OpenAI did not provide failure details',1200)}};
+}
 export function createCodexService({rpc,fetchFn=(...a)=>fetch(...a),clock=()=>Date.now()}){
  async function request(path,key,body){
   let r;try{r=await fetchFn(BASE+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','OpenAI-Beta':'agents=v1'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(12000),redirect:'error'});}catch{throw err('CODEX_NETWORK_OUTCOME_UNKNOWN',502);}
@@ -53,7 +57,7 @@ export function createCodexService({rpc,fetchFn=(...a)=>fetch(...a),clock=()=>Da
   const claim=await rpc('rea_codex_claim');if(!claim)return{processed:0};
   const j=claim.job,checkpoint=(status,session=j.session_id,result=null,error=null,usage=null)=>rpc('rea_codex_checkpoint',{p_job:j.id,p_lease:j.lease,p_status:status,p_session:session,p_result:result,p_error:error,p_usage:usage});
   const key=await rpc('rea_codex_key',{p_uid:j.user_id,p_job:j.id,p_lease:j.lease});
-  if(!key){await checkpoint(claim.action==='CREATE'?'FAILED':'CANCEL_PENDING',j.session_id,null,'CODEX_KEY_UNAVAILABLE');return{processed:1};}
+  if(!key){await checkpoint(['CREATE','DIAGNOSE'].includes(claim.action)?'FAILED':'CANCEL_PENDING',j.session_id,null,'CODEX_KEY_UNAVAILABLE');return{processed:1};}
   if(claim.action==='CREATE'){
    let remote;
    try{remote=await request('/agents/sessions',key,codexRequest(codexContext(j.context,Date.parse(j.created_at)),j.question));}
@@ -65,7 +69,7 @@ export function createCodexService({rpc,fetchFn=(...a)=>fetch(...a),clock=()=>Da
   let remote;
   const context=codexContext(j.context,Date.parse(j.created_at));
   try{
-   const cancelDue=j.status==='CANCEL_PENDING'||claim.consent===false||clock()-Date.parse(j.created_at)>300000;
+   const cancelDue=claim.action!=='DIAGNOSE'&&(j.status==='CANCEL_PENDING'||claim.consent===false||clock()-Date.parse(j.created_at)>300000);
    if(cancelDue){
     await request('/agents/sessions/'+j.session_id+'/events',key,{events:[{type:'agent.session.input.cancel'}]});
    }
@@ -75,12 +79,12 @@ export function createCodexService({rpc,fetchFn=(...a)=>fetch(...a),clock=()=>Da
     const items=await request('/agents/sessions/'+j.session_id+'/items?order=desc&limit=100',key),result=codexResult(remote,turns,items,context,clock());
     const usage=numbers(remote.usage,['input_tokens','output_tokens','total_tokens']);await checkpoint('COMPLETED',j.session_id,result,null,usage);return{processed:1,status:'COMPLETED'};
    }
-   if(['failed','cancelled'].includes(root?.status)||['failed','budget_reached'].includes(remote.status)){await checkpoint('FAILED',j.session_id,null,'CODEX_TURN_'+(root?.status||remote.status).toUpperCase());return{processed:1,status:'FAILED'};}
+   if(['failed','cancelled'].includes(root?.status)||['failed','budget_reached'].includes(remote.status)){const failure=codexFailure(remote,root);await checkpoint('FAILED',j.session_id,null,failure.code,{...numbers(remote.usage,['input_tokens','output_tokens','total_tokens']),providerError:failure.details});return{processed:1,status:'FAILED',error:failure.code};}
    if(cancelDue||remote.status==='requires_action'){
     if(!cancelDue)await request('/agents/sessions/'+j.session_id+'/events',key,{events:[{type:'agent.session.input.cancel'}]});await checkpoint('CANCEL_PENDING',j.session_id,null,'CODEX_CANCEL_REQUESTED');return{processed:1,status:'CANCEL_PENDING'};
    }
    await checkpoint('RUNNING');return{processed:1,status:'RUNNING'};
-  }catch(e){const invalid=/^CODEX_(PROVIDER_MISMATCH|INVALID_|UNGROUNDED_|STALE_|FINAL_)/.test(e.message);await checkpoint(invalid?'FAILED':j.status==='CANCEL_PENDING'?'CANCEL_PENDING':'RUNNING',j.session_id,null,safeText(e.message,100));return{processed:1,status:invalid?'FAILED':'RETRY_POLL'};}
+  }catch(e){const invalid=/^CODEX_(PROVIDER_MISMATCH|INVALID_|UNGROUNDED_|STALE_|FINAL_)/.test(e.message);await checkpoint(invalid||claim.action==='DIAGNOSE'?'FAILED':j.status==='CANCEL_PENDING'?'CANCEL_PENDING':'RUNNING',j.session_id,null,safeText(e.message,100));return{processed:1,status:invalid?'FAILED':'RETRY_POLL'};}
  }
- return{view:uid=>rpc('rea_codex_view',{p_uid:uid}),configure,request:(uid,b)=>rpc('rea_codex_request',{p_uid:uid,p_question:safeText(b.question,800)}),resolve:(uid,b)=>rpc('rea_codex_resolve_unknown',{p_uid:uid,p_confirm:b.confirm}),run};
+ return{strategy:async uid=>{const s=await rpc('rea_codex_view',{p_uid:uid});return s?.enabled===true&&s?.consent===true&&!s.providerBlocked?s.latest:null;},view:uid=>rpc('rea_codex_view',{p_uid:uid}),configure,request:(uid,b)=>rpc('rea_codex_request',{p_uid:uid,p_question:safeText(b.question,800)}),resolve:(uid,b)=>rpc('rea_codex_resolve_unknown',{p_uid:uid,p_confirm:b.confirm}),run};
 }

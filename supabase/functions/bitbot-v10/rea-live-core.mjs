@@ -1,5 +1,6 @@
 // Live accounting is driven exclusively by exchange per-fill receipts.
 // This module never calls the paper fill simulator.
+import {codexPlan} from './rea-codex-policy.mjs';
 import {initialREA,REA_LIMITS,scoreREA,quoteOK,riskSizeREA,markREA,dayKey,analyticsREA} from './rea-core.mjs';
 import {tickPrice,roundUnit,validSymbol,assetOf} from './engine.mjs';
 export const LIVE_SPEC='REA-LIVE-19.0';
@@ -94,7 +95,7 @@ export function applyExchangeInfo(state,orderId,info,now=Date.now()){
 function orderBase(s,m,side,id,now){
  return{id,clientId:'rea19-'+id.replaceAll('-','').slice(0,24),symbol:m.symbol,side,qtyScale:m.rules.qtyScale,status:'RESERVED',createdAt:now,executed:0,appliedTxnIds:[],quoteAt:m.observedAt,exchangeId:null};
 }
-export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,operationalLock=false,id=()=>crypto.randomUUID()}={}){
+export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,operationalLock=false,brain=null,id=()=>crypto.randomUUID()}={}){
  const marked=markLive(state,bundle?.markets||[],now),s=marked.state,markets=bundle?.markets||[],intents=[],decisions=[];
  const unknown=s.orders.some(o=>['UNKNOWN','SUBMITTING'].includes(o.status)),walletOK=walletMatches(s,wallet,now);
  const healthy=marked.healthy&&walletOK&&!unknown;
@@ -117,14 +118,15 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
   s.orders.push(o);intents.push({action:'PLACE',order:o});
  }
  if(entries&&healthy&&!operationalLock&&!s.buyPaused&&!s.dailyLocked&&s.kill==='NONE'){
-  const ranking=markets.map(m=>scoreREA(m,now)).sort((a,b)=>b.score-a.score);
+  const policy=codexPlan(brain,now),priority=s=>policy.priority.includes(s)?policy.priority.length-policy.priority.indexOf(s):0;
+  const ranking=markets.map(m=>scoreREA(m,now)).sort((a,b)=>priority(b.symbol)-priority(a.symbol)||b.score-a.score);
   for(const r of ranking){
    const m=markets.find(m=>m.symbol===r.symbol),risk=riskProjection(s),limits=liveLimits(s),slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]);
    if(s.policy===LIMITED_POLICY)risk.dayStart=Math.min(risk.dayStart,s.allocatedCapital);
-   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=2?'MAX_POSITIONS':s.seen[r.symbol]===r.signalAt?'SIGNAL_ALREADY_USED':null;
+   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=2?'MAX_POSITIONS':s.seen[r.symbol]===r.signalAt?'SIGNAL_ALREADY_USED':policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
    const size=!reason?riskSizeREA(risk,{stopDistance:r.stopDistance,minQuote:m.rules.minQuote},markets,now):null;
    if(size&&!size.notional)reason=size.reason;
-   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason};decisions.push(decision);
+   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason,...(policy.state==='ACTIVE'?{codex:{sessionId:policy.sessionId,action:policy.actions.find(a=>a.symbol===r.symbol)?.action||'NUMERICAL_FALLBACK',reason:policy.actions.find(a=>a.symbol===r.symbol)?.reason||'ไม่พบข้อเสนอเฉพาะเหรียญ ใช้กลยุทธ์เชิงตัวเลข'}}:{})};decisions.push(decision);
    if(reason)continue;
    const maxPrice=m.ask*(1+REA_LIMITS.slippage),limit=tickPrice(maxPrice,m.rules,false);
    if(limit<m.ask){decision.reason='PRICE_TICK_EXCEEDS_CHASE_LIMIT';continue;}

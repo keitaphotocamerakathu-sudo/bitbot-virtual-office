@@ -35,7 +35,7 @@ language plpgsql security definer set search_path='' as $$declare sid uuid;begin
 end$$;
 create function bitbot_private.codex_load_key(p_uid uuid,p_job uuid,p_lease uuid) returns text
 language plpgsql security definer set search_path='' as $$declare k text;begin
- if not exists(select 1 from rea.codex_jobs where id=p_job and user_id=p_uid and lease=p_lease and lease_until>now() and status in('CREATING','RUNNING','CANCEL_PENDING')) then raise exception 'CODEX_LEASE_REQUIRED';end if;
+ if not exists(select 1 from rea.codex_jobs where id=p_job and user_id=p_uid and lease=p_lease and lease_until>now() and status in('CREATING','RUNNING','CANCEL_PENDING','FAILED')) then raise exception 'CODEX_LEASE_REQUIRED';end if;
  select decrypted_secret into k from vault.decrypted_secrets where id=(select secret_id from rea.codex_settings where user_id=p_uid);return k;
 end$$;
 revoke all on function bitbot_private.codex_store_key(uuid,text),bitbot_private.codex_load_key(uuid,uuid,uuid) from public,anon,authenticated;
@@ -85,6 +85,12 @@ end$$;
 create function public.rea_codex_claim() returns jsonb
 language plpgsql security invoker set search_path='' as $$
 declare j rea.codex_jobs%rowtype;s rea.codex_settings%rowtype;b integer;d date=(now() at time zone 'Asia/Bangkok')::date;ctx jsonb;begin
+ -- Read failure details for existing sessions only; never replay inference.
+ select * into j from rea.codex_jobs q where status='FAILED' and error_code='CODEX_TURN_FAILED' and session_id is not null and (lease_until is null or lease_until<now()) and exists(select 1 from rea.codex_settings c where c.user_id=q.user_id and c.consent and c.secret_id is not null) order by created_at for update skip locked limit 1;
+ if found then
+  update rea.codex_jobs set lease=gen_random_uuid(),lease_until=now()+interval '60 seconds' where id=j.id returning * into j;
+  return jsonb_build_object('action','DIAGNOSE','job',to_jsonb(j),'model',(select model from rea.codex_settings where user_id=j.user_id),'consent',true);
+ end if;
  -- An uncertain create is never retried after an executor restart.
  update rea.codex_jobs set status='UNKNOWN',error_code='CODEX_CREATE_OUTCOME_UNKNOWN',lease=null,lease_until=null,updated_at=now() where status='CREATING' and lease_until<now();
  select * into j from rea.codex_jobs where status in('RUNNING','CANCEL_PENDING') and (lease_until is null or lease_until<now()) order by updated_at for update skip locked limit 1;

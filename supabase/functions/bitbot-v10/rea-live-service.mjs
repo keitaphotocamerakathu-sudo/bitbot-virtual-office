@@ -1,8 +1,9 @@
 import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBody,LIVE_CONFIRM,LIMITED_POLICY} from './rea-live-core.mjs';
+import {codexPlan} from './rea-codex-policy.mjs';
 const symbols=s=>[...new Set([...(s?.positions||[]).map(p=>p.symbol),...(s?.orders||[]).filter(liveActive).map(o=>o.symbol)])];
 const hash=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const safeError=e=>e.exchangeRejected?'BITKUB_REJECTED_'+String(e.message).slice(0,80):String(e.message||'LIVE_SERVICE_UNAVAILABLE').slice(0,160);
-export function createLiveService({rpc,keys,wallet,signed,scan,quotes,clock=()=>Date.now()}){
+export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=async()=>null,clock=()=>Date.now()}){
  async function preflight(uid,pair){
   const open=await signed(pair,'GET','/api/v3/market/my-open-orders?sym=btc_thb'),w=await wallet(pair);
   if(!Array.isArray(open.result))throw Error('PRIVATE_ORDERS_UNVERIFIED');
@@ -28,8 +29,9 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,clock=()=>
   const lane=riskOnly?'risk':'strategy';if(riskOnly)await rpc('rea_live_idle',{});
   // Candle/news scanning runs outside the executor lease. A stalled scanner cannot
   // hold the independent stop worker's execution lock.
-  let prepared=null,scanError=null;
+  let prepared=null,scanError=null;const brains=new Map();
   if(!riskOnly){const targets=await rpc('rea_live_scan_targets',{p_uid:uid});if(!Array.isArray(targets))throw Error('LIVE_SCAN_TARGETS_INVALID');
+   await Promise.all(targets.map(async t=>{try{brains.set(t.user_id,await brain(t.user_id));}catch{brains.set(t.user_id,null);}}));
    if(targets.length)try{prepared=await scan([...new Set(targets.flatMap(x=>symbols(x.state)))]);}catch(e){scanError=safeError(e);}
   }
   const rows=await rpc('rea_live_claim',{p_lane:lane,p_uid:uid}),results=[];
@@ -57,11 +59,11 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,clock=()=>
      const bundle=riskOnly||!prepared?{markets:await quotes(symbols(state))}:prepared;
      const ready=await rpc('rea_live_ready',{p_uid:row.user_id});
      const permitted=state.policy===LIMITED_POLICY?ready.limited?.ready===true:ready.ready===true;
-     const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&permitted,operationalLock:!permitted||!!scanError});
+     const out=planLive(state,bundle,pf.wallet,clock(),{entries:!riskOnly&&!scanError&&!!prepared&&row.mode==='LIVE_ENABLED'&&permitted,operationalLock:!permitted||!!scanError,brain:brains.get(row.user_id)});
      state=out.state;intents=out.intents;
      latest={...latest,at:clock(),[riskOnly?'riskAt':'strategyAt']:clock(),mode:row.mode,health:out.healthy&&!scanError?'OK':'SAFE_MODE',summary:liveSummary(state),reason:scanError||out.reason,
       quotes:(bundle.markets||[]).filter(m=>state.positions.some(p=>p.symbol===m.symbol)).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,last:m.last,at:m.observedAt})),
-      ...(riskOnly?{}:{decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
+      ...(riskOnly?{}:{codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
     }else latest={...latest,at:clock(),mode:'LIVE_LOCKED',health:'OK',reason:'AWAITING_LIVE_ACCEPTANCE_AND_OWNER_ACTIVATION',accounting:'NO_LIVE_CAPITAL_ALLOCATED',lane};
     if(!await checkpoint()){results.push({committed:false,reason:'REVISION_CHANGED'});continue;}
     for(const intent of intents){

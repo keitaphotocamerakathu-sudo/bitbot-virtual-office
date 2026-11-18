@@ -150,3 +150,21 @@ test('read-only live telemetry preserves strategy decisions while publishing act
  const service=createLiveService({clock:()=>now,keys:async()=>({apiKey:'TEST',apiSecret:'TEST_ONLY'}),wallet:async()=>wallet(),quotes:async()=>[market()],signed:async(_p,method)=>{assert.equal(method,'GET');return{result:[]};},rpc:async(name,args)=>{if(name==='rea_live_claim')return[row];if(name==='rea_live_ready')return{ready:true};if(name==='rea_live_checkpoint'){saved=args;return{...row,revision:1};}return true;}});
  await service.run(true);assert.deepEqual(saved.p_latest.decisions,[decision]);assert.equal(saved.p_latest.strategyAt,now-10000);assert.equal(saved.p_latest.news.readyMarkets,1);assert.deepEqual(saved.p_latest.quotes,[{symbol:'BTC_THB',bid:100,ask:100.01,last:100,at:now}]);assert.equal(saved.p_state.cash,state.cash);assert.deepEqual(saved.p_state.positions,state.positions);assert.equal(saved.p_state.orders.length,0);
 });
+
+function brainPlan(actions){return{provider:'OPENAI_CODEX_MANAGED_AGENT',model:'gpt-6.1-sol',canTrade:false,canChangeLimits:false,sessionId:'sess_TEST_AUTONOMOUS',at:now,sourceAt:now,dataFresh:true,summary:'แผนทดสอบ',actions};}
+test('autonomous Codex priority changes coin selection only among complete numerical signals',()=>{
+ const markets=['BTC_THB','ETH_THB','XRP_THB'].map(trend),s=initialLive(10000,now),brain=brainPlan([{symbol:'ETH_THB',action:'REVIEW_ENTRY',reason:'กำหนดลำดับทดสอบ'},{symbol:'XRP_THB',action:'REVIEW_ENTRY',reason:'ลำดับสอง'}]);
+ const out=planLive(s,{markets},wallet(),now,{entries:true,brain});assert.deepEqual(out.intents.filter(x=>x.order?.side==='BUY').map(x=>x.order.symbol),['ETH_THB','XRP_THB']);assert.equal(out.decisions[0].codex.sessionId,brain.sessionId);assert.equal(liveSummary(out.state).slots,2);
+});
+test('Codex cannot force a stale quote, missing signal, third position or larger risk budget',()=>{
+ const brain=brainPlan([{symbol:'BTC_THB',action:'REVIEW_ENTRY',reason:'buy anything'}]),bad={...trend('BTC_THB'),observedAt:now-300000};const first=planLive(initialLive(10000,now),{markets:[bad]},wallet(),now,{entries:true,brain});assert.equal(first.intents.length,0);
+ const noSignal=planLive(initialLive(10000,now),{markets:[market()]},wallet(),now,{entries:true,brain});assert.equal(noSignal.intents.length,0);
+ const small=initialLive(99.97,now,LIMITED_POLICY),w={...wallet(),THB:{available:99.97,reserved:0}};const out=planLive(small,{markets:['BTC_THB','ETH_THB','XRP_THB'].map(trend)},w,now,{entries:true,brain});assert(out.intents.filter(i=>i.order?.side==='BUY').length<=2);for(const i of out.intents){assert(i.order.amount<=39.98);assert(i.order.modeledLoss<=.99);}assert(liveSummary(out.state).reserved<=79.97);
+});
+test('Codex avoid-entry suggestion can skip a coin but cannot sell a holding or suppress a stop',()=>{
+ const brain=brainPlan([{symbol:'BTC_THB',action:'REVIEW_EXIT',reason:'ลดความสนใจเหรียญนี้'}]),s=initialLive(10000,now);const buy=planLive(s,{markets:[trend('BTC_THB')]},wallet(),now,{entries:true,brain});assert.equal(buy.intents.length,0);assert.equal(buy.decisions[0].reason,'CODEX_AVOID_ENTRY');
+ const h=held();assert.equal(planLive(h,{markets:[market()]},wallet(),now,{entries:false,brain}).intents.length,0);const stop=planLive(h,{markets:[{...market(),bid:98.5,last:98.5,ask:98.51}]},wallet(),now,{entries:false,brain});assert.equal(stop.intents[0].order.reason,'STOP_LOSS');
+});
+test('expired or forged Codex plans fall back to the existing numerical selection',()=>{
+ const markets=['BTC_THB','ETH_THB','XRP_THB'].map(trend),s=initialLive(10000,now),plain=planLive(s,{markets},wallet(),now,{entries:true});for(const patch of [{sourceAt:now-10800001},{canTrade:true},{provider:'FAKE'},{sessionId:'unverified'}]){const brain={...brainPlan([{symbol:'XRP_THB',action:'REVIEW_ENTRY',reason:'test'}]),...patch};const out=planLive(s,{markets},wallet(),now,{entries:true,brain});assert.deepEqual(out.intents.map(i=>i.order.symbol),plain.intents.map(i=>i.order.symbol));}
+});

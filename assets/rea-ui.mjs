@@ -1,6 +1,6 @@
-import {createCodexPanel} from './rea-codex-ui.mjs?v=21.0.1';
+import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=20.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=21.1.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -50,7 +50,7 @@ function renderPaper(data){
  const ops=data.operations||{},evidence=data.paperEvidence||{};text('reaRuntime',(l.runtime==='DOCKER'?'Docker Backend':'Supabase Backend · รอบทุกนาที')+' · Watchdog '+time(ops.riskAt)+(ops.locked?' · SAFE MODE: '+(ops.reasons||[]).join(', '):''));
  text('reaObservation','บันทึกแล้ว '+(evidence.samples||0)+' จุดข้อมูล · สังเกตจริง '+number(Number(evidence.daysObserved||0),3)+' วัน / ขั้นต่ำ 7 วันสำหรับการตรวจรับเต็ม');
  $('reaIncidents').replaceChildren();for(const alert of (ops.alerts||[]).filter(a=>a.status==='OPEN')){const p=document.createElement('p');p.className='error-text';p.textContent='แจ้งเตือน: '+alert.reason;$('reaIncidents').append(p);}
- $('reaReasons').replaceChildren();for(const d of (l.decisions||[]).slice(0,8)){const p=document.createElement('p');p.textContent=d.symbol+' · '+explainReason(d.reason);$('reaReasons').append(p);}if(!l.decisions?.length)text('reaReasons',l.error||'รอผลวิเคราะห์รอบแรก');
+ $('reaReasons').replaceChildren();for(const d of (l.decisions||[]).slice(0,8)){const p=document.createElement('p');p.textContent=d.symbol+' · '+explainReason(d.reason)+(d.codex?' · Codex: '+d.codex.reason:'');$('reaReasons').append(p);}if(!l.decisions?.length)text('reaReasons',l.error||'รอผลวิเคราะห์รอบแรก');
  $('reaAudit').replaceChildren();for(const log of data.audit||[]){const p=document.createElement('p');p.textContent=time(log.created_at)+' · '+log.action;$('reaAudit').append(p);}
  if(pageName==='overview'||scope==='PAPER'){text('reaMode',label);notice(stale?'ยังไม่พบ Heartbeat สด กรุณาตรวจ Backend':ops.locked?'SAFE MODE: '+(ops.reasons||[]).join(', '):'กำลังดูข้อมูลเงินจำลอง · ไม่ส่งคำสั่งเงินจริง',stale||ops.locked);}
  renderAdvisory();renderShared();
@@ -94,7 +94,7 @@ function renderLive(data){
  rows('reaLiveFills',data?.fills||[],[f=>f.txn_id+' / '+time(f.payload.at),f=>f.payload.symbol+' / '+f.payload.side,f=>number(f.payload.qty,8)+' / '+number(f.payload.price,6),f=>baht(f.payload.fee)]);
  const events=liveActivity(data);$('reaLiveActivity').replaceChildren();for(const event of events){const el=document.createElement('article'),h=document.createElement('strong'),p=document.createElement('p'),small=document.createElement('small');h.textContent=event.title;p.textContent=event.detail;small.textContent=time(event.at);el.append(h,p,small);$('reaLiveActivity').append(el);}if(!events.length)text('reaLiveActivity',s?'ยังไม่มีคำสั่งหรือผลจับคู่จริง':'รายการซื้อขายจะแสดงหลังเปิด Live และ Exchange ยืนยัน');
  const decisions=l.decisions||[];text('reaLiveDecisionSummary',decisions.length?'วิเคราะห์ '+decisions.length+' คู่ล่าสุด · '+time(l.strategyAt||decisions[0].at):s?'รอรอบวิเคราะห์จาก Backend':'เชื่อม API และยืนยันเปิด Live ก่อนเริ่มซื้อขาย');
- $('reaLiveReasons').replaceChildren();for(const d of decisions.slice(0,5)){const p=document.createElement('p');p.textContent=d.symbol+' · '+explainReason(d.reason);$('reaLiveReasons').append(p);}if(l.reason){const p=document.createElement('p');p.className='error-text';p.textContent=liveReason(l.reason);$('reaLiveReasons').prepend(p);}
+ $('reaLiveReasons').replaceChildren();for(const d of decisions.slice(0,5)){const p=document.createElement('p');p.textContent=d.symbol+' · '+explainReason(d.reason)+(d.codex?' · Codex: '+d.codex.reason:'');$('reaLiveReasons').append(p);}if(l.reason){const p=document.createElement('p');p.className='error-text';p.textContent=liveReason(l.reason);$('reaLiveReasons').prepend(p);}
  for(const b of document.querySelectorAll('[data-rea-live-control],#reaLiveUnlock'))b.disabled=!s||liveControlBusy;
  $('reaLiveSaveKey').disabled=!!s||!session;text('reaKeySummary',receipt?'· บันทึกแล้ว รอ Backend':pf.ok?'· เชื่อมต่อแล้ว ไม่ต้องกรอกซ้ำ':s?'· ใช้ Key ที่เจ้าของอนุมัติ':'· ยังไม่เชื่อมต่อ');
  if(!s&&pf.ok!==true&&session)$('reaLiveConnectionPanel').open=true;
@@ -125,7 +125,7 @@ function renderShared(){
 }
 function renderOffice(){
  officeModel=buildREAOffice({live:liveCurrent,paper:current,scope});const label=scope==='LIVE'?'เงินจริง':'Paper';
- text('reaAgentsScope','กำลังดู '+label+' · สถานะจากบันทึก Backend · LLM ช่วยสรุปข่าวเท่านั้น');
+ text('reaAgentsScope','กำลังดู '+label+' · สถานะจากบันทึก Backend · Codex วางแผนอัตโนมัติ · Risk Manager ตรวจตามกฎ');
  $('reaAgents').replaceChildren();const names={DONE:'มีผลบันทึกแล้ว',COMPLETED:'มีผลบันทึกแล้ว',WAITING:'รอข้อมูล',STALE:'ข้อมูลเก่า',FAILED:'ต้องตรวจสอบ'};
  for(const agent of officeModel.roles){const card=document.createElement('article');card.className='rea-agent';card.dataset.status=agent.status;for(const [tag,value] of [['h3',agent.name],['span',names[agent.status]||agent.status],['p',agent.summary],['small',agent.role+' · '+agent.method],['small',time(agent.at)]]){const el=document.createElement(tag);el.textContent=value;card.append(el);}$('reaAgents').append(card);}
  text('reaOfficeStatus',!session?'รอเข้าสู่ระบบ':officeModel.stale?'Backend ไม่สด':label+' · ข้อมูลจาก Backend');
