@@ -39,8 +39,16 @@ jobs:
             assets/research-v16.json
       - name: Install browser dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Prepare browser for UI checks
+        timeout-minutes: 5
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            chrome_path=$(command -v google-chrome)
+            printf 'PLAYWRIGHT_CHROMIUM_EXECUTABLE=%s\n' "$chrome_path" >> "$GITHUB_ENV"
+            "$chrome_path" --version
+          else
+            npx playwright install --with-deps chromium
+          fi
       - name: Browser flows and mobile layout
         run: npm run test:ui
       - name: Public backend checks (no trades)
