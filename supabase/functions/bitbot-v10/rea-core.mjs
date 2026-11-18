@@ -1,5 +1,6 @@
 // REA SRS v1.0. Pure deterministic paper accounting; no fetch, credentials or LLM.
 import {indicators} from './technical.mjs';
+import {entryEvidence,exitEvidence,lossReentryGuard} from './rea-learning.mjs';
 export const REA_LIMITS=Object.freeze({capital:10000,riskPerTrade:.01,maxTradeRisk:100,maxPositions:2,dailyLoss:.03,maxDailyLoss:300,maxPosition:4000,maxExposure:8000,fee:.0025,slippage:.002,maxSpread:.006,minVolume:250000,maxVolatility:.06,staleMs:30000,orderTTL:120000});
 export const dayKey=ms=>new Date(ms+25200000).toISOString().slice(0,10);
 const money=n=>Math.round((n+Number.EPSILON)*100)/100;
@@ -115,7 +116,7 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
   const m=markets.find(m=>m.symbol===p.symbol);if(!quoteOK(m,now)||s.orders.some(o=>active(o)&&o.side==='SELL'&&o.symbol===p.symbol))continue;
   const reason=m.bid<=p.stop?'STOP_LOSS':m.bid>=p.target?'TAKE_PROFIT':null;if(!reason)continue;
   cancelBuys(s,out,'POSITION_EXIT');const id='exit:'+p.positionId+':'+Math.floor(now/60000);
-  s.orders.push({id,signalId:id,symbol:p.symbol,side:'SELL',status:'OPEN',limit:m.bid*(1-REA_LIMITS.slippage),remaining:p.qty,qtyScale:m.rules?.qtyScale??8,reserved:0,createdAt:now,fillCount:0,reason,strategy:p.strategy});event(out,'ORDER',reason,{orderId:id});
+  s.orders.push({id,signalId:id,symbol:p.symbol,side:'SELL',status:'OPEN',limit:m.bid*(1-REA_LIMITS.slippage),remaining:p.qty,qtyScale:m.rules?.qtyScale??8,reserved:0,createdAt:now,fillCount:0,reason,strategy:p.strategy,positionId:p.positionId,exitEvidence:exitEvidence(p,m,reason,now)});event(out,'ORDER',reason,{orderId:id});
  }
  out.ranking=control.riskOnly===true?[]:markets.map(m=>scoreREA(m,now)).sort((a,b)=>b.score-a.score);
  const dataHealthy=markets.some(m=>quoteOK(m,now));
@@ -123,11 +124,12 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
  if(!bundle||!dataHealthy||!healthy){out.health='SAFE_MODE';event(out,'SAFE_MODE',s.baselinePending?'MIDNIGHT_BASELINE_UNVERIFIED':'MARKET_DATA_UNAVAILABLE');}
  for(const r of out.ranking){
   const signalId=r.symbol+':'+(r.signalAt||now)+':'+(r.strategy||'WAIT');const decision={...r,signalId,at:now,approved:false};
-  const reject=!entryOK?'ENTRY_LOCKED':!r.eligible?r.reasons.join(','):control.entryStrategies&&!control.entryStrategies.includes(r.strategy)?'STRATEGY_NOT_IN_EXPERIMENT':r.score<(control.minEntryScore??0)?'EXPERIMENT_SCORE_FILTER':slotCount(s)>=2?'MAX_POSITIONS':s.positions.some(p=>p.symbol===r.symbol)||s.orders.some(o=>active(o)&&o.symbol===r.symbol)?'SYMBOL_BUSY':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':null;
+  const lesson=control.lossCooldown===true?lossReentryGuard(s,r.symbol,r.strategy,now):{blocked:false};if(lesson.blocked)decision.learning=lesson;
+  const reject=!entryOK?'ENTRY_LOCKED':!r.eligible?r.reasons.join(','):control.entryStrategies&&!control.entryStrategies.includes(r.strategy)?'STRATEGY_NOT_IN_EXPERIMENT':r.score<(control.minEntryScore??0)?'EXPERIMENT_SCORE_FILTER':slotCount(s)>=2?'MAX_POSITIONS':s.positions.some(p=>p.symbol===r.symbol)||s.orders.some(o=>active(o)&&o.symbol===r.symbol)?'SYMBOL_BUSY':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':lesson.blocked?lesson.reason:null;
   if(reject){decision.reason=reject;out.signals.push(decision);continue;}
   const m=markets.find(m=>m.symbol===r.symbol),sizing=riskSizeREA(s,{stopDistance:r.stopDistance,minQuote:m.rules?.minQuote||10},markets,now);
   decision.sizing=sizing;if(!(sizing.notional>0)){decision.reason=sizing.reason;out.signals.push(decision);continue;}
-  const id='rea:'+signalId,limit=m.ask*(1+REA_LIMITS.slippage),order={id,signalId,symbol:r.symbol,side:'BUY',status:'OPEN',limit,remaining:sizing.notional,qtyScale:m.rules?.qtyScale??8,reserved:money(sizing.notional+fee(sizing.notional)+.10),createdAt:now,fillCount:0,strategy:r.strategy,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:sizing.riskFraction,reason:'RISK_APPROVED'};
+  const id='rea:'+signalId,limit=m.ask*(1+REA_LIMITS.slippage),order={id,signalId,symbol:r.symbol,side:'BUY',status:'OPEN',limit,remaining:sizing.notional,qtyScale:m.rules?.qtyScale??8,reserved:money(sizing.notional+fee(sizing.notional)+.10),createdAt:now,fillCount:0,strategy:r.strategy,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:sizing.riskFraction,modeledLoss:sizing.modeledLoss,reason:'RISK_APPROVED',entryEvidence:entryEvidence(r,m,now)};
   s.orders.push(order);s.seen[r.symbol]=r.signalAt;decision.approved=true;decision.reason='RISK_APPROVED';out.signals.push(decision);event(out,'ORDER','PAPER_ORDER_RESERVED',{orderId:id,risk:sizing.modeledLoss});
  }
  s.lastAt=now;rollREA(s,markets,now,out);validateREA(s);return out;

@@ -1,6 +1,6 @@
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=24.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=25.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -99,7 +99,7 @@ function renderLive(data){
  $('reaLiveSaveKey').disabled=!!s||!session;text('reaKeySummary',receipt?'· บันทึกแล้ว รอ Backend':pf.ok?'· เชื่อมต่อแล้ว ไม่ต้องกรอกซ้ำ':s?'· ใช้ Key ที่เจ้าของอนุมัติ':'· ยังไม่เชื่อมต่อ');
  if(!s&&pf.ok!==true&&session)$('reaLiveConnectionPanel').open=true;
  $('reaWalletAssets').replaceChildren();for(const [symbol,amount] of Object.entries(receipt?.wallet||pf.wallet||{})){if(symbol==='at'||!amount||!(amount.available>0||amount.reserved>0))continue;const p=document.createElement('p');p.textContent=symbol+' · ใช้ได้ '+number(amount.available,symbol==='THB'?2:8)+' · ถูกจอง '+number(amount.reserved,symbol==='THB'?2:8);$('reaWalletAssets').append(p);}
- renderCapitalAdvice(data,now);renderLossReview(data,now);liveActivationState();renderShared();
+ renderCapitalAdvice(data,now);renderLossReview(data,now);renderLearning(data,now);liveActivationState();renderShared();
  if(pageName==='live'){
   text('reaMode',s?'LIVE · เงินจริง':'รอเปิด Live');
   if(!session)notice('กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม');else if(liveLoadError||status.tone==='bad')notice(liveLoadError||liveReason(status.description),true);else notice('');
@@ -125,11 +125,22 @@ function renderLossReview(data,now){
  text('reaLossActions',valid?(e.actions||[]).map(x=>names[x]||x).join(' · ')||'ติดตามผลสุทธิและเฝ้าจุดออกเดิม':'รอข้อมูลที่ตรวจสอบได้');
  text('reaLossAt',valid?'วิเคราะห์ '+time(record.at)+' · ข้อสังเกตนี้ไม่เพิ่มงบหรือรับประกันการคืนทุน':'');
 }
+function renderLearning(data,now){
+ const l=data?.latest?.learning,valid=!!session&&fresh(l?.at,now,90000),records=!!session?(Array.isArray(data?.tradeLessons)&&data.tradeLessons.length?data.tradeLessons:l?.reports||[]):[],cooldowns=valid?(l.activeCooldowns||[]).filter(g=>g.until>now):[];
+ text('reaLearningStatus',valid&&l.counts?'ทบทวนรายการปิดแล้ว '+l.counts.closed+' ไม้ · ขาดทุน '+l.counts.losses+' ไม้ · ผลสุทธิที่ปิดแล้ว '+baht(l.counts.netPnL):'รอการทบทวนรายการปิดจาก Backend');
+ text('reaLearningPolicy',valid?(cooldowns.length?'กำลังพักซื้อซ้ำ: '+cooldowns.map(g=>g.symbol+' / '+g.strategy+' ถึง '+time(g.until)).join(' · '):'ตรวจบทเรียนก่อนซื้อทุกครั้ง · ยังไม่มีช่วงพักซื้อซ้ำที่กำลังมีผล'):'รอสถานะบทเรียนรอบใหม่');
+ rows('reaLessonRows',records.slice().sort((a,b)=>b.closedAt-a.closedAt),[r=>r.symbol+' / '+(r.strategy||'ไม่ทราบ'),r=>time(r.closedAt),r=>baht(r.netPnL),r=>r.summary+(r.metrics?.feesPaid!==null&&r.metrics?.feesPaid!==undefined?' · ค่าธรรมเนียม '+baht(r.metrics.feesPaid)+' รวมในผลสุทธิแล้ว':''),r=>r.evidence?.entry?'คะแนน '+number(r.evidence.entry.score)+' · '+(r.evidence.entry.indicators?.regime||'รอภาวะตลาด')+' · RSI '+number(r.evidence.entry.indicators?.rsi):'ไม่ได้บันทึกบริบทตอนเข้าไว้ · ไม่เดาข้อมูลย้อนหลัง',r=>(r.lessons||[]).includes('WAIT_30_MIN_BEFORE_SAME_SYMBOL_STRATEGY_REENTRY')?'พักเหรียญและกลยุทธ์เดิม 30 นาที · เทียบผลใน Paper':'เก็บหลักฐานเพื่อเปรียบเทียบครั้งต่อไป'],'ยังไม่มีบทเรียนจากรายการปิด');
+ const e=data?.latest?.paperExperience,received=!!session&&fresh(e?.at,now)&&fresh(e?.sourceAt,now),names={COLLECTING:'รับข้อมูลแล้ว · กำลังเก็บหลักฐานก่อนใช้ตัวกรอง Paper',CONSERVATIVE_FILTER_READY:'ผ่านเกณฑ์ตัวกรอง Paper · ใช้ได้เฉพาะพักซื้อชั่วคราว',NO_IMPROVEMENT:'ผลทดลองยังไม่ดีกว่าแบบเดิม · ใช้กฎเดิมต่อ',STALE:'ผล Paper เก่า · รอข้อมูลใหม่',WAITING:'ยังไม่ได้รับประสบการณ์จากฝั่งทดลอง'};
+ text('reaExperienceStatus',received?names[e.status]||'กำลังตรวจหลักฐานจาก Paper':!!session?'รอผล Paper ที่ยังสดจาก Backend':'เข้าสู่ระบบเพื่อดูประสบการณ์ของบัญชีคุณ');
+ text('reaExperienceEvidence',received&&e.collection?'คู่ทดลองเริ่ม '+time(e.collection.startedAt)+' · ครบข้อมูล '+number((e.collection.coverage||0)*100,1)+'% · ปิดแล้วเดิม '+(e.baseline?.closedTrades??0)+' / ใช้บทเรียน '+(e.guarded?.closedTrades??0)+' ไม้ · ผลจำลองเดิม '+baht(e.baseline?.netPnL)+' / ใช้บทเรียน '+baht(e.guarded?.netPnL)+' · ขั้นต่ำ 7 วัน, 30 รายการต่อพอร์ต, ข้อมูล 90% และผลหลังต้นทุนดีขึ้นอย่างน้อย 20 บาท':'เปรียบเทียบกลยุทธ์เดิมกับแบบพักซื้อซ้ำหลังขาดทุน ภายใต้ทุนจำลองและข้อมูลตลาดชุดเดียวกัน');
+ text('reaExperienceAt',received?'Paper ส่ง '+time(e.sourceAt)+' · ฝั่งจริงตรวจ '+time(e.at)+' · ไม่มีสิทธิ์เพิ่มทุนหรือปิด Stop Loss':'');
+}
 function renderResearchAndCorrelation(){
  const now=Date.now(),x=current?.latest?.experiments,valid=!!session&&fresh(x?.at,now)&&!!x.accounts?.length;
  text('reaExperimentStatus',valid?'กำลังเก็บผลทดลอง Paper '+x.accounts.length+' พอร์ต':x&&!fresh(x.at,now)?'ผลทดลองเก่า รอ Backend':'รอผลทดลองจาก Backend');
  text('reaExperimentEvidence',valid?'เริ่ม '+time(x.startedAt)+' · '+number(x.daysObserved,3)+' วัน / ขั้นต่ำ '+x.minimumDays+' วัน · นาทีข้อมูลครบ '+(x.validMinutes??0)+' / '+x.expectedSamples+' · เป้าหมายอย่างน้อย '+x.minimumClosedTrades+' รายการปิดต่อพอร์ต':'ข้อมูลไม่พร้อมจะไม่ถูกนับเป็นผลกำไรหรือหลักฐานผ่าน');
- rows('reaExperimentRows',valid?x.accounts:[],[a=>a.name,a=>a.netPnL===null?'รอราคา':baht(a.netPnL)+' ('+number(a.returnPct)+'%)',a=>baht(a.fees),a=>a.closedTrades+' / '+(a.winRate===null?'ยังไม่มีรายการปิด':number(a.winRate*100,1)+'%'),a=>a.profitFactor===null?'ยังไม่มีผลขาดทุนที่ปิด':number(a.profitFactor),a=>number(a.maxDrawdown*100)+'%',a=>a.health==='OK'?(a.dailyLocked?'ล็อกรายวัน':'Paper · บันทึกแล้ว'):'รอข้อมูล'], 'รอพอร์ตทดลองเริ่มทำงาน');
+ rows('reaExperimentRows',valid?x.accounts:[],[a=>a.name+(a.startedAt?' · เริ่ม '+time(a.startedAt):''),a=>a.netPnL===null?'รอราคา':baht(a.netPnL)+' ('+number(a.returnPct)+'%)',a=>baht(a.fees),a=>a.closedTrades+' / '+(a.winRate===null?'ยังไม่มีรายการปิด':number(a.winRate*100,1)+'%'),a=>a.profitFactor===null?'ยังไม่มีผลขาดทุนที่ปิด':number(a.profitFactor),a=>number(a.maxDrawdown*100)+'%',a=>a.health==='OK'?(a.dailyLocked?'ล็อกรายวัน':'Paper · บันทึกแล้ว'):'รอข้อมูล'], 'รอพอร์ตทดลองเริ่มทำงาน');
+ const pair=valid?x.relay:null;text('reaExperiencePair',pair?'คู่เก็บประสบการณ์เริ่ม '+time(pair.collection?.startedAt)+' · นาทีข้อมูลครบ '+(pair.collection?.validMinutes??0)+' / '+(pair.collection?.expectedMinutes??0)+' · เดิมปิด '+(pair.baseline?.closedTrades??0)+' / แบบใช้บทเรียนปิด '+(pair.guarded?.closedTrades??0)+' รายการ':'รอคู่ทดลองประสบการณ์ · พอร์ตเดิมยังเก็บประวัติต่อ');
  const vm=portfolioView({live:liveCurrent,paper:current,scope}),r=vm.latest.team?.reviews?.find(a=>a.role==='Correlation Risk Analyst'),corrValid=!!session&&fresh(r?.at,now),pairs=corrValid?r.evidence?.pairs||[]:[];
  text('reaCorrelationSummary',corrValid?r.summary:'รอข้อมูลผลตอบแทนที่ตรงเวลากัน');text('reaCorrelationAt',corrValid?(scope==='LIVE'?'เงินจริง':'Paper')+' · วิเคราะห์ '+time(r.at):'');
  const reasons={DATA_QUALITY:'คุณภาพข้อมูลไม่พอ',INVALID_OR_DUPLICATE_BAR:'แท่งผิดรูปแบบหรือซ้ำ',STALE_CANDLES:'แท่งราคาเก่า',INSUFFICIENT_ALIGNED_RETURNS:'ผลตอบแทนตรงเวลากันไม่ครบ 60 ช่วง',CONSTANT_RETURNS:'ผลตอบแทนคงที่ วัดไม่ได้'};

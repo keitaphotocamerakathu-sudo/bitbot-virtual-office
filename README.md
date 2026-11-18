@@ -1,3 +1,7 @@
+# REA 25.0 — Post-trade knowledge and parallel Paper experience
+
+เพิ่มสมุดบทเรียนรายไม้เงินจริง และ Paper อีก 2 พอร์ต รวม 7 พอร์ต ทำงานบน Backend ควบคู่กับเงินจริง ฝั่งจริงตรวจบทเรียนก่อนซื้อ และรับผลเปรียบเทียบจากคู่ Paper ใหม่ภายใต้ตัวกรองพักซื้อชั่วคราวที่จำกัดไว้ในโค้ด ดู [รายละเอียด REA 25.0](docs/REA-25.0-LEARNING-TH.md) · [เงินจริงและบทเรียน](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#live) · [ทีม Paper](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#agents)
+
 # REA AI Trading Bot · Bitkub · 24.0
 
 เพิ่มทีมเป็น 17 หน้าที่ พร้อมการทดลอง Paper 5 พอร์ตเพื่อเทียบกลยุทธ์และแบบคัดคะแนนขั้นต่ำ 80, ตัวตรวจความสัมพันธ์ผลตอบแทนของเหรียญ และตัวแยกสาเหตุขาดทุนตามสมุดบัญชี ไม่หักค่าธรรมเนียมซ้ำ ไม่แก้ยอดขาดทุนเป็นศูนย์ และไม่เปลี่ยนกลยุทธ์เงินจริงอัตโนมัติ ดู [รายละเอียด 24.0](docs/REA-24.0-EXPERIMENTS-TH.md) และ [ผลทดลองกับออฟฟิศ](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#agents)

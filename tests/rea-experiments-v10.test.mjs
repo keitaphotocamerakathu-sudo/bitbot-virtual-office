@@ -5,9 +5,9 @@ import {initialREA,cycleREA,scoreREA} from '../supabase/functions/bitbot-v10/rea
 import {createREAService} from '../supabase/functions/bitbot-v10/rea-service.mjs';
 const now=1794996000000;
 function market(at=now){const t=Math.floor(at/300000)*300000,candles=Array.from({length:200},(_,i)=>{const c=100+i*.003+Math.sin(i*.8)*.05;return{t:t-(200-i)*300000,o:c,h:c+.08,l:c-.08,c,v:100};}),p=candles.at(-1).c;return{symbol:'BTC_THB',status:'active',marketSource:'exchange',last:p,ask:p,bid:p-.01,observedAt:at,candles,dataQuality:{ready:true},rules:{qtyScale:8,priceStep:.01,minQuote:10},volumeTHB:250000,news:{ready:false},depth:{at,bids:[[p-.01,10000]],asks:[[p,10000]]}};}
-test('five forward trials start equally, reserve only their own strategy and never fill retrospectively',()=>{
+test('seven forward trials start equally, reserve only their own strategy and never fill retrospectively',()=>{
  const m=market(),signal=scoreREA(m,now);assert.equal(signal.strategy,'TREND_FOLLOWING');assert.equal(signal.eligible,true);assert(signal.score<80);
- const input={markets:[m]},before=structuredClone(input),first=stepExperiments(null,input,now);assert.equal(EXPERIMENT_PROFILES.length,5);assert.equal(first.summary.accounts.length,5);assert(first.summary.accounts.every(a=>a.initialCapital===10000&&a.closedTrades===0&&a.winRate===null&&a.netPnL===0));assert.equal(first.summary.cycleFills.length,0);
+ const input={markets:[m]},before=structuredClone(input),first=stepExperiments(null,input,now);assert.equal(EXPERIMENT_PROFILES.length,7);assert.equal(first.summary.accounts.length,7);assert(first.summary.accounts.every(a=>a.initialCapital===10000&&a.closedTrades===0&&a.winRate===null&&a.netPnL===0));assert.equal(first.summary.cycleFills.length,0);
  assert.equal(first.book.accounts.MIXED.state.orders.length,1);assert.equal(first.book.accounts.TREND.state.orders.length,1);for(const key of ['BREAKOUT','MEAN_REVERSION','CAUTIOUS_MIXED'])assert.equal(first.book.accounts[key].state.orders.length,0);
  assert.equal(first.summary.canActivateLive,false);assert.equal(first.summary.winner,null);assert.equal(first.summary.windowCollected,false);assert.deepEqual(input,before);
 });
@@ -49,6 +49,6 @@ test('experiment store uses only the owner-scoped Paper RPCs',async()=>{
 });
 test('research state and parent Paper state share one checkpoint, and a storage outage cannot reset trials',async()=>{
  let committed=0,mainSaved;const s=initialREA(now),make=research=>createREAService({clock:()=>now,marketService:{scan:async()=>({markets:[market()]})},research,rpc:async(name,args)=>{if(name==='rea_claim')return[{user_id:'owner',lease:'LEASE',revision:1,state:s}];if(name==='rea_checkpoint'){mainSaved=args;return true;}throw Error('Forbidden '+name);}});
- const service=make({load:async()=>null,commit:async(args,book)=>{committed++;assert.equal(args.p_state.mode,'PAPER_ONLY');assert(!args.p_state.accounts);assert.equal(args.p_latest.experiments.accounts.length,5);assert(Object.values(book.accounts).every(a=>a.state.mode==='PAPER_ONLY'));assert.equal(args.p_fills.length,0);return false;}});assert.equal((await service.run()).results[0].committed,false);assert.equal(committed,1);assert.equal(mainSaved,undefined);
+ const service=make({load:async()=>null,commit:async(args,book)=>{committed++;assert.equal(args.p_state.mode,'PAPER_ONLY');assert(!args.p_state.accounts);assert.equal(args.p_latest.experiments.accounts.length,7);assert(Object.values(book.accounts).every(a=>a.state.mode==='PAPER_ONLY'));assert.equal(args.p_fills.length,0);return false;}});assert.equal((await service.run()).results[0].committed,false);assert.equal(committed,1);assert.equal(mainSaved,undefined);
  const unavailable=make({load:async()=>{throw Error('STORAGE_DOWN');},commit:async()=>{throw Error('MUST_NOT_RESET');}});await unavailable.run();assert.equal(mainSaved.p_latest.experiments.status,'UNAVAILABLE');assert.equal(mainSaved.p_state.mode,'PAPER_ONLY');
 });

@@ -3,6 +3,7 @@
 import {codexPlan} from './rea-codex-policy.mjs';
 import {initialREA,REA_LIMITS,scoreREA,quoteOK,riskSizeREA,markREA,dayKey,analyticsREA} from './rea-core.mjs';
 import {tickPrice,roundUnit,validSymbol,assetOf} from './engine.mjs';
+import {entryEvidence,exitEvidence,lossReentryGuard,paperExperienceGuard} from './rea-learning.mjs';
 export const LIVE_SPEC='REA-LIVE-19.0';
 export const LIVE_CONFIRM='เปิดซื้อขายจริง Bitkub';
 export const LIMITED_POLICY='OWNER_LIMITED_LIVE';
@@ -95,7 +96,7 @@ export function applyExchangeInfo(state,orderId,info,now=Date.now()){
 function orderBase(s,m,side,id,now){
  return{id,clientId:'rea19-'+id.replaceAll('-','').slice(0,24),symbol:m.symbol,side,qtyScale:m.rules.qtyScale,status:'RESERVED',createdAt:now,executed:0,appliedTxnIds:[],quoteAt:m.observedAt,exchangeId:null};
 }
-export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,operationalLock=false,brain=null,id=()=>crypto.randomUUID()}={}){
+export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,operationalLock=false,brain=null,experience=null,id=()=>crypto.randomUUID()}={}){
  const marked=markLive(state,bundle?.markets||[],now),s=marked.state,markets=bundle?.markets||[],intents=[],decisions=[];
  const unknown=s.orders.some(o=>['UNKNOWN','SUBMITTING'].includes(o.status)),walletOK=walletMatches(s,wallet,now);
  const healthy=marked.healthy&&walletOK&&!unknown;
@@ -114,7 +115,7 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
   const type=reason==='STOP_LOSS'&&(m.bid<=p.stop*.98||prior)?'market':'limit';
   const amount=roundUnit(Math.min(p.qty,wallet[assetOf(p.symbol)]?.available||0),m.rules.qtyScale);
   if(amount<=0||amount*m.bid<m.rules.minQuote)continue;
-  const o={...orderBase(s,m,'SELL',id(),now),positionId:p.positionId,amount,remaining:amount,type,limit:type==='market'?0:tickPrice(m.bid*(1-REA_LIMITS.slippage),m.rules,false),reason,strategy:p.strategy};
+  const o={...orderBase(s,m,'SELL',id(),now),positionId:p.positionId,amount,remaining:amount,type,limit:type==='market'?0:tickPrice(m.bid*(1-REA_LIMITS.slippage),m.rules,false),reason,strategy:p.strategy,exitEvidence:exitEvidence(p,m,reason,now)};
   s.orders.push(o);intents.push({action:'PLACE',order:o});
  }
  if(entries&&healthy&&!operationalLock&&!s.buyPaused&&!s.dailyLocked&&s.kill==='NONE'){
@@ -123,10 +124,11 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
   for(const r of ranking){
    const m=markets.find(m=>m.symbol===r.symbol),risk=riskProjection(s),limits=liveLimits(s),slots=new Set([...s.positions.map(p=>p.symbol),...s.orders.filter(o=>liveActive(o)&&o.side==='BUY').map(o=>o.symbol)]);
    if(s.policy===LIMITED_POLICY)risk.dayStart=Math.min(risk.dayStart,s.allocatedCapital);
-   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=2?'MAX_POSITIONS':s.seen[r.symbol]===r.signalAt?'SIGNAL_ALREADY_USED':policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
+   const ownLesson=lossReentryGuard(s,r.symbol,r.strategy,now),paperLesson=paperExperienceGuard(experience,r.symbol,r.strategy,now),lesson=ownLesson.blocked?ownLesson:paperLesson;
+   let reason=!r.eligible?r.reasons.join(','):slots.has(r.symbol)?'SYMBOL_BUSY':slots.size>=2?'MAX_POSITIONS':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':ownLesson.blocked?ownLesson.reason:paperLesson.blocked?paperLesson.reason:policy.avoid.includes(r.symbol)?'CODEX_AVOID_ENTRY':null;
    const size=!reason?riskSizeREA(risk,{stopDistance:r.stopDistance,minQuote:m.rules.minQuote},markets,now):null;
    if(size&&!size.notional)reason=size.reason;
-   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason,...(policy.state==='ACTIVE'?{codex:{sessionId:policy.sessionId,action:policy.actions.find(a=>a.symbol===r.symbol)?.action||'NUMERICAL_FALLBACK',reason:policy.actions.find(a=>a.symbol===r.symbol)?.reason||'ไม่พบข้อเสนอเฉพาะเหรียญ ใช้กลยุทธ์เชิงตัวเลข'}}:{})};decisions.push(decision);
+   const decision={symbol:r.symbol,strategy:r.strategy,score:r.score,factors:r.factors,indicators:r.indicators,reference:r.reference,priceAt:r.priceAt,signalId:r.symbol+':'+r.signalAt+':'+r.strategy,at:now,approved:false,reason,learning:{checked:true,...(lesson.blocked?{restriction:lesson}:{paperReason:paperLesson.reason})},...(policy.state==='ACTIVE'?{codex:{sessionId:policy.sessionId,action:policy.actions.find(a=>a.symbol===r.symbol)?.action||'NUMERICAL_FALLBACK',reason:policy.actions.find(a=>a.symbol===r.symbol)?.reason||'ไม่พบข้อเสนอเฉพาะเหรียญ ใช้กลยุทธ์เชิงตัวเลข'}}:{})};decisions.push(decision);
    if(reason)continue;
    const maxPrice=m.ask*(1+REA_LIMITS.slippage),limit=tickPrice(maxPrice,m.rules,false);
    if(limit<m.ask){decision.reason='PRICE_TICK_EXCEEDS_CHASE_LIMIT';continue;}
@@ -134,7 +136,7 @@ export function planLive(state,bundle,wallet,now=Date.now(),{entries=false,opera
    const symbolExposure=s.positions.filter(p=>p.symbol===r.symbol).reduce((v,p)=>v+p.cost,0)+pending.filter(o=>o.symbol===r.symbol).reduce((v,o)=>v+fraction(o),0);
    const amount=down(Math.min(size.notional,limits.maxExposure-exposure,limits.maxPosition-symbolExposure,wallet.THB.available-pending.reduce((a,o)=>a+fraction(o),0)));
    if(amount<m.rules.minQuote){decision.reason='AVAILABLE_WALLET_TOO_SMALL';continue;}
-   const o={...orderBase(s,m,'BUY',id(),now),amount,remaining:amount,type:'limit',limit,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:size.riskFraction,modeledLoss:money(amount*size.riskFraction+.10),reason:'RISK_APPROVED',signalId:decision.signalId,strategy:r.strategy};
+   const o={...orderBase(s,m,'BUY',id(),now),amount,remaining:amount,type:'limit',limit,stop:limit*(1-r.stopDistance),target:limit*(1+r.stopDistance*2),riskFraction:size.riskFraction,modeledLoss:money(amount*size.riskFraction+.10),reason:'RISK_APPROVED',signalId:decision.signalId,strategy:r.strategy,entryEvidence:entryEvidence(r,m,now),learning:decision.learning};
    s.orders.push(o);s.seen[r.symbol]=r.signalAt;decision.reason='RISK_APPROVED';decision.approved=true;intents.push({action:'PLACE',order:o});
   }
  }
