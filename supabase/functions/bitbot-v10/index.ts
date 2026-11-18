@@ -6,6 +6,7 @@ import {assessCompany,attachReceipts} from './company.mjs';
 import {readinessProgress} from './readiness.mjs';
 import {livePermission} from './live-permission.mjs';
 import {createREAService} from './rea-service.mjs';
+import {createExperimentStore} from './rea-experiments.mjs';
 import {createRiskWatchdog} from './rea-watchdog.mjs';
 import {createRiskQuotes} from './rea-risk-quotes.mjs';
 import {createAdvisory} from './rea-advisory.mjs';
@@ -90,7 +91,7 @@ async function authAction(req,action,b){
 const markets=createMarketService({json,db,read,rpc,fetchFn:fetch});
 const verifiedMarkets=createVerifiedMarketService({base:markets,json,read,rpc});
 const codex=createCodexService({rpc});
-const rea=createREAService({rpc,marketService:verifiedMarkets,advisor:createAdvisory({rpc})});
+const rea=createREAService({rpc,marketService:verifiedMarkets,advisor:createAdvisory({rpc}),research:createExperimentStore({rpc})});
 const riskWatchdog=createRiskWatchdog({rpc,quotes:createRiskQuotes({markets,json,rpc})});
 const reaLive=createLiveService({rpc,keys,wallet,signed,brain:uid=>codex.strategy(uid),scan:held=>verifiedMarkets.scan(held),quotes:createRiskQuotes({markets,json,rpc})});
 const marketServiceFor=c=>c?.marketDataPolicy==='verified-v17'?verifiedMarkets:markets;
@@ -321,7 +322,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'23.0.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
+ if(req.method==='GET'&&a==='health')return{version:'24.0.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE'};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);

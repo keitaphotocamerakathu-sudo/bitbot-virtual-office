@@ -79,7 +79,7 @@ function fillOrders(s,markets,now,out,riskOnly=false){
  for(const o of s.orders.filter(o=>active(o)&&(!riskOnly||o.side==='SELL'))){
   if(now-o.createdAt>=120000||o.fillCount>=10){o.status='CANCELED';o.reserved=0;event(out,'CANCEL','PAPER_LIMIT_TIMEOUT',{orderId:o.id});continue;}
   if(o.createdAt>=now)continue;const m=markets.find(m=>m.symbol===o.symbol);
-  if(!quoteOK(m,now)||!m.depth||now-m.depth.at>30000||m.depth.at>now+5000)continue;
+  if(!quoteOK(m,now)||m.observedAt<=o.createdAt||!m.depth||m.depth.at<=o.createdAt||now-m.depth.at>30000||m.depth.at>now+5000)continue;
   const price=o.side==='BUY'?m.ask*(1+REA_LIMITS.slippage/2):m.bid*(1-REA_LIMITS.slippage/2);
   if(o.side==='BUY'?price>o.limit:price<o.limit)continue;
   const quantity=floorQty(Math.min(o.side==='BUY'?o.remaining/price:o.remaining,bookQty(m,o.side,o.limit)*.1),o.qtyScale);
@@ -101,6 +101,8 @@ function fillOrders(s,markets,now,out,riskOnly=false){
  }
 }
 export function cycleREA(state,bundle,now=Date.now(),control={}){
+ if(control.entryStrategies!==undefined&&(!Array.isArray(control.entryStrategies)||!control.entryStrategies.length||control.entryStrategies.some(v=>!['TREND_FOLLOWING','BREAKOUT','MEAN_REVERSION'].includes(v))))throw Error('INVALID_EXPERIMENT_STRATEGIES');
+ if(control.minEntryScore!==undefined&&(!Number.isFinite(control.minEntryScore)||control.minEntryScore<0||control.minEntryScore>100))throw Error('INVALID_EXPERIMENT_SCORE');
  const s=structuredClone(validateREA(state)),out={state:s,events:[],signals:[],fills:[],ranking:[],mode:'PAPER_ONLY',health:'OK'};
  if(control.kill!==undefined){if(!['NONE','ENTRY','ALL'].includes(control.kill))throw Error('INVALID_KILL');s.kill=control.kill;}
  if(control.buyPaused!==undefined)s.buyPaused=control.buyPaused===true;
@@ -121,7 +123,7 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
  if(!bundle||!dataHealthy||!healthy){out.health='SAFE_MODE';event(out,'SAFE_MODE',s.baselinePending?'MIDNIGHT_BASELINE_UNVERIFIED':'MARKET_DATA_UNAVAILABLE');}
  for(const r of out.ranking){
   const signalId=r.symbol+':'+(r.signalAt||now)+':'+(r.strategy||'WAIT');const decision={...r,signalId,at:now,approved:false};
-  const reject=!entryOK?'ENTRY_LOCKED':!r.eligible?r.reasons.join(','):slotCount(s)>=2?'MAX_POSITIONS':s.positions.some(p=>p.symbol===r.symbol)||s.orders.some(o=>active(o)&&o.symbol===r.symbol)?'SYMBOL_BUSY':s.seen[r.symbol]===r.signalAt?'SIGNAL_ALREADY_USED':null;
+  const reject=!entryOK?'ENTRY_LOCKED':!r.eligible?r.reasons.join(','):control.entryStrategies&&!control.entryStrategies.includes(r.strategy)?'STRATEGY_NOT_IN_EXPERIMENT':r.score<(control.minEntryScore??0)?'EXPERIMENT_SCORE_FILTER':slotCount(s)>=2?'MAX_POSITIONS':s.positions.some(p=>p.symbol===r.symbol)||s.orders.some(o=>active(o)&&o.symbol===r.symbol)?'SYMBOL_BUSY':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':null;
   if(reject){decision.reason=reject;out.signals.push(decision);continue;}
   const m=markets.find(m=>m.symbol===r.symbol),sizing=riskSizeREA(s,{stopDistance:r.stopDistance,minQuote:m.rules?.minQuote||10},markets,now);
   decision.sizing=sizing;if(!(sizing.notional>0)){decision.reason=sizing.reason;out.signals.push(decision);continue;}

@@ -1,7 +1,9 @@
 // Independent deterministic reviewers share one snapshot; they never call an exchange or LLM.
 import {indicators,resample} from './technical.mjs';
 import {REA_LIMITS,scoreREA} from './rea-core.mjs';
-export const REVIEW_ROLES=['Data Integrity Auditor','Liquidity Reviewer','Multi-timeframe Analyst','Signal Challenger','Cost & Exit Reviewer','Portfolio Auditor','Performance Monitor'];
+import {correlationReview,CORRELATION_ROLE} from './rea-correlation.mjs';
+import {lossReview,LOSS_ROLE} from './rea-loss-diagnostics.mjs';
+export const REVIEW_ROLES=['Data Integrity Auditor','Liquidity Reviewer','Multi-timeframe Analyst','Signal Challenger','Cost & Exit Reviewer','Portfolio Auditor','Performance Monitor',CORRELATION_ROLE,LOSS_ROLE];
 const finite=x=>typeof x==='number'&&Number.isFinite(x);
 const active=o=>['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status);
 const round=x=>Math.round(x*10000)/10000;
@@ -36,5 +38,6 @@ export function reviewTeam({bundle,state,wallet=null,now=Date.now(),timings={}})
  rows.push(review(REVIEW_ROLES[5],!state?'WAITING':slots>2?'DEGRADED':'COMPLETED','ตรวจพอร์ต '+positions.length+' สถานะ · รวมซื้อค้าง '+slots+'/2 ช่อง',{positions:positions.length,pendingBuys:pending.length,slots,exposureTHB:round(exposure),botCash:finite(state?.cash)?state.cash:null,walletTHB:finite(wallet?.THB?.available)?wallet.THB.available:null,readOnly:true}));
  const measured=Object.fromEntries(Object.entries(timings).filter(([,v])=>finite(v)&&v>=0)),slow=Object.values(measured).some(v=>v>20000);
  rows.push(review(REVIEW_ROLES[6],Object.keys(measured).length?slow?'DEGRADED':'COMPLETED':'WAITING',Object.keys(measured).length?'วัดเวลา Backend · ก่อนส่งแผน '+Math.round(measured.pipelineMs||0)+' ms · อ่าน Wallet '+(measured.walletReads??'—')+' ครั้ง':'รอเวลาที่วัดจาก Backend',{...measured,privateReadMode:finite(measured.preflightMs)?'PARALLEL_WALLET_AND_OPEN_ORDERS':'NOT_USED',accuracyClaim:'NOT_A_WIN_RATE'}));
- return{bundle:guarded,receipt:{version:'22.0.0',at:now,method:'DETERMINISTIC_SHARED_SNAPSHOT',reviewers:rows.length,blockedSymbols:[...badSymbols],reviews:rows,timings:measured}};
+ rows.push(correlationReview({bundle:guarded,state,signals,now}),lossReview({bundle:guarded,state,now}));
+ return{bundle:guarded,receipt:{version:'24.0.0',at:now,method:'DETERMINISTIC_SHARED_SNAPSHOT',reviewers:rows.length,blockedSymbols:[...badSymbols],reviews:rows,timings:measured}};
 }

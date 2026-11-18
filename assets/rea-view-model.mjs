@@ -13,7 +13,10 @@ export const REA_TEAM=[
  {role:'Signal Challenger',room:'cio',unit:2,reviewer:true,name:'ทักท้วงสัญญาณ',method:'ตรวจเหตุผลที่ยังไม่ควรซื้อ'},
  {role:'Cost & Exit Reviewer',room:'risk',unit:2,reviewer:true,name:'ตรวจต้นทุนและจุดออก',method:'ค่าธรรมเนียม · Slippage · ระยะ Stop'},
  {role:'Portfolio Auditor',room:'portfolio',reviewer:true,name:'ตรวจพอร์ตและเงินจอง',method:'สถานะค้าง · Exposure · เงินที่ใช้ได้'},
- {role:'Performance Monitor',room:'audit',unit:2,reviewer:true,name:'วัดความเร็ว Backend',method:'เวลาที่วัดจริง · จำนวนครั้งอ่าน Wallet'}
+ {role:'Performance Monitor',room:'audit',unit:2,reviewer:true,name:'วัดความเร็ว Backend',method:'เวลาที่วัดจริง · จำนวนครั้งอ่าน Wallet'},
+ {role:'Correlation Risk Analyst',room:'portfolio',unit:2,reviewer:true,name:'ตรวจความเสี่ยงร่วมของเหรียญ',method:'Pearson · ผลตอบแทน 5 นาทีที่ตรงเวลา'},
+ {role:'Loss Diagnostics Analyst',room:'learning',reviewer:true,name:'วิเคราะห์สาเหตุขาดทุน',method:'กำไรสุทธิ · ต้นทุน · สมมติฐานแก้ใน Paper'},
+ {role:'Strategy Experimenter',room:'quant',unit:3,paperResearch:true,name:'ทดลองและเทียบกลยุทธ์',method:'5 พอร์ต Paper แยกกัน · ไม่เปลี่ยนเงินจริงเอง'}
 ];
 export const fresh=(at,now,max=180000)=>Number.isFinite(at)&&at<=now+5000&&now-at<=max;
 const fixed=n=>Number.isFinite(n)?n.toFixed(2):'—';
@@ -52,7 +55,8 @@ export function buildREAOffice({live,paper,scope='LIVE',now=Date.now()}){
  const strategyAt=l.strategyAt||(!s&&scope==='LIVE'?null:l.at),riskAt=l.riskAt||l.at;
  const roles=REA_TEAM.map(def=>{
   let at=null,summary='รอข้อมูลจาก Backend',status='WAITING';
-  if(def.reviewer){const record=l.team?.reviews?.find(a=>a.role===def.role);at=record?.at;summary=record?.summary||summary;status=record?.status==='COMPLETED'?'DONE':record?.status==='DEGRADED'?'FAILED':record?.status||'WAITING';}
+  if(def.paperResearch){const record=paper?.latest?.agents?.find(a=>a.role===def.role);at=record?.at;summary=record?'Paper · '+(record.summary||record.reason||summary):summary;status=record?.status==='COMPLETED'?'DONE':record?.status==='DEGRADED'?'FAILED':record?.status||'WAITING';}
+  else if(def.reviewer){const record=(def.role==='Loss Diagnostics Analyst'?l.lossDiagnostics:null)||l.team?.reviews?.find(a=>a.role===def.role);at=record?.at;summary=record?.summary||summary;status=record?.status==='COMPLETED'?'DONE':record?.status==='DEGRADED'?'FAILED':record?.status||'WAITING';}
   else if(scope==='PAPER'){
    const record=paper?.latest?.agents?.find(a=>a.role===def.role);at=record?.at;summary=record?.reason||summary;status=record?.status==='COMPLETED'?'DONE':record?.status||status;
   }else if(def.role==='Market Scanner'&&decisions.length){at=strategyAt;summary='ประเมิน '+decisions.length+' คู่ในรอบล่าสุด จากตลาด '+(l.marketCount??'ที่อ่านได้')+' คู่';status='DONE';}
@@ -70,7 +74,7 @@ export function buildREAOffice({live,paper,scope='LIVE',now=Date.now()}){
   return{...def,...(def.role==='Strategy Agent'&&l.codex?.state==='ACTIVE'?{method:'Codex จัดลำดับ + สัญญาณเชิงตัวเลข'}:{}),at:at||null,summary,status,worker_id:def.room+'-'+(def.unit||1),tools:[],lastSeenAt:at||null};
  });
  const workers=roles.map(r=>({...r,role:r.room,title:r.role}));
- const tasks=roles.filter(r=>r.at&&r.status!=='WAITING').map((r,i)=>({id:'rea:'+scope+':'+r.worker_id+':'+r.at,worker:r.worker_id,role:r.room,status:r.status==='FAILED'?'FAILED':'DONE',error:r.status==='FAILED'?r.summary:null,summary:r.summary,source:'REA_BACKEND',finishedAt:r.at,output:{}}));
+ const tasks=roles.filter(r=>r.at&&!['WAITING','STALE'].includes(r.status)).map((r,i)=>({id:'rea:'+scope+':'+r.worker_id+':'+r.at,worker:r.worker_id,role:r.room,status:r.status==='FAILED'?'FAILED':'DONE',error:r.status==='FAILED'?r.summary:null,summary:r.summary,source:'REA_BACKEND',finishedAt:r.at,output:{}}));
  const messages=tasks.slice(0,-1).map((t,i)=>({from:t.worker,to:tasks[i+1].worker,taskId:t.id,at:t.finishedAt,kind:'RECORDED_RESULT',text:t.summary}));
  const archive=tasks.length&&!vm.stale?{mode:scope,source:'REA_BACKEND',finishedAt:Math.max(...tasks.map(t=>t.finishedAt)),tasks,messages}:null;
  return{roles,workers,archive,preview:!vm.data,stale:vm.stale,advice};

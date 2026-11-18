@@ -2,6 +2,7 @@ import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBo
 import {codexPlan} from './rea-codex-policy.mjs';
 import {reviewTeam} from './rea-review-team.mjs';
 import {capitalAdvice,refreshCapitalAdvice} from './rea-capital-advisor.mjs';
+import {lossReview} from './rea-loss-diagnostics.mjs';
 const symbols=s=>[...new Set([...(s?.positions||[]).map(p=>p.symbol),...(s?.orders||[]).filter(liveActive).map(o=>o.symbol)])];
 const hash=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const safeError=e=>e.exchangeRejected?'BITKUB_REJECTED_'+String(e.message).slice(0,80):String(e.message||'LIVE_SERVICE_UNAVAILABLE').slice(0,160);
@@ -79,6 +80,7 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
       quotes:(bundle.markets||[]).filter(m=>state.positions.some(p=>p.symbol===m.symbol)).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,last:m.last,at:m.observedAt})),
       ...(riskOnly?{}:{team,codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),performance:{...timings,pipelineMs:clock()-began,lane},accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
      const capitalContext={state,bundle,wallet:pf.wallet,now:clock(),mode:row.mode,health:latest.health,entriesPermitted:permitted&&!scanError,decisions:out.decisions};
+     latest.lossDiagnostics=lossReview(capitalContext);
      latest.capitalAdvice=riskOnly?refreshCapitalAdvice(latest.capitalAdvice,capitalContext):capitalAdvice(capitalContext);
      if(!riskOnly&&team){team.capitalAdvice=latest.capitalAdvice;const reviewer=team.reviews.find(r=>r.role==='Portfolio Auditor');if(reviewer)reviewer.summary=reviewer.reason=reviewer.summary+' · '+latest.capitalAdvice.headline;}
     }else latest={...latest,at:clock(),mode:'LIVE_LOCKED',health:'OK',reason:'AWAITING_LIVE_ACCEPTANCE_AND_OWNER_ACTIVATION',accounting:'NO_LIVE_CAPITAL_ALLOCATED',lane};

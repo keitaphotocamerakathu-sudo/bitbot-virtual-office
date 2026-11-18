@@ -7,10 +7,10 @@ import {createLiveService} from '../supabase/functions/bitbot-v10/rea-live-servi
 const now=1794921000000,uid='11111111-1111-4111-8111-111111111111';
 function market(){const t=Math.floor(now/300000)*300000,candles=Array.from({length:200},(_,i)=>{const c=100+i*.003+Math.sin(i*.8)*.05;return{t:t-(200-i)*300000,o:c,h:c+.08,l:c-.08,c,v:100};}),p=candles.at(-1).c;return{symbol:'BTC_THB',status:'active',marketSource:'exchange',last:p,ask:p,bid:p-.01,observedAt:now,candles,dataQuality:{ready:true},rules:{qtyScale:8,priceStep:.01,minQuote:10},volumeTHB:1e7,news:{ready:false},depth:{at:now,asks:[[p,10000]],bids:[[p-.01,10000]]}};}
 const wallet=at=>({at,THB:{available:10000,reserved:0}});
-test('seven new reviewers use one immutable snapshot and all fourteen office identities are distinct',()=>{
+test('nine reviewers use one immutable snapshot and all seventeen office identities are distinct',()=>{
  const m=market(),before=structuredClone(m),out=reviewTeam({bundle:{markets:[m]},state:initialLive(10000,now),now,timings:{pipelineMs:100,scanMs:80,walletReads:1}});
- assert.deepEqual(m,before);assert.equal(out.receipt.reviewers,7);assert.equal(REVIEW_ROLES.length,7);assert.deepEqual(REA_TEAM.filter(r=>r.reviewer).map(r=>r.role),REVIEW_ROLES);assert.equal(out.receipt.blockedSymbols.length,0);
- const office=buildREAOffice({live:{state:initialLive(10000,now),preflight:{ok:true},latest:{at:now,health:'OK',team:out.receipt}},now});assert.equal(office.workers.length,14);assert.equal(new Set(office.workers.map(w=>w.worker_id)).size,14);assert.equal(new Set(office.archive.tasks.map(t=>t.id)).size,office.archive.tasks.length);
+ assert.deepEqual(m,before);assert.equal(out.receipt.reviewers,9);assert.equal(REVIEW_ROLES.length,9);assert.deepEqual(REA_TEAM.filter(r=>r.reviewer).map(r=>r.role),REVIEW_ROLES);assert.equal(out.receipt.blockedSymbols.length,0);
+ const office=buildREAOffice({live:{state:initialLive(10000,now),preflight:{ok:true},latest:{at:now,health:'OK',team:out.receipt}},now});assert.equal(office.workers.length,17);assert.equal(new Set(office.workers.map(w=>w.worker_id)).size,17);assert.equal(new Set(office.archive.tasks.map(t=>t.id)).size,office.archive.tasks.length);
 });
 test('malformed OHLC, duplicate time, unclosed bars and invalid book quantities block fresh buys',()=>{
  for(const alter of [m=>m.candles.at(-1).h=m.candles.at(-1).c-1,m=>m.candles.at(-1).t=m.candles.at(-2).t,m=>m.candles.push({...m.candles.at(-1),t:now}),m=>m.depth.asks[0][1]=-1,m=>m.ask=m.candles.at(-1).c*10]){
