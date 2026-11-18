@@ -106,10 +106,12 @@ function renderLive(data){
  }
 }
 function renderCapitalAdvice(data,now){
- const a=data?.latest?.capitalAdvice,valid=!!session&&fresh(a?.at,now,45000)&&fresh(data?.latest?.at,now,45000),f=valid?a.financials:null;
+ const a=data?.latest?.capitalAdvice,s=data?.state,openOrders=(s?.orders||[]).filter(o=>['RESERVED','SUBMITTING','OPEN','PARTIAL','CANCEL_PENDING','UNKNOWN'].includes(o.status)),slots=new Set([...(s?.positions||[]).map(p=>p.symbol),...openOrders.filter(o=>o.side==='BUY').map(o=>o.symbol)]).size;
+ const actionable=['USE_AVAILABLE_CASH','CONSIDER_TOP_UP','REVIEW_ALLOCATION'].includes(a?.status),entryReady=!!s&&data.mode==='LIVE_ENABLED'&&data.latest?.health==='OK'&&!s.buyPaused&&!s.dailyLocked&&!s.baselinePending&&s.kill==='NONE'&&slots<2&&!openOrders.length;
+ const valid=!!session&&fresh(a?.at,now,45000)&&fresh(data?.latest?.at,now,45000)&&(!actionable||entryReady&&(a.entries||[]).some(e=>e.eligible&&fresh(e.priceAt,now,30000))),f=valid?a.financials:null;
  text('reaCapitalHeadline',!session?'เข้าสู่ระบบเพื่อดูคำแนะนำเงินทุน':!a?'รอ Backend ประเมินเงินทุน':!valid?'รอคำแนะนำรอบใหม่':a.headline);
  text('reaCapitalMessage',valid?a.message:'คำแนะนำจะแสดงเมื่อมีข้อมูลบัญชีและผลตรวจ Backend ที่ยังสด');text('reaCapitalNext',valid?a.nextStep:'รอข้อมูลที่ตรวจสอบได้');
- text('reaCapitalUsable',f?baht(f.usableTHB):'—');text('reaCapitalRisk',f?baht(f.riskBudget):'—');text('reaCapitalLimit',f?baht(f.maxPosition):'—');text('reaCapitalLot',valid&&a.recommendedEntryTHB>0?baht(a.recommendedEntryTHB):'รอเงื่อนไข');
+ text('reaCapitalUsable',f?baht(f.usableTHB):'—');text('reaCapitalRisk',f?baht(f.riskBudget):'—');text('reaCapitalLimit',f?baht(f.maxPosition):'—');text('reaCapitalLot',valid&&a.status==='USE_AVAILABLE_CASH'&&a.recommendedEntryTHB>0?baht(a.recommendedEntryTHB):'รอเงื่อนไข');
  text('reaCapitalFunding',valid&&a.budgetIncreaseTHB>0?'Wallet ขาดเพิ่ม '+baht(a.topUpTHB)+' · ต้องอนุมัติเพิ่มงบบอท '+baht(a.budgetIncreaseTHB)+' เป็น '+baht(a.suggestedAllocationTHB):valid?'ยังไม่มีข้อเสนอให้เพิ่มงบในตอนนี้':'รอข้อมูลเงินทุน');
  text('reaCapitalAt',valid?'ตรวจทุน '+time(a.at)+' · วิเคราะห์สัญญาณ '+time(a.analyzedAt):'ยังไม่มีผลประเมินที่สด');text('reaCapitalHeld',valid&&a.positions?.length?'ไม้ที่ถืออยู่: '+a.positions.map(p=>p.symbol+' '+baht(p.costTHB)).join(' · '):'');
  const reasons={AVAILABLE_CASH_TOO_SMALL:'เงินที่ใช้ได้ยังต่ำกว่าไม้ขั้นต่ำ',BELOW_RISK_MINIMUM:'วงเงินเสี่ยงต่ำกว่าขั้นต่ำตลาด',STRATEGY_RESTRICTION:'กลยุทธ์ยังไม่อนุมัติ'};
