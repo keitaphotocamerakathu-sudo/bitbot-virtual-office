@@ -16,7 +16,7 @@ export const REA_TEAM=[
  {role:'Performance Monitor',room:'audit',unit:2,reviewer:true,name:'วัดความเร็ว Backend',method:'เวลาที่วัดจริง · จำนวนครั้งอ่าน Wallet'},
  {role:'Correlation Risk Analyst',room:'portfolio',unit:2,reviewer:true,name:'ตรวจความเสี่ยงร่วมของเหรียญ',method:'Pearson · ผลตอบแทน 5 นาทีที่ตรงเวลา'},
  {role:'Loss Diagnostics Analyst',room:'learning',reviewer:true,name:'วิเคราะห์สาเหตุขาดทุน',method:'กำไรสุทธิ · ต้นทุน · สมมติฐานแก้ใน Paper'},
- {role:'Strategy Experimenter',room:'quant',unit:3,paperResearch:true,name:'ทดลองและเทียบกลยุทธ์',method:'7 พอร์ต Paper · คู่เก็บประสบการณ์ส่งข้อมูลให้ทีมจริง'}
+ {role:'Strategy Experimenter',room:'quant',unit:3,paperResearch:true,name:'ทดลองและเทียบกลยุทธ์',method:'10 พอร์ต Paper · เทียบจุดออกและคัดจังหวะเข้า'}
 ];
 export const fresh=(at,now,max=180000)=>Number.isFinite(at)&&at<=now+5000&&now-at<=max;
 const fixed=n=>Number.isFinite(n)?n.toFixed(2):'—';

@@ -1,6 +1,7 @@
 // REA SRS v1.0. Pure deterministic paper accounting; no fetch, credentials or LLM.
 import {indicators} from './technical.mjs';
 import {entryEvidence,exitEvidence,lossReentryGuard} from './rea-learning.mjs';
+import {updatePaperPosition,qualityEntry,POSITION_POLICIES} from './rea-position-policy.mjs';
 export const REA_LIMITS=Object.freeze({capital:10000,riskPerTrade:.01,maxTradeRisk:100,maxPositions:2,dailyLoss:.03,maxDailyLoss:300,maxPosition:4000,maxExposure:8000,fee:.0025,slippage:.002,maxSpread:.006,minVolume:250000,maxVolatility:.06,staleMs:30000,orderTTL:120000});
 export const dayKey=ms=>new Date(ms+25200000).toISOString().slice(0,10);
 const money=n=>Math.round((n+Number.EPSILON)*100)/100;
@@ -94,7 +95,7 @@ function fillOrders(s,markets,now,out,riskOnly=false){
   }else{
    const p=s.positions.find(p=>p.symbol===o.symbol);if(!p||quantity>p.qty+1e-9)throw Error('PAPER_OVERSELL');
    const basis=p.cost*quantity/p.qty;f.realized=money(gross-costFee-basis);s.realized=money(s.realized+f.realized);p.realized+=f.realized;s.cash=money(s.cash+gross-costFee);p.qty-=quantity;p.cost-=basis;o.remaining=Math.max(0,o.remaining-quantity);
-   if(p.qty<10**-o.qtyScale){s.closed.push({id:p.positionId,symbol:p.symbol,pnl:money(p.realized),openedAt:p.openedAt,closedAt:now});s.positions=s.positions.filter(v=>v!==p);}
+   if(p.qty<10**-o.qtyScale){s.closed.push({id:p.positionId,symbol:p.symbol,pnl:money(p.realized),openedAt:p.openedAt,closedAt:now,...(p.protection?{protection:p.protection}:{})});s.positions=s.positions.filter(v=>v!==p);}
   }
   s.fees=money(s.fees+costFee);o.fillCount++;s.fills.push(f);out.fills.push(f);
   if(o.remaining<(o.side==='BUY'?Math.max(.01,price*10**-o.qtyScale):10**-o.qtyScale)){o.status='FILLED';o.reserved=0;}else o.status='PARTIAL';
@@ -102,6 +103,7 @@ function fillOrders(s,markets,now,out,riskOnly=false){
  }
 }
 export function cycleREA(state,bundle,now=Date.now(),control={}){
+ if(control.positionPolicy!==undefined&&!POSITION_POLICIES.includes(control.positionPolicy))throw Error('INVALID_POSITION_STUDY_POLICY');
  if(control.entryStrategies!==undefined&&(!Array.isArray(control.entryStrategies)||!control.entryStrategies.length||control.entryStrategies.some(v=>!['TREND_FOLLOWING','BREAKOUT','MEAN_REVERSION'].includes(v))))throw Error('INVALID_EXPERIMENT_STRATEGIES');
  if(control.minEntryScore!==undefined&&(!Number.isFinite(control.minEntryScore)||control.minEntryScore<0||control.minEntryScore>100))throw Error('INVALID_EXPERIMENT_SCORE');
  const s=structuredClone(validateREA(state)),out={state:s,events:[],signals:[],fills:[],ranking:[],mode:'PAPER_ONLY',health:'OK'};
@@ -111,10 +113,13 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
  if(s.kill==='ALL'){for(const o of s.orders.filter(active)){o.status='CANCELED';o.reserved=0;}event(out,'EMERGENCY_STOP','ALL_ORDERS_STOPPED');s.lastAt=now;return out;}
  if(s.buyPaused||s.kill==='ENTRY'||!healthy)cancelBuys(s,out,s.buyPaused?'PAUSED':s.kill==='ENTRY'?'ENTRY_STOP':'SAFE_MODE');
  fillOrders(s,markets,now,out,control.riskOnly===true);rollREA(s,markets,now,out);
+ if(control.positionPolicy)for(let i=0;i<s.positions.length;i++){
+  const p=s.positions[i],managed=updatePaperPosition(p,markets.find(m=>m.symbol===p.symbol),now,{policy:control.positionPolicy,pendingEntry:s.orders.some(o=>active(o)&&o.side==='BUY'&&o.symbol===p.symbol)});s.positions[i]=managed.position;if(managed.event)out.events.push(managed.event);
+ }
  // Risk exits run independently of entry signals, indicators, news and spread eligibility.
  for(const p of s.positions){
   const m=markets.find(m=>m.symbol===p.symbol);if(!quoteOK(m,now)||s.orders.some(o=>active(o)&&o.side==='SELL'&&o.symbol===p.symbol))continue;
-  const reason=m.bid<=p.stop?'STOP_LOSS':m.bid>=p.target?'TAKE_PROFIT':null;if(!reason)continue;
+  const reason=m.bid<=p.stop?(p.protection?.armed?'PROFIT_PROTECTION':'STOP_LOSS'):m.bid>=p.target?'TAKE_PROFIT':null;if(!reason)continue;
   cancelBuys(s,out,'POSITION_EXIT');const id='exit:'+p.positionId+':'+Math.floor(now/60000);
   s.orders.push({id,signalId:id,symbol:p.symbol,side:'SELL',status:'OPEN',limit:m.bid*(1-REA_LIMITS.slippage),remaining:p.qty,qtyScale:m.rules?.qtyScale??8,reserved:0,createdAt:now,fillCount:0,reason,strategy:p.strategy,positionId:p.positionId,exitEvidence:exitEvidence(p,m,reason,now)});event(out,'ORDER',reason,{orderId:id});
  }
@@ -125,7 +130,8 @@ export function cycleREA(state,bundle,now=Date.now(),control={}){
  for(const r of out.ranking){
   const signalId=r.symbol+':'+(r.signalAt||now)+':'+(r.strategy||'WAIT');const decision={...r,signalId,at:now,approved:false};
   const lesson=control.lossCooldown===true?lossReentryGuard(s,r.symbol,r.strategy,now):{blocked:false};if(lesson.blocked)decision.learning=lesson;
-  const reject=!entryOK?'ENTRY_LOCKED':!r.eligible?r.reasons.join(','):control.entryStrategies&&!control.entryStrategies.includes(r.strategy)?'STRATEGY_NOT_IN_EXPERIMENT':r.score<(control.minEntryScore??0)?'EXPERIMENT_SCORE_FILTER':slotCount(s)>=2?'MAX_POSITIONS':s.positions.some(p=>p.symbol===r.symbol)||s.orders.some(o=>active(o)&&o.symbol===r.symbol)?'SYMBOL_BUSY':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':lesson.blocked?lesson.reason:null;
+  const gate=control.positionPolicy==='SELECTIVE_PROTECT'?qualityEntry(r,markets.find(m=>m.symbol===r.symbol),now):null;if(gate)decision.positionStudy=gate;
+  const reject=!entryOK?'ENTRY_LOCKED':!r.eligible?r.reasons.join(','):control.entryStrategies&&!control.entryStrategies.includes(r.strategy)?'STRATEGY_NOT_IN_EXPERIMENT':r.score<(control.minEntryScore??0)?'EXPERIMENT_SCORE_FILTER':gate&&!gate.ready?gate.reason:slotCount(s)>=2?'MAX_POSITIONS':s.positions.some(p=>p.symbol===r.symbol)||s.orders.some(o=>active(o)&&o.symbol===r.symbol)?'SYMBOL_BUSY':s.seen[r.symbol]>=r.signalAt?'SIGNAL_ALREADY_USED':lesson.blocked?lesson.reason:null;
   if(reject){decision.reason=reject;out.signals.push(decision);continue;}
   const m=markets.find(m=>m.symbol===r.symbol),sizing=riskSizeREA(s,{stopDistance:r.stopDistance,minQuote:m.rules?.minQuote||10},markets,now);
   decision.sizing=sizing;if(!(sizing.notional>0)){decision.reason=sizing.reason;out.signals.push(decision);continue;}

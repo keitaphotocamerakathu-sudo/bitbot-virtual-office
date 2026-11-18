@@ -1,6 +1,6 @@
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=25.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=26.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -99,7 +99,7 @@ function renderLive(data){
  $('reaLiveSaveKey').disabled=!!s||!session;text('reaKeySummary',receipt?'· บันทึกแล้ว รอ Backend':pf.ok?'· เชื่อมต่อแล้ว ไม่ต้องกรอกซ้ำ':s?'· ใช้ Key ที่เจ้าของอนุมัติ':'· ยังไม่เชื่อมต่อ');
  if(!s&&pf.ok!==true&&session)$('reaLiveConnectionPanel').open=true;
  $('reaWalletAssets').replaceChildren();for(const [symbol,amount] of Object.entries(receipt?.wallet||pf.wallet||{})){if(symbol==='at'||!amount||!(amount.available>0||amount.reserved>0))continue;const p=document.createElement('p');p.textContent=symbol+' · ใช้ได้ '+number(amount.available,symbol==='THB'?2:8)+' · ถูกจอง '+number(amount.reserved,symbol==='THB'?2:8);$('reaWalletAssets').append(p);}
- renderCapitalAdvice(data,now);renderLossReview(data,now);renderLearning(data,now);liveActivationState();renderShared();
+ renderCapitalAdvice(data,now);renderLossReview(data,now);renderLearning(data,now);renderProfitReview(data,now);liveActivationState();renderShared();
  if(pageName==='live'){
   text('reaMode',s?'LIVE · เงินจริง':'รอเปิด Live');
   if(!session)notice('กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม');else if(liveLoadError||status.tone==='bad')notice(liveLoadError||liveReason(status.description),true);else notice('');
@@ -135,12 +135,20 @@ function renderLearning(data,now){
  text('reaExperienceEvidence',received&&e.collection?'คู่ทดลองเริ่ม '+time(e.collection.startedAt)+' · ครบข้อมูล '+number((e.collection.coverage||0)*100,1)+'% · ปิดแล้วเดิม '+(e.baseline?.closedTrades??0)+' / ใช้บทเรียน '+(e.guarded?.closedTrades??0)+' ไม้ · ผลจำลองเดิม '+baht(e.baseline?.netPnL)+' / ใช้บทเรียน '+baht(e.guarded?.netPnL)+' · ขั้นต่ำ 7 วัน, 30 รายการต่อพอร์ต, ข้อมูล 90% และผลหลังต้นทุนดีขึ้นอย่างน้อย 20 บาท':'เปรียบเทียบกลยุทธ์เดิมกับแบบพักซื้อซ้ำหลังขาดทุน ภายใต้ทุนจำลองและข้อมูลตลาดชุดเดียวกัน');
  text('reaExperienceAt',received?'Paper ส่ง '+time(e.sourceAt)+' · ฝั่งจริงตรวจ '+time(e.at)+' · ไม่มีสิทธิ์เพิ่มทุนหรือปิด Stop Loss':'');
 }
+function renderProfitReview(data,now){
+ const p=data?.latest?.profitReview,valid=!!session&&fresh(p?.at,now,90000),study=valid?p.study:null,studyValid=study?.mode==='PAPER_ONLY'&&fresh(study?.at,now);
+ text('reaProfitReviewStatus',valid?'เงินจริงยังใช้ Stop และเป้าขายเดิม · แนวทางเลื่อนจุดออกกำลังทดสอบใน Paper':'รอการตรวจจุดออกจาก Backend');
+ rows('reaProfitReviewRows',valid?p.positions||[]:[],[r=>r.symbol,r=>fresh(r.quoteAt,now,30000)?baht(r.modeledNet):'รอราคาสด',r=>price(r.actualTarget),r=>price(r.paperActivate),r=>price(r.paperBreakeven)],'รอสถานะเงินจริงที่มีข้อมูลต้นทุน');
+ const names={COLLECTING:'กำลังเก็บผลเปรียบเทียบ',REVIEW_CANDIDATE:'มีแนวทางให้ทบทวน ยังไม่อนุมัติใช้เงินจริง',NO_IMPROVEMENT:'ยังไม่พบผลที่ผ่านเกณฑ์ดีกว่าเดิม'};
+ text('reaProfitReviewStudy',studyValid?(names[study.status]||'รอผลเปรียบเทียบ')+' · 3 พอร์ตใหม่เริ่ม '+time(study.startedAt)+' · นาทีข้อมูลครบ '+study.validMinutes+' / '+study.expectedMinutes+' · การใช้เงินจริงต้องตรวจและอนุมัติแยก':'รอผลทดลองจุดออกที่ยังสด');
+}
 function renderResearchAndCorrelation(){
  const now=Date.now(),x=current?.latest?.experiments,valid=!!session&&fresh(x?.at,now)&&!!x.accounts?.length;
  text('reaExperimentStatus',valid?'กำลังเก็บผลทดลอง Paper '+x.accounts.length+' พอร์ต':x&&!fresh(x.at,now)?'ผลทดลองเก่า รอ Backend':'รอผลทดลองจาก Backend');
  text('reaExperimentEvidence',valid?'เริ่ม '+time(x.startedAt)+' · '+number(x.daysObserved,3)+' วัน / ขั้นต่ำ '+x.minimumDays+' วัน · นาทีข้อมูลครบ '+(x.validMinutes??0)+' / '+x.expectedSamples+' · เป้าหมายอย่างน้อย '+x.minimumClosedTrades+' รายการปิดต่อพอร์ต':'ข้อมูลไม่พร้อมจะไม่ถูกนับเป็นผลกำไรหรือหลักฐานผ่าน');
  rows('reaExperimentRows',valid?x.accounts:[],[a=>a.name+(a.startedAt?' · เริ่ม '+time(a.startedAt):''),a=>a.netPnL===null?'รอราคา':baht(a.netPnL)+' ('+number(a.returnPct)+'%)',a=>baht(a.fees),a=>a.closedTrades+' / '+(a.winRate===null?'ยังไม่มีรายการปิด':number(a.winRate*100,1)+'%'),a=>a.profitFactor===null?'ยังไม่มีผลขาดทุนที่ปิด':number(a.profitFactor),a=>number(a.maxDrawdown*100)+'%',a=>a.health==='OK'?(a.dailyLocked?'ล็อกรายวัน':'Paper · บันทึกแล้ว'):'รอข้อมูล'], 'รอพอร์ตทดลองเริ่มทำงาน');
  const pair=valid?x.relay:null;text('reaExperiencePair',pair?'คู่เก็บประสบการณ์เริ่ม '+time(pair.collection?.startedAt)+' · นาทีข้อมูลครบ '+(pair.collection?.validMinutes??0)+' / '+(pair.collection?.expectedMinutes??0)+' · เดิมปิด '+(pair.baseline?.closedTrades??0)+' / แบบใช้บทเรียนปิด '+(pair.guarded?.closedTrades??0)+' รายการ':'รอคู่ทดลองประสบการณ์ · พอร์ตเดิมยังเก็บประวัติต่อ');
+ const study=valid&&fresh(x.positionStudy?.at,now)?x.positionStudy:null;text('reaPositionStudyStatus',study?'ทดลองจุดออกเริ่ม '+time(study.startedAt)+' · ข้อมูลครบ '+study.validMinutes+' / '+study.expectedMinutes+' นาที · '+(study.status==='COLLECTING'?'ยังเก็บผล':study.status==='REVIEW_CANDIDATE'?'มีแนวทางให้ตรวจ ไม่เปิดเงินจริงเอง':'ยังไม่พบแบบที่ผ่านเกณฑ์ดีกว่าเดิม'):'รอชุดทดลองกฎเดิม / ป้องกันกำไร / คัดจังหวะเข้าเพิ่ม');
  const vm=portfolioView({live:liveCurrent,paper:current,scope}),r=vm.latest.team?.reviews?.find(a=>a.role==='Correlation Risk Analyst'),corrValid=!!session&&fresh(r?.at,now),pairs=corrValid?r.evidence?.pairs||[]:[];
  text('reaCorrelationSummary',corrValid?r.summary:'รอข้อมูลผลตอบแทนที่ตรงเวลากัน');text('reaCorrelationAt',corrValid?(scope==='LIVE'?'เงินจริง':'Paper')+' · วิเคราะห์ '+time(r.at):'');
  const reasons={DATA_QUALITY:'คุณภาพข้อมูลไม่พอ',INVALID_OR_DUPLICATE_BAR:'แท่งผิดรูปแบบหรือซ้ำ',STALE_CANDLES:'แท่งราคาเก่า',INSUFFICIENT_ALIGNED_RETURNS:'ผลตอบแทนตรงเวลากันไม่ครบ 60 ช่วง',CONSTANT_RETURNS:'ผลตอบแทนคงที่ วัดไม่ได้'};

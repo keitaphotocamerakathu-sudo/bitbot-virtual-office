@@ -37,6 +37,7 @@ export function tradePostmortem(state,closed,now,{simulation=false}={}){
  const reasons=[...new Set(exits.map(o=>o.reason).filter(Boolean))];
  if(reasons.includes('STOP_LOSS'))facts.push('STOP_LOSS_EXIT');
  if(reasons.includes('TAKE_PROFIT'))facts.push('TAKE_PROFIT_EXIT');
+ if(reasons.includes('PROFIT_PROTECTION'))facts.push('PROFIT_PROTECTION_EXIT');
  if(gross!==null&&gross<0)facts.push('PRICE_MOVED_AGAINST_ENTRY');
  if(fees>0)facts.push('FEES_REDUCED_NET_RESULT');
  if(gross!==null&&gross>=0&&closed.pnl<0)facts.push('COSTS_AND_ROUNDING_EXCEEDED_GROSS_GAIN');
@@ -45,7 +46,7 @@ export function tradePostmortem(state,closed,now,{simulation=false}={}){
  if(closed.pnl<0){hypotheses.push('ENTRY_TIMING_OR_REGIME_MAY_NEED_REVIEW');lessons.push('WAIT_30_MIN_BEFORE_SAME_SYMBOL_STRATEGY_REENTRY','COMPARE_FORWARD_PAPER_BEFORE_CHANGING_STRATEGY');}
  const summary=!complete?'หลักฐานจับคู่ยังไม่ครบ จึงยังสรุปสาเหตุไม่ได้':closed.pnl<0?(gross<0?'ราคาขายเฉลี่ยต่ำกว่าราคาซื้อ':'ต้นทุนรวมทำให้ผลสุทธิติดลบ')+(reasons.includes('STOP_LOSS')?' · ปิดตาม Stop Loss':''):'บันทึกผลหลังต้นทุนและเงื่อนไขออกแล้ว';
  return{protocol:LEARNING_PROTOCOL,mode:simulation?'PAPER_ONLY':'LIVE',positionId:closed.id,symbol:closed.symbol,strategy:entry?.strategy||null,openedAt:closed.openedAt,closedAt:closed.closedAt,reviewedAt:now,netPnL:closed.pnl,simulation,status:complete?'VERIFIED':'INCOMPLETE',summary,
-  metrics:{quantity:complete?qtyOut:null,avgEntry,avgExit,priceReturnPct:complete?(avgExit/avgEntry-1)*100:null,grossPnL:gross,feesPaid:fees,roundingDifference:complete?money(closed.pnl-(gross-fees)):null,feesAlreadyIncluded:true,heldMinutes:(closed.closedAt-closed.openedAt)/60000,modeledLoss:finite(entry?.modeledLoss),stop:finite(entry?.stop),target:finite(entry?.target),entrySlippagePct:complete&&context?.reference>0?(avgEntry/context.reference-1)*100:null,exitSlippagePct:complete&&exit?.bid>0?(exit.bid-avgExit)/exit.bid*100:null},
+  metrics:{quantity:complete?qtyOut:null,avgEntry,avgExit,priceReturnPct:complete?(avgExit/avgEntry-1)*100:null,grossPnL:gross,feesPaid:fees,roundingDifference:complete?money(closed.pnl-(gross-fees)):null,feesAlreadyIncluded:true,heldMinutes:(closed.closedAt-closed.openedAt)/60000,modeledLoss:finite(entry?.modeledLoss),stop:finite(entry?.stop),target:finite(entry?.target),entrySlippagePct:complete&&context?.reference>0?(avgEntry/context.reference-1)*100:null,exitSlippagePct:complete&&exit?.bid>0?(exit.bid-avgExit)/exit.bid*100:null,...(closed.protection?{observedProtection:closed.protection}:{})},
   evidence:{entry:context,exit,exitReasons:reasons,buyFillIds:buys.map(f=>f.id),sellFillIds:sells.map(f=>f.id),facts,missing,hypotheses,causalCertainty:'OBSERVED_LEDGER_FACTS_ONLY'},lessons,canChangeLimits:false,canGuaranteeRecovery:false};
 }
 export function liveLearning(state,previous,now){

@@ -1,0 +1,37 @@
+-- Real backend role, synthetic Paper ledgers; no HTTP or live activation. All writes roll back.
+begin;
+insert into auth.users(id,aud,role,email) values('fabbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','authenticated','authenticated','rea-position-study@example.invalid');
+insert into rea.bot_settings(user_id,state) values('fabbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','{"mode":"PAPER_ONLY","initialCapital":10000,"cash":10000}');
+set local role service_role;
+do $$declare u uuid='fabbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';l uuid=gen_random_uuid();t bigint=floor(extract(epoch from now())*1000);before_at bigint;started bigint;s jsonb;b jsonb;oldbook jsonb;next_latest jsonb;bad jsonb;current_revision bigint;begin
+ before_at=t-60000;started=t-3600000;
+ if has_function_privilege('authenticated','public.rea_experiment_checkpoint(uuid,uuid,bigint,jsonb,jsonb,jsonb,jsonb,jsonb,bigint,jsonb,text)','EXECUTE') or has_table_privilege('anon','rea.experiment_books','SELECT') then raise exception 'STUDY_EXPOSED';end if;
+ s=jsonb_build_object('version',1,'mode','PAPER_ONLY','initialCapital',10000,'cash',10000,'equity',10000,'dayStart',10000,'dayFlows',0,'day',(now() at time zone 'Asia/Bangkok')::date::text,'positions','[]'::jsonb,'orders','[]'::jsonb,'fills','[]'::jsonb,'closed','[]'::jsonb,'days','{}'::jsonb,'fees',0,'realized',0,'seen','{}'::jsonb,'peak',10000,'maxDrawdown',0,'kill','NONE','dailyLocked',false,'buyPaused',false,'baselinePending',false,'lastAt',before_at);
+ oldbook=jsonb_build_object('protocol','REA-EXPERIMENT-25.0.0','mode','PAPER_ONLY','startedAt',started,'lastAt',before_at,'samples',60,'validSamples',60,'coveredMinutes',60,'validMinutes',60,'lastMinute',before_at/60000,'lastMinuteValid',true,'experience',jsonb_build_object('startedAt',started,'validMinutes',60,'lastMinute',before_at/60000,'lastMinuteValid',true),'accounts',(select jsonb_object_agg(k,jsonb_build_object('startedAt',started,'state',s||'{"cash":9900,"equity":9900,"realized":-100,"fees":20}'::jsonb,'health','OK','markVerified',true,'lessons','[]'::jsonb,'stats','{"closedTrades":2,"wins":0,"grossGains":0,"grossLosses":100,"fillCount":4}'::jsonb)) from unnest(array['MIXED','TREND','BREAKOUT','MEAN_REVERSION','CAUTIOUS_MIXED','EXPERIENCE_BASELINE','EXPERIENCE_GUARDED'])k));
+ next_latest=jsonb_build_object('at',before_at,'health','OK','quotes','[]'::jsonb,'experiments',jsonb_build_object('at',before_at,'mode','PAPER_ONLY','protocol','REA-EXPERIMENT-25.0.0'));
+ update rea.bot_settings set state=s,lease=l,lease_until=now()+interval '90 seconds',revision=0 where user_id=u;
+ if not public.rea_experiment_checkpoint(u,l,0,s,next_latest,'[]','[]','[]',before_at,oldbook) then raise exception 'LEGACY_FIXTURE_REJECTED';end if;
+ s=jsonb_set(s,'{lastAt}',to_jsonb(t));b=jsonb_set(oldbook,'{protocol}','"REA-EXPERIMENT-26.0.0"');b=jsonb_set(b,'{lastAt}',to_jsonb(t));
+ b=jsonb_set(b,'{accounts}',(select jsonb_object_agg(key,jsonb_set(value,'{state,lastAt}',to_jsonb(t))) from jsonb_each(b->'accounts')));
+ b=jsonb_set(b,'{accounts}',(b->'accounts')||(select jsonb_object_agg(k,jsonb_build_object('startedAt',t,'state',s,'health','OK','markVerified',true,'lessons','[]'::jsonb,'stats','{"closedTrades":0,"wins":0,"grossGains":0,"grossLosses":0,"fillCount":0}'::jsonb)) from unnest(array['EXIT_BASELINE','EXIT_PROTECT','ENTRY_PROTECT'])k));
+ b=jsonb_set(b,'{positionStudy}',jsonb_build_object('startedAt',t,'validMinutes',1,'lastMinute',t/60000,'lastMinuteValid',true));
+ next_latest=jsonb_build_object('at',t,'health','OK','quotes','[]'::jsonb,'experiments',jsonb_build_object('at',t,'mode','PAPER_ONLY','protocol','REA-EXPERIMENT-26.0.0'));
+ update rea.bot_settings set lease=l,lease_until=now()+interval '90 seconds' where user_id=u;
+ if public.rea_experiment_checkpoint(u,gen_random_uuid(),1,s,next_latest,'[]','[]','[]',t,b) then raise exception 'WRONG_LEASE_UPGRADE';end if;
+ if not public.rea_experiment_checkpoint(u,l,1,s,next_latest,'[]','[]','[]',t,b) then raise exception 'TEN_ACCOUNT_UPGRADE_FAILED';end if;
+ if (select count(*) from jsonb_object_keys(public.rea_experiment_state(u)->'accounts'))<>10 or public.rea_experiment_state(u)->'accounts'->'MIXED'->'state'->>'realized'<>'-100' then raise exception 'OLD_LOSS_RESET';end if;
+ current_revision=2;update rea.bot_settings set lease=l,lease_until=now()+interval '90 seconds' where user_id=u;
+ bad=jsonb_set(b,'{accounts,EXIT_PROTECT,startedAt}',to_jsonb(t-1));
+ begin perform public.rea_experiment_checkpoint(u,l,current_revision,s,next_latest,'[]','[]','[]',t,bad);raise exception 'UNMATCHED_ACCEPTED';exception when others then if sqlerrm='UNMATCHED_ACCEPTED' then raise;end if;end;
+ bad=jsonb_set(b,'{accounts,MIXED,stats,grossLosses}','0');
+ begin perform public.rea_experiment_checkpoint(u,l,current_revision,s,next_latest,'[]','[]','[]',t,bad);raise exception 'LOSS_HISTORY_RESET_ACCEPTED';exception when others then if sqlerrm='LOSS_HISTORY_RESET_ACCEPTED' then raise;end if;end;
+ bad=jsonb_set(b,'{accounts,EXIT_PROTECT,state,mode}','"LIVE"');
+ begin perform public.rea_experiment_checkpoint(u,l,current_revision,s,next_latest,'[]','[]','[]',t,bad);raise exception 'LIVE_STUDY_ACCEPTED';exception when others then if sqlerrm='LIVE_STUDY_ACCEPTED' then raise;end if;end;
+ bad=jsonb_set(next_latest,'{experiments,protocol}','"REA-EXPERIMENT-25.0.0"');
+ begin perform public.rea_experiment_checkpoint(u,l,current_revision,jsonb_set(s,'{lastAt}',to_jsonb(before_at)),jsonb_set(jsonb_set(bad,'{at}',to_jsonb(before_at)),'{experiments,at}',to_jsonb(before_at)),'[]','[]','[]',before_at,oldbook);raise exception 'DOWNGRADE_ACCEPTED';exception when others then if sqlerrm='DOWNGRADE_ACCEPTED' then raise;end if;end;
+ if (select revision from rea.bot_settings where user_id=u)<>2 or public.rea_experiment_state(u) is distinct from b then raise exception 'FAILED_TEST_MUTATED_BOOK';end if;
+ if exists(select 1 from rea.live_accounts where user_id=u) then raise exception 'STUDY_CREATED_LIVE_ACCOUNT';end if;
+end$$;
+reset role;
+rollback;
+select 'TEN_PAPER_UPGRADE_LOSS_HISTORY_COHORT_ROLE_ATOMIC_TESTS_PASSED_ROLLED_BACK_NO_HTTP' as result;

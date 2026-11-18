@@ -4,6 +4,7 @@ import {reviewTeam} from './rea-review-team.mjs';
 import {capitalAdvice,refreshCapitalAdvice} from './rea-capital-advisor.mjs';
 import {lossReview} from './rea-loss-diagnostics.mjs';
 import {liveLearning,experienceAssessment} from './rea-learning.mjs';
+import {liveProfitReview} from './rea-position-policy.mjs';
 const symbols=s=>[...new Set([...(s?.positions||[]).map(p=>p.symbol),...(s?.orders||[]).filter(liveActive).map(o=>o.symbol)])];
 const hash=async v=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 const safeError=e=>e.exchangeRejected?'BITKUB_REJECTED_'+String(e.message).slice(0,80):String(e.message||'LIVE_SERVICE_UNAVAILABLE').slice(0,160);
@@ -38,9 +39,9 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
   const lane=riskOnly?'risk':'strategy';if(riskOnly)await rpc('rea_live_idle',{});
   // Candle/news scanning runs outside the executor lease. A stalled scanner cannot
   // hold the independent stop worker's execution lock.
-  let prepared=null,scanError=null,scanMs=0;const brains=new Map(),experiences=new Map();
+  let prepared=null,scanError=null,scanMs=0;const brains=new Map(),experiences=new Map(),studies=new Map();
   if(!riskOnly){const targets=await rpc('rea_live_scan_targets',{p_uid:uid});if(!Array.isArray(targets))throw Error('LIVE_SCAN_TARGETS_INVALID');
-   for(const t of targets)experiences.set(t.paper_user_id||t.user_id,t.paper_experience||null);
+   for(const t of targets){experiences.set(t.paper_user_id||t.user_id,t.paper_experience||null);studies.set(t.paper_user_id||t.user_id,t.position_study||null);}
    await Promise.all(targets.map(async t=>{try{brains.set(t.user_id,await brain(t.user_id));}catch{brains.set(t.user_id,null);}}));
    if(targets.length){const scanAt=clock();try{prepared=await scan([...new Set(targets.flatMap(x=>symbols(x.state)))]);}catch(e){scanError=safeError(e);}finally{scanMs=clock()-scanAt;}}
   }
@@ -85,6 +86,7 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
      const capitalContext={state,bundle,wallet:pf.wallet,now:clock(),mode:row.mode,health:latest.health,entriesPermitted:permitted&&!scanError,decisions:out.decisions};
      latest.lossDiagnostics=lossReview(capitalContext);
      latest.learning=liveLearning(state,latest.learning,clock());
+     latest.profitReview=liveProfitReview(state,bundle,clock(),riskOnly?latest.profitReview?.study||null:studies.get(row.user_id)||null);
      if(!riskOnly){latest.paperExperience=experienceAssessment(experience,clock());if(team)team.learning={paperExperience:latest.paperExperience,liveLessons:latest.learning.counts,entryRestrictions:out.decisions.filter(d=>['LOSS_REENTRY_COOLDOWN','PAPER_EXPERIENCE_COOLDOWN'].includes(d.reason)).map(d=>({symbol:d.symbol,strategy:d.strategy,reason:d.reason,learning:d.learning}))};}
      latest.capitalAdvice=riskOnly?refreshCapitalAdvice(latest.capitalAdvice,capitalContext):capitalAdvice(capitalContext);
      if(!riskOnly&&team){team.capitalAdvice=latest.capitalAdvice;const reviewer=team.reviews.find(r=>r.role==='Portfolio Auditor');if(reviewer)reviewer.summary=reviewer.reason=reviewer.summary+' · '+latest.capitalAdvice.headline;}

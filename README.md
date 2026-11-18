@@ -1,3 +1,7 @@
+# REA 26.0 — Profit protection and selective-entry study
+
+เพิ่มชุดทดลองจุดออก 3 พอร์ตเริ่มพร้อมกัน รวม Paper 10 พอร์ต เก็บ 7 พอร์ตเดิมต่อ เปรียบเทียบจุดออกเดิมกับการเลื่อน Stop ตามกำไรสุทธิ และแบบคัดจังหวะเข้าเพิ่ม ฝั่งจริงแสดงแผนเปรียบเทียบแบบอ่านอย่างเดียว ดู [รายละเอียด REA 26.0](docs/REA-26.0-PROFIT-STUDY-TH.md) · [ผลทดลอง](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#agents)
+
 # REA 25.0 — Post-trade knowledge and parallel Paper experience
 
 เพิ่มสมุดบทเรียนรายไม้เงินจริง และ Paper อีก 2 พอร์ต รวม 7 พอร์ต ทำงานบน Backend ควบคู่กับเงินจริง ฝั่งจริงตรวจบทเรียนก่อนซื้อ และรับผลเปรียบเทียบจากคู่ Paper ใหม่ภายใต้ตัวกรองพักซื้อชั่วคราวที่จำกัดไว้ในโค้ด ดู [รายละเอียด REA 25.0](docs/REA-25.0-LEARNING-TH.md) · [เงินจริงและบทเรียน](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#live) · [ทีม Paper](https://keitaphotocamerakathu-sudo.github.io/bitbot-virtual-office/rea.html#agents)

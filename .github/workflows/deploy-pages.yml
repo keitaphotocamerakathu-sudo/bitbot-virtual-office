@@ -1,4 +1,4 @@
-name: Test and deploy REA 25.0 Post Trade Learning and Paper Experience
+name: Test and deploy REA 26.0 Profit Protection Study
 on:
   push:
     branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]

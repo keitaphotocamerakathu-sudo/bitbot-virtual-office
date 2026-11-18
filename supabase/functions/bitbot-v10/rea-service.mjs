@@ -13,7 +13,9 @@ export function createREAService({rpc,marketService,clock=()=>Date.now(),runtime
    try{out=cycleREA(row.state,bundle,now,{operationalLock:row.operational_lock===true});}catch(e){error=String(e.message||'STATE_INVALID').slice(0,160);out={state:row.state,events:[{kind:'SAFE_MODE',reason:error}],signals:[],fills:[],ranking:[],health:'SAFE_MODE'};}
    let experimentResult=null;let experiments={at:now,status:'UNAVAILABLE',reason:'PAPER_EXPERIMENTS_UNAVAILABLE',accounts:[],canTrade:false,canActivateLive:false};
    if(researchLoaded)try{experimentResult=stepExperiments(book,bundle,now,{operationalLock:row.operational_lock===true,buyPaused:row.state.buyPaused,kill:row.state.kill});experiments=experimentResult.summary;}catch{}
-   const {cycleFills,cycleEvents,...researchSummary}=experiments;analysis.receipt.experiments=researchSummary;
+   const {cycleFills,cycleEvents,...researchSummary}=experiments;
+   // Detailed lessons remain in the per-cycle archive; keep the review receipt bounded.
+   analysis.receipt.experiments={...researchSummary,accounts:(researchSummary.accounts||[]).map(({recentLessons,positions,...account})=>account)};
    const latest={at:now,durationMs:now-began,health:error?'SAFE_MODE':out.health,mode:'PAPER_ONLY',error,summary:analyticsREA(out.state),ranking:out.ranking,decisions:out.signals,events:out.events,universe:bundle?.universeCount||0,experiments,
     quotes:(bundle?.markets||[]).map(m=>({symbol:m.symbol,bid:m.bid,ask:m.ask,at:m.observedAt,bookAt:m.depth?.at,news:m.news})),
     team:analysis.receipt,
