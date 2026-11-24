@@ -12,17 +12,17 @@ test('Paper diagnostics show mutually exclusive failure stages and clear owner c
 test('the experience panel distinguishes chart cases from closed Paper trades and clears both on logout', async ({page}) => {
   const {data, calls, errors} = await setup(page);
   const report = data.latest.experience;
-  await expect(page.locator('#reaExperienceStatus')).toContainText('ปิดไม้ Paper แล้ว 0 ไม้');
-  await expect(page.locator('#reaExperienceRanks')).toContainText('BTC_THB');
+  await expect(page.locator('#reaMasterExperienceStatus')).toContainText('ปิดไม้ Paper แล้ว 0 ไม้');
+  await expect(page.locator('#reaMasterExperienceRanks')).toContainText('BTC_THB');
   report.lifetimeClosed = 1;
   report.latestLessons = [{symbol:'ETH_THB', strategyId:'TREND_SHORT', closedAt:Date.now(), feesTHB:1.25, netTHB:-3.5, exitReason:'FIXED_STOP'}];
   await page.locator('#reaRefresh').click();
   await page.locator('#reaMasterExperiencePanel summary').click();
-  await expect(page.locator('#reaExperienceCloses')).toContainText('ถึงจุดตัดขาดทุน');
-  await expect(page.locator('#reaExperienceCloses')).toContainText('-3.50');
+  await expect(page.locator('#reaMasterExperienceCloses')).toContainText('ถึงจุดตัดขาดทุน');
+  await expect(page.locator('#reaMasterExperienceCloses')).toContainText('-3.50');
   await page.evaluate(() => { globalThis.__masterSession = null; globalThis.__masterAuthChange('SIGNED_OUT', null); });
-  await expect(page.locator('#reaExperienceCloses')).not.toContainText('ETH_THB');
-  await expect(page.locator('#reaExperienceRanks')).not.toContainText('BTC_THB');
+  await expect(page.locator('#reaMasterExperienceCloses')).not.toContainText('ETH_THB');
+  await expect(page.locator('#reaMasterExperienceRanks')).not.toContainText('BTC_THB');
   expect(calls.every(call => !/control|configure|place/.test(call.action))).toBe(true);
   expect(errors).toEqual([]);
 });

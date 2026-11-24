@@ -41,14 +41,14 @@ export function createMasterPanel({api,getSession,onUpdate=()=>{}}){
      (memory.baseline?.available ? N(memory.baseline.records.length,0) + ' ไม้' : 'รอข้อมูล') +
      ' · รอบนี้ปรับคะแนน ' + N(memory.changedPriorities,0) + ' แผน'
    : memory ? 'รอบนี้ใช้คะแนนกลยุทธ์เดิม เพราะอ่านประสบการณ์ไม่ได้' : 'รอผลประสบการณ์จากพอร์ต Paper';
-  set('reaExperienceStatus', summary);
-  set('reaExperienceMethod', ready ? 'เทียบเหรียญเดียวกันในภาวะกราฟคล้ายกัน ระยะสั้นดูราคาหลัง 1 ชั่วโมง กลาง 1 วัน ยาว 7 วัน โดยประมาณค่าธรรมเนียมสองขา ส่วนต่างราคา และราคาคลาดเคลื่อน · ใช้กราฟอย่างน้อย ' +
+  set('reaMasterExperienceStatus', summary);
+  set('reaMasterExperienceMethod', ready ? 'เทียบเหรียญเดียวกันในภาวะกราฟคล้ายกัน ระยะสั้นดูราคาหลัง 1 ชั่วโมง กลาง 1 วัน ยาว 7 วัน โดยประมาณค่าธรรมเนียมสองขา ส่วนต่างราคา และราคาคลาดเคลื่อน · ใช้กราฟอย่างน้อย ' +
     memory.chartMinimum + ' ช่วง หรือดีล Paper ที่ตรงกลยุทธ์และภาวะตลาด ' + memory.paperMinimum + ' ไม้ตามเกณฑ์ ระบบจัดลำดับเฉพาะสัญญาณที่ครบ' : '');
   const distinct = new Map();
   if (ready) for (const decision of latest.decisions || []) {
    if (decision.experience && !distinct.has(decision.symbol)) distinct.set(decision.symbol, decision);
   }
-  table('reaExperienceRanks', [...distinct.values()], [
+  table('reaMasterExperienceRanks', [...distinct.values()], [
    d => d.symbol + ' · ' + (S[d.strategyId] || d.strategyId),
    d => (chartDirections[d.experience.chart.direction] || 'ข้อมูลยังไม่พอ') + ' · ' + d.experience.chart.samples + ' ช่วง',
    d => P(d.experience.chart.meanNetMove),
@@ -59,7 +59,7 @@ export function createMasterPanel({api,getSession,onUpdate=()=>{}}){
    ...(memory.latestLessons || []).map(t => ({...t, source: 'Master Paper', reasons: t.exitReason ? [t.exitReason] : []})),
    ...(memory.baseline?.records || []).map(t => ({...t, source: 'Paper รุ่นเดิม · อ้างอิง', reasons: t.exitReasons}))
   ].sort((a,b) => b.closedAt - a.closedAt) : [];
-  table('reaExperienceCloses', lessons, [
+  table('reaMasterExperienceCloses', lessons, [
    t => t.source, t => T(t.closedAt), t => t.symbol + ' · ' + (S[t.strategyId] || earlierNames[t.strategyId] || t.strategyId),
    t => t.reasons?.map(r => lessonExits[r] || r).join(' · ') || 'ไม่มีบันทึกเหตุผล', t => B(t.feesTHB), t => B(t.netTHB)
   ], 'เมื่อปิดไม้ Paper แล้ว บทเรียนจะแสดงที่นี่');
