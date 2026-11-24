@@ -5,6 +5,7 @@ import {initialREA,REA_LIMITS,scoreREA,quoteOK,riskSizeREA,markREA,dayKey,analyt
 import {tickPrice,roundUnit,validSymbol,assetOf} from './engine.mjs';
 import {entryEvidence,exitEvidence,lossReentryGuard,paperExperienceGuard} from './rea-learning.mjs';
 import {capitalGuard,guardScale,guardedRisk,GUARD_RULES,stopExitEstimate,RISK_POLICY_SPEC} from './rea-risk-policy.mjs';
+import {settleSellTHB,feeAfterCreditTHB,THB_SETTLEMENT,walletReconciliation} from './rea-thb-settlement.mjs';
 export const LIVE_SPEC='REA-LIVE-19.0';
 export const LIVE_CONFIRM='เปิดซื้อขายจริง Bitkub';
 export const LIMITED_POLICY='OWNER_LIMITED_LIVE';
@@ -81,9 +82,7 @@ export function markLive(state,markets,now=Date.now()){
  s.lastAt=now;return{state:s,healthy:!s.baselinePending,reason:s.baselinePending?'MIDNIGHT_BASELINE_UNVERIFIED':null};
 }
 export function walletMatches(s,w,now=Date.now()){
- if(!w||!Number.isFinite(w.at)||now-w.at>20000||w.at>now+5000||!w.THB)return false;
- if(w.THB.available+w.THB.reserved+.1<s.cash)return false;
- return s.positions.every(p=>{const a=w[assetOf(p.symbol)];return a&&a.available+a.reserved+1e-8>=p.qty;});
+ return walletReconciliation(s,w,now).status==='READY';
 }
 export function liveSummary(s,now=Date.now()){return s?{...analyticsREA(riskProjection(s)),...liveLimits(s),...livePositionRisk(s),riskManager:liveRiskManager(s,now),policy:s.policy||'STANDARD'}:null;}
 export function applyExchangeInfo(state,orderId,info,now=Date.now()){
@@ -103,19 +102,20 @@ export function applyExchangeInfo(state,orderId,info,now=Date.now()){
  o.appliedTxnIds??=[];
  for(const f of history){
   const id=String(f.txn_id);if(o.appliedTxnIds.includes(id))continue;
-  const amount=Number(f.amount),price=Number(f.rate),paidFee=Number(f.fee)-Number(f.credit??0),at=Number(f.timestamp);
+  const amount=Number(f.amount),price=Number(f.rate),paidFee=feeAfterCreditTHB(f.fee,f.credit??0),at=Number(f.timestamp);
   const qty=o.side==='BUY'?roundUnit((amount-paidFee)/price,o.qtyScale):amount;
   if(!(qty>0))throw Error('EXCHANGE_FILL_DUST');
-  const receipt={id,orderId:o.id,exchangeId:o.exchangeId,symbol:o.symbol,side:o.side,qty,price,fee:paidFee,at,realized:0,simulation:false};
+  const receipt={id,orderId:o.id,exchangeId:o.exchangeId,symbol:o.symbol,side:o.side,qty,price,fee:paidFee,at,realized:0,simulation:false,settlement:{protocol:THB_SETTLEMENT,exchangeAmount:String(f.amount),exchangeRate:String(f.rate),grossFeeTHB:Number(f.fee),creditTHB:Number(f.credit??0)}};
   if(o.side==='BUY'){
    if(amount>s.cash+.02)throw Error('LIVE_OVERSPEND');
    s.cash=money(s.cash-amount);
+   receipt.settlement.cashDeltaTHB=-amount;
    let p=s.positions.find(p=>p.symbol===o.symbol);
    if(!p){p={symbol:o.symbol,qty:0,cost:0,stop:o.stop,target:o.target,positionId:o.id,openedAt:at,strategy:o.strategy,realized:0};s.positions.push(p);}
    p.qty=roundUnit(p.qty+qty,o.qtyScale);p.cost=money(p.cost+amount);
   }else{
    const p=s.positions.find(p=>p.symbol===o.symbol);if(!p||qty>p.qty+1e-8)throw Error('LIVE_OVERSELL');
-   const basis=p.cost*qty/p.qty,proceeds=amount*price-paidFee;receipt.realized=money(proceeds-basis);
+   const basis=p.cost*qty/p.qty,proceeds=settleSellTHB(f.amount,f.rate,f.fee,f.credit??0);receipt.realized=money(proceeds-basis);receipt.settlement.cashDeltaTHB=proceeds;
    s.cash=money(s.cash+proceeds);s.realized=money(s.realized+receipt.realized);
    p.realized=money(p.realized+receipt.realized);p.qty=roundUnit(Math.max(0,p.qty-qty),o.qtyScale);p.cost=money(Math.max(0,p.cost-basis));
    if(p.qty<10**-o.qtyScale){s.closed.push({id:p.positionId,symbol:p.symbol,pnl:p.realized,openedAt:p.openedAt,closedAt:at});s.positions=s.positions.filter(x=>x!==p);}

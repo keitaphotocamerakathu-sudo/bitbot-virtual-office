@@ -1,0 +1,43 @@
+-- Synthetic owner only. The transaction rolls back; no API or exchange writes.
+begin;
+insert into auth.users(id,aud,role,email) values('fa303030-3030-4030-8030-303030303030','authenticated','authenticated','rea-thb-settlement@example.invalid');
+insert into rea.bot_settings(user_id,state) values('fa303030-3030-4030-8030-303030303030','{"mode":"PAPER_ONLY","initialCapital":10000,"cash":10000}');
+do $$
+declare u uuid='fa303030-3030-4030-8030-303030303030';buy uuid='fa303030-3030-4030-8030-303030303031';sell1 uuid='fa303030-3030-4030-8030-303030303032';sell2 uuid='fa303030-3030-4030-8030-303030303033';
+ t bigint=floor(extract(epoch from now())*1000);midnight bigint=floor(extract(epoch from (date_trunc('day',now() at time zone 'Asia/Bangkok') at time zone 'Asia/Bangkok'))*1000);day0 text;day1 text;
+ s jsonb;pf jsonb;orders jsonb;fills jsonb;f jsonb;o jsonb;r jsonb;fixed jsonb;old_lease uuid=gen_random_uuid();
+begin
+ day0=to_char(to_timestamp((midnight-1000)::double precision/1000) at time zone 'Asia/Bangkok','YYYY-MM-DD');day1=to_char(now() at time zone 'Asia/Bangkok','YYYY-MM-DD');
+ if has_function_privilege('anon','rea.repair_thb_settlement_v30(uuid)','EXECUTE') or has_function_privilege('authenticated','rea.repair_thb_settlement_v30(uuid)','EXECUTE') or has_function_privilege('service_role','rea.repair_thb_settlement_v30(uuid)','EXECUTE') then raise exception 'ADMIN_REPAIR_EXPOSED';end if;
+ orders=jsonb_build_array(jsonb_build_object('id',buy,'clientId','qa-buy','exchangeId','ex-buy','symbol','BTC_THB','side','BUY','status','FILLED','amount',20,'executed',20,'remaining',0,'createdAt',midnight-3600000),jsonb_build_object('id',sell1,'clientId','qa-sell1','exchangeId','ex-sell1','symbol','BTC_THB','side','SELL','status','FILLED','amount',1,'executed',1,'remaining',0,'positionId',buy,'createdAt',midnight-1801000),jsonb_build_object('id',sell2,'clientId','qa-sell2','exchangeId','ex-sell2','symbol','BTC_THB','side','SELL','status','FILLED','amount',1,'executed',1,'remaining',0,'positionId',buy,'createdAt',t-2000));
+ fills=jsonb_build_array(jsonb_build_object('id','qa-buy','orderId',buy,'exchangeId','ex-buy','symbol','BTC_THB','side','BUY','qty',2,'price',10,'fee',0,'realized',0,'at',midnight-3600000,'simulation',false),jsonb_build_object('id','qa-sell1','orderId',sell1,'exchangeId','ex-sell1','symbol','BTC_THB','side','SELL','qty',1,'price',10.079996,'fee',0,'realized',.08,'at',midnight-1800000,'simulation',false),jsonb_build_object('id','qa-sell2','orderId',sell2,'exchangeId','ex-sell2','symbol','BTC_THB','side','SELL','qty',1,'price',10.079996,'fee',0,'realized',.08,'at',t-1000,'simulation',false));
+ s=jsonb_build_object('version',1,'mode','LIVE','accounting','EXCHANGE_RECEIPTS','policy','OWNER_LIMITED_LIVE','allocatedCapital',100,'cash',100.16,'equity',100.16,'dayStart',100.08,'dayPnl',.08,'dayFlows',0,'realized',.16,'fees',0,'peak',100.16,'maxDrawdown',0,'day',day1,'lastAt',t,'buyPaused',true,'dailyLocked',false,'kill','NONE','baselinePending',false,'maxPositions',2,'orders',orders,'fills',fills,'positions','[]'::jsonb,'closed',jsonb_build_array(jsonb_build_object('id',buy,'symbol','BTC_THB','pnl',.16,'openedAt',midnight-3600000,'closedAt',t-1000)),'days',jsonb_build_object(day0,jsonb_build_object('start',100,'equity',100.08,'pnl',.08,'flows',0,'locked',false)));
+ pf=jsonb_build_object('ok',true,'at',t,'keyFingerprint','qa-key','wallet',jsonb_build_object('at',t,'THB',jsonb_build_object('available',100.14,'reserved',0)));
+ insert into rea.live_accounts(user_id,mode,state,preflight,latest,approval,lease,lease_until,revision) values(u,'LIVE_ENABLED',s,pf,jsonb_build_object('at',t,'health','SAFE_MODE'),jsonb_build_object('keyFingerprint','qa-key','capital',100,'policy','OWNER_LIMITED_LIVE'),old_lease,now()+interval '90 seconds',7);
+ for o in select value from jsonb_array_elements(orders) loop insert into rea.live_orders(user_id,client_order_id,client_id,exchange_id,status,payload) values(u,(o->>'id')::uuid,o->>'clientId',o->>'exchangeId','FILLED',o);end loop;
+ for f in select value from jsonb_array_elements(fills) loop insert into rea.live_fills(user_id,txn_id,client_order_id,payload) values(u,f->>'id',(f->>'orderId')::uuid,f);end loop;
+ insert into rea.live_equity values(u,midnight-1000,100.08,day0,.08),(u,t,100.16,day1,.08);
+ insert into rea.trade_lessons(user_id,position_id,closed_at_ms,payload) values(u,buy,t-1000,jsonb_build_object('protocol','REA-LEARNING-25.0.0','mode','LIVE','simulation',false,'positionId',buy,'closedAt',t-1000,'netPnL',.16,'metrics',jsonb_build_object('roundingDifference',0)));
+ update rea.live_accounts set preflight=jsonb_set(pf,'{wallet,at}',to_jsonb(t-30000)) where user_id=u;
+ begin perform rea.repair_thb_settlement_v30(u);raise exception 'STALE_WALLET_ACCEPTED';exception when others then if sqlerrm<>'FRESH_EXCHANGE_WALLET_REQUIRED' then raise;end if;end;
+ update rea.live_accounts set preflight=jsonb_set(pf,'{wallet,THB,available}','99.14') where user_id=u;
+ begin perform rea.repair_thb_settlement_v30(u);raise exception 'EXTERNAL_WITHDRAWAL_CONCEALED';exception when others then if sqlerrm<>'REPAIR_DOES_NOT_EXPLAIN_EXCHANGE_WALLET' then raise;end if;end;
+ update rea.live_accounts set preflight=pf,state=jsonb_set(s,'{orders,1,status}','"UNKNOWN"') where user_id=u;
+ begin perform rea.repair_thb_settlement_v30(u);raise exception 'UNKNOWN_ORDER_ACCEPTED';exception when others then if sqlerrm<>'UNSETTLED_ORDERS_REPAIR_BLOCKED' then raise;end if;end;
+ update rea.live_accounts set state=s-'fills'||jsonb_build_object('fills',(fills-0)) where user_id=u;
+ begin perform rea.repair_thb_settlement_v30(u);raise exception 'MISSING_RECEIPT_ACCEPTED';exception when others then if sqlerrm<>'COMPLETE_ARCHIVED_RECEIPTS_REQUIRED' then raise;end if;end;
+ update rea.live_accounts set state=s where user_id=u;
+ r=rea.repair_thb_settlement_v30(u);select state into fixed from rea.live_accounts where user_id=u;
+ if r->>'status'<>'REPAIRED' or (fixed->>'cash')::numeric<>100.14 or (fixed->>'equity')::numeric<>100.14 or (fixed->>'realized')::numeric<>.14 then raise exception 'SETTLEMENT_TOTAL_MISMATCH: %',fixed;end if;
+ if (fixed->>'dayStart')::numeric<>100.07 or (fixed->>'dayPnl')::numeric<>.07 or (fixed->'days'->day0->>'pnl')::numeric<>.07 then raise exception 'DAY_CORRECTION_ATTRIBUTED_TO_WRONG_DAY';end if;
+ if (fixed->'closed'->0->>'pnl')::numeric<>.14 or (select (payload->>'netPnL')::numeric from rea.trade_lessons where user_id=u)<>.14 then raise exception 'CLOSED_REPORT_NOT_RECONCILED';end if;
+ if (select equity from rea.live_equity where user_id=u and at_ms=t)<>100.14 or (select pnl from rea.live_equity where user_id=u and at_ms=midnight-1000)<>.07 then raise exception 'CURVE_NOT_RECONCILED';end if;
+ if fixed->>'buyPaused'<>'true' or fixed->'orders' is distinct from s->'orders' or fixed->'positions' is distinct from s->'positions' then raise exception 'REPAIR_CHANGED_TRADING_CONTROLS';end if;
+ if (select revision from rea.live_accounts where user_id=u)<>8 or (select lease from rea.live_accounts where user_id=u) is not null then raise exception 'OLD_WORKER_NOT_INVALIDATED';end if;
+ if public.rea_live_checkpoint(u,old_lease,7,s,pf,'{}','[]','risk') is not null then raise exception 'OLD_WORKER_OVERWROTE_REPAIR';end if;
+ r=rea.repair_thb_settlement_v30(u);if r->>'status'<>'ALREADY_REPAIRED' or (select state from rea.live_accounts where user_id=u) is distinct from fixed then raise exception 'REPAIR_NOT_IDEMPOTENT';end if;
+ if (select count(*) from rea.audit_logs where user_id=u and action='THB_SETTLEMENT_RECONCILED')<>1 or (select payload->'beforeState' from rea.audit_logs where user_id=u and action='THB_SETTLEMENT_RECONCILED') is distinct from s then raise exception 'ORIGINAL_EVIDENCE_NOT_PRESERVED';end if;
+end;
+$$;
+rollback;
+select 'THB_SETTLEMENT_PROOF_CASH_DAY_CURVE_LESSON_RESTART_IDEMPOTENCY_ROLES_PASSED_ROLLED_BACK_NO_HTTP' as result;

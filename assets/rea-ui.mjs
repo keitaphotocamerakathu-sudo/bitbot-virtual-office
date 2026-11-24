@@ -1,6 +1,6 @@
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason} from './rea-view-model.mjs?v=28.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason,walletView} from './rea-view-model.mjs?v=30.0.0';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -84,7 +84,13 @@ function renderLive(data){
  text('reaConnectionStatus','API · '+(receipt?'บันทึกแล้ว รอ Backend':pf.ok===true&&fresh(pf.at??l.at,now,120000)?'เชื่อมต่อแล้ว':pf.ok===false?'ตรวจการเชื่อมต่อ':'รอข้อมูล'));
  text('reaStrategyStatus','วิเคราะห์ · '+(fresh(l.strategyAt,now)?'อัปเดต '+age(l.strategyAt):l.strategyAt?'ข้อมูลเก่า':'รอรอบแรก'));
  text('reaRiskStatus','เฝ้าความเสี่ยง · '+(fresh(l.riskAt,now)?'อัปเดต '+age(l.riskAt):l.riskAt?'ข้อมูลเก่า':'รอรอบแรก'));
- text('reaLiveWallet',w?baht(w.available):'—');text('reaLiveReserved',w?'Bitkub จองไว้ '+baht(w.reserved):'ยังอ่าน Wallet ไม่สำเร็จ');
+ const walletVM=walletView(session?data:null,session?receipt:null,now);
+ text('reaLiveWallet',walletVM.ready?baht(walletVM.available):'—');text('reaLiveReserved',walletVM.ready?'Bitkub จองไว้ '+baht(walletVM.reserved):'รออ่าน Wallet ที่ยังสด');
+ text('reaLiveWalletAt',walletVM.at?'อ่านจาก Bitkub '+time(walletVM.at)+(walletVM.ready?'':' · ข้อมูลเก่า'):'ยังไม่มีเวลาอ่าน Wallet');
+ text('reaWalletBotCash',session?baht(walletVM.botCash):'—');text('reaWalletTotalTHB',walletVM.ready?baht(walletVM.total):'—');
+ text('reaWalletDifference',walletVM.difference===null?'รอข้อมูล':baht(walletVM.difference));
+ text('reaWalletMatchStatus',!session?'เข้าสู่ระบบเพื่อเทียบยอดเงินบาท':!walletVM.ready?'รอ Wallet สดก่อนเทียบยอด':walletVM.difference===null?'ยังไม่ได้จัดสรรทุนบอท':walletVM.difference<0?'สมุดบัญชีบอทสูงกว่า Wallet · รอกระทบยอดก่อนส่งคำสั่ง':walletVM.difference>0?'มีเงินบาทนอกทุนบอท · เงินที่เติมไม่ได้เพิ่มงบบอทอัตโนมัติ':'ยอดเงินบาทรวมตรงกับสมุดบัญชีบอท');
+ const repair=session?s?.thbSettlementRepair:null;text('reaWalletRepairNote',repair?'แก้เศษเงินบาทจากรายการขายย้อนหลัง '+baht(repair.deltaTHB)+' · '+time(repair.at)+' · เก็บหลักฐานใน Audit แล้ว':'');
  text('reaLiveEquity',s?baht(s.equity):'—');text('reaLiveCapital',s?'จัดสรรให้บอท '+baht(s.allocatedCapital)+(s.policy==='OWNER_LIMITED_LIVE'?' · วงเงินจำกัด':''):'ยังไม่ได้จัดสรรทุนให้บอท');
  text('reaLivePnl',s?baht(s.dayPnl):'—');$('reaLivePnl').classList.toggle('negative',s?.dayPnl<0);text('reaLivePnlDetail',s?'ปิดแล้ว '+baht(a.realized??s.realized)+' · ยังถือ '+baht(a.unrealized):'ยังไม่มีพอร์ต Live');
  const maxPositions=data?.maxPositions??s?.maxPositions??a.maxPositions??2;
