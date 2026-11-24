@@ -7,6 +7,9 @@ import {createMarketService} from '../../supabase/functions/bitbot-v10/market.mj
 import {createVerifiedMarketService} from '../../supabase/functions/bitbot-v10/market-verified.mjs';
 import {createREAService} from '../../supabase/functions/bitbot-v10/rea-service.mjs';
 import {createExperimentStore} from '../../supabase/functions/bitbot-v10/rea-experiments.mjs';
+import {createMasterService} from '../../supabase/functions/bitbot-v10/master-service.mjs';
+import {createMasterData} from '../../supabase/functions/bitbot-v10/master-data.mjs';
+import {MASTER_RESEARCH} from '../../supabase/functions/bitbot-v10/master-research-evidence.mjs';
 import {createRiskWatchdog} from '../../supabase/functions/bitbot-v10/rea-watchdog.mjs';
 import {createRiskQuotes} from '../../supabase/functions/bitbot-v10/rea-risk-quotes.mjs';
 import {createAdvisory} from '../../supabase/functions/bitbot-v10/rea-advisory.mjs';
@@ -17,7 +20,8 @@ export async function runDaemon(role=process.env.REA_SERVICE||'strategy-worker')
  if(!['market-collector','strategy-worker','risk-watchdog','health-monitor'].includes(role))throw Error('UNKNOWN_SERVICE');
  const io=createTransport(),instance=randomUUID(),startedAt=Date.now();let stopped=false,active=false,status='STARTING',lastWorkAt=0,lastError=null,renewBusy=false,wake=null;
  const market=createMarketService({...io,fetchFn:io.newsFetch}),verified=createVerifiedMarketService({base:market,...io});
- const strategy=createREAService({rpc:io.rpc,marketService:createStreamingMarket({base:verified,rpc:io.rpc}),runtime:'DOCKER',advisor:createAdvisory({rpc:io.rpc}),research:createExperimentStore({rpc:io.rpc})});
+ const master=createMasterService({rpc:io.rpc,data:createMasterData({base:market,...io}),history:MASTER_RESEARCH});
+ const strategy=createREAService({rpc:io.rpc,marketService:createStreamingMarket({base:verified,rpc:io.rpc}),runtime:'DOCKER',advisor:createAdvisory({rpc:io.rpc}),research:createExperimentStore({rpc:io.rpc}),master});
  const risk=createRiskWatchdog({rpc:io.rpc,quotes:createRiskQuotes({markets:market,json:io.json,rpc:io.rpc,useStream:true})});
  const collector=new PublicTickerCollector();let discoveryAt=0;
  const pause=ms=>new Promise(resolve=>{const t=setTimeout(()=>{wake=null;resolve();},ms);wake=()=>{clearTimeout(t);wake=null;resolve();};});

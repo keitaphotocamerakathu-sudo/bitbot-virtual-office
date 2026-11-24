@@ -1,3 +1,6 @@
+import {createMasterService} from '../supabase/functions/bitbot-v10/master-service.mjs';
+import {createMasterData} from '../supabase/functions/bitbot-v10/master-data.mjs';
+import {MASTER_RESEARCH} from '../supabase/functions/bitbot-v10/master-research-evidence.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +10,7 @@ import {webcrypto} from 'node:crypto';
 import {livePermission} from '../assets/live-permission.mjs';
 import {createExperimentStore} from '../supabase/functions/bitbot-v10/rea-experiments.mjs';
 function sandbox(file){
- let calls=0;const context={TextEncoder,TextDecoder,URL,Request,Response,AbortSignal,crypto:webcrypto,console,createMarketService:()=>({}),createVerifiedMarketService:()=>({}),createCodexService:()=>({}),createREAService:()=>({}),createExperimentStore,createLiveService:()=>({}),createRiskWatchdog:()=>({}),createRiskQuotes:()=>()=>[],createAdvisory:()=>()=>null,fetch:()=>{calls++;throw Error('network forbidden');},Deno:{env:{get:n=>n==='BITBOT_LIVE_ENABLED'?'true':undefined},serve:()=>{}}};
+ let calls=0;const context={TextEncoder,TextDecoder,URL,Request,Response,AbortSignal,crypto:webcrypto,console,createMarketService:()=>({}),createVerifiedMarketService:()=>({}),createCodexService:()=>({}),createREAService:()=>({}),createExperimentStore,createMasterService,createMasterData,MASTER_RESEARCH,createLiveService:()=>({}),createRiskWatchdog:()=>({}),createRiskQuotes:()=>()=>[],createAdvisory:()=>()=>null,fetch:()=>{calls++;throw Error('network forbidden');},Deno:{env:{get:n=>n==='BITBOT_LIVE_ENABLED'?'true':undefined},serve:()=>{}}};
  vm.createContext(context);let src=fs.readFileSync(new URL(file,import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
  vm.runInContext(stripTypeScriptTypes(src),context);return{eval:s=>vm.runInContext(s,context),calls:()=>calls};
 }

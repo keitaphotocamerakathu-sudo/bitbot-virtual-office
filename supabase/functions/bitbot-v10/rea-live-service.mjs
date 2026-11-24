@@ -1,3 +1,4 @@
+import {executionDiagnostics} from './rea-execution-diagnostics.mjs';
 import {initialLive,planLive,applyExchangeInfo,liveActive,liveSummary,exchangeBody,LIVE_CONFIRM,LIMITED_POLICY} from './rea-live-core.mjs';
 import {codexPlan} from './rea-codex-policy.mjs';
 import {reviewTeam} from './rea-review-team.mjs';
@@ -87,6 +88,7 @@ export function createLiveService({rpc,keys,wallet,signed,scan,quotes,brain=asyn
       ...(riskOnly?{}:{team,codex:codexPlan(brains.get(row.user_id),clock()),decisions:out.decisions,marketCount:bundle.universeCount??bundle.markets?.length??0,analyzedCount:bundle.markets?.length??0,news:{at:clock(),readyMarkets:(bundle.markets||[]).filter(m=>m.news?.ready===true).length,blockedMarkets:(bundle.markets||[]).filter(m=>m.news?.blocked===true).length}}),performance:{...timings,pipelineMs:clock()-began,lane},accounting:'EXCHANGE_RECEIPTS',runtime:'SUPABASE_CRON',lane};
      const capitalContext={state,bundle,wallet:pf.wallet,now:clock(),mode:row.mode,health:latest.health,entriesPermitted:permitted&&!scanError,decisions:out.decisions};
      latest.lossDiagnostics=lossReview(capitalContext);
+     latest.executionDiagnostics=executionDiagnostics(state,bundle,clock());
      latest.learning=liveLearning(state,latest.learning,clock());
      latest.profitReview=liveProfitReview(state,bundle,clock(),riskOnly?latest.profitReview?.study||null:studies.get(row.user_id)||null);
      if(!riskOnly){latest.paperExperience=experienceAssessment(experience,clock());if(team)team.learning={paperExperience:latest.paperExperience,liveLessons:latest.learning.counts,entryRestrictions:out.decisions.filter(d=>['LOSS_REENTRY_COOLDOWN','PAPER_EXPERIENCE_COOLDOWN'].includes(d.reason)).map(d=>({symbol:d.symbol,strategy:d.strategy,reason:d.reason,learning:d.learning}))};}

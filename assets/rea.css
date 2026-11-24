@@ -33,3 +33,6 @@ body.light .rea-live-hero{background:linear-gradient(120deg,var(--panel),#e4f3e9
 .rea-settings-shortcut{border-color:#3d8067;color:var(--green);white-space:nowrap}
 #reaSettingsPage .metrics{margin-top:18px}#reaSettingsPage #reaSettingsSlots{font-size:24px}
 @media(max-width:700px){.topbar{flex-direction:column;align-items:flex-start;gap:8px}.top-actions{width:100%}#reaSettingsPage .rea-main-controls{gap:8px}}
+
+/* Master strategy workspace */
+.master-checkboxes{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}.master-checkboxes label{display:flex;align-items:center;gap:7px}.master-checkboxes input{width:auto}#reaMasterForm fieldset{border:1px solid var(--line,#334155);border-radius:10px;padding:14px;margin:16px 0}#reaMasterForm .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:16px}#reaMasterSkills .rea-agent{min-width:0}#reaMasterNews{overflow-wrap:anywhere}#reaMasterForm>label{display:block;margin:12px 0}#reaMasterForm>label input{width:auto}

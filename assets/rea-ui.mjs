@@ -1,3 +1,4 @@
+import {createMasterPanel,masterOfficeModel} from './rea-master-ui.mjs?v=31.0.0';
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
 import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason,walletView} from './rea-view-model.mjs?v=30.0.0';
@@ -27,7 +28,7 @@ function updateAccount(){
  text('reaAccountSummary',logged?'เข้าสู่ระบบแล้ว: '+(session.user.email||'บัญชี Bitbot ของคุณ')+' · API Key และข้อมูลแยกตามบัญชี':'เข้าสู่ระบบด้วยบัญชี Bitbot เดิมเพื่ออ่านข้อมูลของคุณ');
 }
 function clearAccount(){
- current=null;liveCurrent=null;loaded=false;keyReceipt=null;codexPanel.reset();liveBudgetEdited=false;liveLoadError='';paperLoadError='';
+ current=null;liveCurrent=null;loaded=false;keyReceipt=null;codexPanel.reset();masterPanel.reset();liveBudgetEdited=false;liveLoadError='';paperLoadError='';
  for(const id of ['reaEquity','reaDay','reaCash','reaReserved','reaSlots','reaHealth','reaHeartbeat','reaRiskNote','reaControlState','reaUniverse','reaRuntime','reaObservation','reaAdvisory','reaAdvisoryMeta','reaRealized','reaUnrealized','reaStats','reaDrawdown','reaLiveMode','reaLiveWallet','reaLiveReserved','reaLiveEquity','reaLiveCapital','reaLivePnl','reaLiveSlots','reaLiveHeartbeat','reaLiveRiskBudget','reaLivePnlDetail'])text(id,'—');
  for(const id of ['reaScanner','reaIncidents','reaPositions','reaOrders','reaReasons','reaCurve','reaDaily','reaAgents','reaAudit','reaLivePositions','reaLiveOrders','reaLiveFills','reaLiveChecks','reaLiveLimitedChecks','reaLiveCurve','reaFills','reaLiveActivity','reaLiveReasons','reaWalletAssets'])$(id).replaceChildren();
  $('reaLossBar').value=0;for(const id of ['reaLiveApiKey','reaLiveApiSecret','reaLiveConfirm','reaPassword'])$(id).value='';
@@ -42,6 +43,10 @@ async function api(action,data,{publicRequest=false}={}){
  const result=await r.json();if(authSession&&session?.user?.id!==authSession.user.id)throw Error('บัญชีเข้าสู่ระบบเปลี่ยนแล้ว');if(!r.ok||!result.ok)throw Error(result.error||'อ่าน Backend ไม่สำเร็จ');return result;
 }
 const codexPanel=createCodexPanel({api,getSession:()=>session,getLive:()=>liveCurrent});
+const masterPanel=createMasterPanel({api,getSession:()=>session,onUpdate:()=>{if(pageName==='strategies')renderMasterOffice();}});
+$('reaMasterSettingsJump').onclick=e=>{e.preventDefault();$('reaMasterSettings').scrollIntoView({behavior:'smooth'});};
+function renderMasterOffice(){officeModel=masterOfficeModel(masterPanel.get());text('reaOfficeStatus',officeModel.stale?'รอข้อมูล Paper สด':'Paper · ทีมกลยุทธ์ 7 หน้าที่');text('reaOfficeSource','งานจาก Backend ของพอร์ต Paper ใหม่ · '+time(masterPanel.get()?.latest?.at));if(office)office.setData(officeModel.workers,officeModel.archive,{preview:officeModel.preview});}
+
 function renderPaper(data){
  current=data;loaded=!!data?.state;if(!loaded)return;const s=data.state,l=data.latest||{},a=l.summary||{},stale=!fresh(l.at,Date.now());
  const label=s.kill==='ALL'?'EMERGENCY_STOP':s.dailyLocked?'DAILY_LOSS_LOCK':data.operations?.locked?'SAFE_MODE':s.buyPaused||s.kill==='ENTRY'?'พักซื้อใหม่':stale?'รอ Backend':'PAPER_ONLY';
@@ -75,6 +80,7 @@ function liveActivationState(){
  }
 }
 function renderLive(data){
+ const exitIssues=session?data?.latest?.executionDiagnostics?.issues||[]:[];$('reaExitDiagnosticsPanel').hidden=!exitIssues.length;text('reaExitDiagnostics',exitIssues.map(p=>p.symbol+': '+(p.reason==='EXIT_BELOW_MARKET_MINIMUM'?'มูลค่าเหรียญ '+baht(p.valueTHB)+' ต่ำกว่ายอดขายขั้นต่ำ '+baht(p.minimumQuoteTHB)+(p.stopTriggered?' · ราคาถึง Stop แล้ว แต่ส่งขายตามขั้นต่ำไม่ได้':''):p.reason==='EXIT_QUOTE_STALE'?'รอราคาสดเพื่อตรวจจุดออก':p.reason==='EXISTING_ORDER_PENDING'?'มีคำสั่งเดิมรอยืนยัน ต้องตรวจสถานะก่อน':'ยังตรวจขั้นต่ำตลาดไม่ได้')).join(' / '));
  liveCurrent=data;const now=Date.now(),s=data?.state,pf=data?.preflight||{},l=data?.latest||{},a=l.summary||{},vm=portfolioView({live:data,now});
  if(keyReceipt&&Number.isFinite(pf.at)&&pf.at>=keyReceipt.at)keyReceipt=null;
  const receipt=keyReceipt&&now-keyReceipt.at<90000?keyReceipt:null,w=receipt?.wallet?.THB||pf.wallet?.THB,status=liveStatus(data,now);
@@ -213,19 +219,19 @@ function renderOffice(){
  for(const agent of officeModel.roles){const card=document.createElement('article');card.className='rea-agent';card.dataset.status=agent.status;for(const [tag,value] of [['h3',agent.name],['span',names[agent.status]||agent.status],['p',agent.summary],['small',agent.role+' · '+agent.method],['small',time(agent.at)]]){const el=document.createElement(tag);el.textContent=value;card.append(el);}$('reaAgents').append(card);}
  text('reaOfficeStatus',!session?'รอเข้าสู่ระบบ':officeModel.stale?'Backend ไม่สด':label+' · ข้อมูลจาก Backend');
  text('reaOfficeSource',!session?'แสดงผังทีมเท่านั้น ยังไม่มีข้อมูลบัญชี':officeModel.stale?'ข้อมูล Backend ยังไม่สด การเคลื่อนไหวไม่ยืนยันว่าบอทกำลังทำงาน':'ภาพสรุปงาน '+label+' จากบันทึกจริง · '+time(officeModel.archive?.finishedAt));
- if(office)office.setData(officeModel.workers,officeModel.archive,{preview:!session||officeModel.preview});
+ if(pageName==='strategies')renderMasterOffice();else if(office)office.setData(officeModel.workers,officeModel.archive,{preview:!session||officeModel.preview});
 }
 function goPage(name,{updateHash=true}={}){
  if(['settings','setting'].includes(name))name='safety';
- if(!['live','agents','scanner','orders','profit','safety','overview','codex'].includes(name))name='live';pageName=name;
+ if(!['live','agents','scanner','orders','profit','safety','overview','codex','strategies'].includes(name))name='live';pageName=name;
  if(name==='live')scope='LIVE';if(name==='overview')scope='PAPER';
  for(const section of document.querySelectorAll('[data-rea-section]'))section.hidden=section.dataset.reaSection!==name;
  for(const b of document.querySelectorAll('[data-rea-page]')){const active=b.dataset.reaPage===name;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
- const titles={codex:'สมอง Codex AI',live:'พอร์ตเงินจริง',agents:'ออฟฟิศ AI',scanner:'สแกนตลาด',orders:'คำสั่งและสถานะ',profit:'กำไร / ขาดทุน',safety:'ตั้งค่าและความปลอดภัย',overview:'ทดลอง Paper'};
+ const titles={strategies:'กลยุทธ์สั้น · กลาง · ยาว',codex:'สมอง Codex AI',live:'พอร์ตเงินจริง',agents:'ออฟฟิศ AI',scanner:'สแกนตลาด',orders:'คำสั่งและสถานะ',profit:'กำไร / ขาดทุน',safety:'ตั้งค่าและความปลอดภัย',overview:'ทดลอง Paper'};
  text('reaPageTitle',titles[name]);text('reaPageDescription',name==='live'?'ยอดเงิน รายการซื้อขาย และทีม AI จาก Backend ในที่เดียว':'ข้อมูล '+(scope==='LIVE'?'เงินจริง · Bitkub':'เงินจำลอง · Paper')+' ของบัญชีคุณ');
- $('reaScopeBar').hidden=['live','overview','codex'].includes(name);$('reaMode').hidden=name==='live';
- $('reaOfficePanel').hidden=!['live','agents'].includes(name);
- if(['live','agents'].includes(name))$(name==='live'?'reaLiveOfficeHost':'reaAgentOfficeHost').append($('reaOfficePanel'));
+ $('reaScopeBar').hidden=['live','overview','codex','strategies'].includes(name);$('reaMode').hidden=name==='live';
+ $('reaOfficePanel').hidden=!['live','agents','strategies'].includes(name);
+ if(['live','agents','strategies'].includes(name))$(name==='strategies'?'reaMasterOfficeHost':name==='live'?'reaLiveOfficeHost':'reaAgentOfficeHost').append($('reaOfficePanel'));
  // Reuse the same authenticated controls and key form, with one event handler per action.
  if(['live','safety'].includes(name)){
   $(name==='live'?'reaLiveControlHost':'reaSettingsControlHost').append($('reaLiveControlsPanel'));
@@ -234,11 +240,11 @@ function goPage(name,{updateHash=true}={}){
   if(name==='live'&&liveCurrent?.state)$('reaLiveConnectionPanel').open=false;
  }
  if(updateHash)history.replaceState(null,'','#'+(name==='overview'?'paper':name==='safety'?'settings':name));
- renderShared();codexPanel.render();if(name==='live')renderLive(liveCurrent);else if(scope==='PAPER'&&current)renderPaper(current);else if(scope==='LIVE'){text('reaMode','LIVE · เงินจริง');notice(!session?'กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม':liveLoadError,!!liveLoadError);}
+ masterPanel.setActive(name==='strategies');renderShared();codexPanel.render();if(name==='strategies'){text('reaMode','PAPER ONLY · กลยุทธ์ใหม่');notice('พอร์ตกลยุทธ์ใหม่ · เงินจำลอง 10,000 บาท · ไม่เปลี่ยนคำสั่งเงินจริงเดิม');}else if(name==='live')renderLive(liveCurrent);else if(scope==='PAPER'&&current)renderPaper(current);else if(scope==='LIVE'){text('reaMode','LIVE · เงินจริง');notice(!session?'กรุณาเข้าสู่ระบบด้วยบัญชี Bitbot เดิม':liveLoadError,!!liveLoadError);}
 }
 async function refreshPaper(){if(busy||!client)return;busy=true;try{const r=await api('rea-state');if(!r.rea)throw Error('บัญชีนี้ยังไม่มีพอร์ต Paper');paperLoadError='';renderPaper(r.rea);}catch(e){paperLoadError=e.message;if(scope==='PAPER')notice(e.message,true);}finally{busy=false;}}
 async function refreshLive(){if(liveBusy||!client)return;liveBusy=true;try{const r=await api('rea-live-state');liveLoadError='';renderLive(r.live);}catch(e){liveLoadError=e.message;renderLive(liveCurrent);}finally{liveBusy=false;}}
-async function refreshAll(){const b=$('reaRefresh');b.disabled=true;try{await Promise.allSettled([refreshPaper(),refreshLive()]);await codexPanel.refresh();renderAdvisory();renderShared();updateAccount();}finally{b.disabled=false;}}
+async function refreshAll(){const b=$('reaRefresh');b.disabled=true;try{await Promise.allSettled([refreshPaper(),refreshLive()]);await codexPanel.refresh();await masterPanel.refresh();renderAdvisory();renderShared();updateAccount();}finally{b.disabled=false;}}
 async function paperControl(action,confirm){if(!loaded)return notice('เข้าสู่ระบบและอ่านสถานะก่อนควบคุม',true);for(const b of document.querySelectorAll('[data-rea-control],#reaUnlock'))b.disabled=true;try{await api('rea-control',{action,confirm});await refreshPaper();}catch(e){notice(e.message,true);}finally{for(const b of document.querySelectorAll('[data-rea-control],#reaUnlock'))b.disabled=false;}}
 async function liveControl(action,confirm=''){if(!liveCurrent?.state||liveControlBusy)return;liveControlBusy=true;renderLive(liveCurrent);try{await api('rea-live-control',{action,confirm});await refreshLive();}catch(e){notice(e.message,true);}finally{liveControlBusy=false;renderLive(liveCurrent);}}
 for(const b of document.querySelectorAll('[data-rea-page]'))b.onclick=()=>goPage(b.dataset.reaPage);

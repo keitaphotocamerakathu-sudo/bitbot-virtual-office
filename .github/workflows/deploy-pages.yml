@@ -1,7 +1,7 @@
-name: Test and deploy REA 30.0 Wallet Settlement
+name: Test and deploy REA 31.0 Master Paper Engine
 on:
   push:
-    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17]
+    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17, feat/master-engine-v31]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
       - name: Financial engine and server security
         run: npm test
       - name: Verify archived research integrity
-        run: node research/verify-v13.mjs && node research/verify-v16.mjs
+        run: node research/verify-v13.mjs && node research/verify-v16.mjs && node research/verify-master-v31.mjs
       - name: Build isolated paper container
         run: docker build -f services/rea/Dockerfile -t rea-paper:checks .
       - name: Container runtime and Compose checks
@@ -37,6 +37,8 @@ jobs:
             assets/backtest-v12.json
             assets/research-v13.json
             assets/research-v16.json
+            assets/master-research-v31.json
+            research/data-v31.json.gz
       - name: Install browser dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Prepare browser for UI checks

@@ -1,0 +1,13 @@
+import {runMaster} from './master-orchestrator.mjs';
+import {validateMasterConfig} from './master-config.mjs';
+export function masterHeld(row){return[...new Set([...(row?.state?.positions||[]).map(p=>p.symbol),...(row?.state?.orders||[]).filter(o=>o.side==='BUY'&&['OPEN','PARTIAL'].includes(o.status)).map(o=>o.symbol)])];}
+export function masterJournal(result){
+ const decisions=result.decisions.map(d=>({id:(d.signalId||'exit-wait:'+d.symbol+':'+d.strategyId+':'+Math.floor(d.at/3600000))+':'+d.action+':'+(d.reasons||[]).slice().sort().join(','),at:d.at,type:'DECISION',payload:{signalId:d.signalId,at:d.at,symbol:d.symbol,strategyId:d.strategyId,strategyVersion:d.strategyVersion,horizon:d.horizon,timeframe:d.timeframe,signal:d.action,regime:d.regime,entry:d.entry,stop:d.stop,target:d.target,positionSizeTHB:d.positionSizeTHB??0,quantity:d.qty??d.riskApproval?.economics?.qty??null,confidence:d.confidence,expectedNetReturn:d.expectedNetReturn,modeledTargetNet:d.modeledTargetNet,expectedTradingCost:d.expectedTradingCost,reasons:d.reasons,riskApproval:{approved:d.riskApproval?.approved??false,riskBudgetTHB:d.riskApproval?.riskBudgetTHB??null,economics:d.riskApproval?.economics??null},simulation:true}}));
+ return[...decisions,...result.fills.map(f=>({id:'fill:'+f.id,at:f.at,type:'FILL',payload:f})),...result.events.map((e,i)=>({id:e.kind==='CLOSED_TRADE'?'closed:'+e.id:'event:'+result.book.lastAt+':'+e.kind+':'+i,at:e.at??e.closedAt??result.book.lastAt,type:e.kind==='CLOSED_TRADE'?'CLOSED':'RISK',payload:e}))];
+}
+export function masterReceipt(result){const x=result.latest;return{protocol:x.protocol,mode:x.mode,at:x.at,health:x.health,summary:x.summary,skills:x.skills.map(({evidence,...s})=>s),validation:x.validation,diagnosis:x.diagnosis,canTrade:false,canActivateLive:false};}
+export function createMasterService({rpc,data,history=null,clock=()=>Date.now()}){
+ return{load:uid=>rpc('rea_master_state',{p_uid:uid}),enrich:(bundle,held)=>data.enrich(bundle,held),held:masterHeld,step:(row,bundle,now,control={})=>runMaster(row?.state||null,bundle,now,{config:row?.config,history,...control}),
+  commit:(args,experimentBook,row,result)=>rpc('rea_master_checkpoint',{...args,p_experiments:experimentBook,p_master:{book:result.book,latest:result.latest,journal:masterJournal(result)},p_config_revision:row.configRevision}),
+  view:uid=>rpc('rea_master_view',{p_uid:uid}),configure:(uid,revision,config)=>{if(!Number.isSafeInteger(revision)||revision<0)throw Object.assign(Error('INVALID_MASTER_CONFIG_REVISION'),{status:400});let checked;try{checked=validateMasterConfig(config);}catch(e){throw Object.assign(e,{status:400});}return rpc('rea_master_configure',{p_uid:uid,p_expected_revision:revision,p_config:checked});}};
+}
