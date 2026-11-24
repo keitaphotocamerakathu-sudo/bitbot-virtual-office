@@ -28,6 +28,17 @@ begin
  ret=public.rea_master_checkpoint(u,l,0,parent,jsonb_build_object('at',t,'health','OK','quotes','[]'::jsonb),'[]','[]','[]',t,null,null,packet,0);if not ret then raise exception 'VALID_MASTER_CHECKPOINT_FAILED';end if;
  if (select revision from rea.bot_settings where user_id=u)<>1 or (select count(*) from rea.master_journal where user_id=u)<>1 or (select count(*) from rea.master_equity where user_id=u)<>1 then raise exception 'MASTER_JOURNAL_OR_PARENT_NOT_COMMITTED';end if;
  if public.rea_master_checkpoint(u,l,0,parent,jsonb_build_object('at',t,'health','OK','quotes','[]'::jsonb),'[]','[]','[]',t,null,null,packet,0) then raise exception 'OLD_CHECKPOINT_REPLAYED';end if;
+ -- Journal-only cost-basis fixture: cash/equity transitions are tested by the execution unit suite.
+ update rea.bot_settings set lease=l,lease_until=now()+interval '90 seconds' where user_id=u;
+ bad=jsonb_set(packet,'{book,lastAt}',to_jsonb(t+15001));bad=jsonb_set(bad,'{latest,at}',to_jsonb(t+15001));
+ bad=jsonb_set(bad,'{journal}',jsonb_build_array(jsonb_build_object('id','cost-basis-buy','at',t+15001,'type','FILL','payload',jsonb_build_object('strategyId','TREND_SHORT','horizon','SHORT','positionId','cost-example','side','BUY','qty',2,'price',100,'fee',1,'simulation',true)),jsonb_build_object('id','cost-basis-sell','at',t+15001,'type','FILL','payload',jsonb_build_object('strategyId','TREND_SHORT','horizon','SHORT','positionId','cost-example','side','SELL','qty',1,'price',110,'fee',1,'realized',8.5,'simulation',true))));
+ if not public.rea_master_checkpoint(u,l,1,parent,jsonb_build_object('at',t,'health','OK','quotes','[]'::jsonb),'[]','[]','[]',t,null,null,bad,0) then raise exception 'COST_BASIS_CHECKPOINT_FAILED';end if;
+ select payload into o from rea.master_journal where user_id=u and event_id='cost-basis-sell';
+ if (o->>'grossPnlTHB')::numeric<>10 or (o->>'netPnlTHB')::numeric<>8.5 or (o->>'allocatedEntryFeeTHB')::numeric<>.5 or (o->>'settlementAndRoundingResidualTHB')::numeric<>0 then raise exception 'GROSS_NET_FEES_BASIS_MISMATCH';end if;
+ insert into rea.master_journal values(u,'closed-cost-example',t+15001,'CLOSED',jsonb_build_object('strategyId','TREND_SHORT','horizon','SHORT','pnl',8.5,'simulation',true));
+ o=public.rea_master_view(u)->'performance'->0;
+ if (o->>'net_pnl')::numeric<>8.5 or (o->>'fees')::numeric<>2 or (o->>'closed_trades')::integer<>1 then raise exception 'FULL_HISTORY_PERFORMANCE_COST_VIEW_MISMATCH';end if;
+
  bad=c||'{"mode":"LIVE_ENABLED"}'::jsonb;begin perform public.rea_master_configure(u,0,bad);raise exception 'CONFIG_ENABLED_REAL_TRADES';exception when others then if sqlerrm<>'INVALID_MASTER_PAPER_CONFIG' then raise;end if;end;
  bad=c||'{"riskPerTrade":0.02}'::jsonb;begin perform public.rea_master_configure(u,0,bad);raise exception 'CONFIG_RAISED_RISK';exception when others then if sqlerrm<>'INVALID_MASTER_PAPER_CONFIG' then raise;end if;end;
  perform public.rea_master_configure(u,0,c||'{"buyPaused":true}'::jsonb);if (select config_revision from rea.master_books where user_id=u)<>1 or (select lease from rea.bot_settings where user_id=u) is not null then raise exception 'CONFIG_DID_NOT_INVALIDATE_WORKER';end if;

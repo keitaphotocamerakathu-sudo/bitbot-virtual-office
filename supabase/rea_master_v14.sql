@@ -17,6 +17,7 @@ create table rea.master_journal(
  primary key(user_id,event_id)
 );
 create index master_journal_owner_type_time on rea.master_journal(user_id,event_type,at_ms desc);
+create index master_journal_fill_position on rea.master_journal(user_id,(payload->>'positionId')) where event_type='FILL';
 create table rea.master_equity(user_id uuid not null references rea.master_books(user_id),at_ms bigint not null,equity numeric not null check(equity>=0),day text not null,pnl numeric not null,primary key(user_id,at_ms));
 create table rea.master_strategy_versions(strategy_id text not null,version text not null,payload jsonb not null,primary key(strategy_id,version));
 insert into rea.master_strategy_versions select value->>'id',value->>'version',value from jsonb_array_elements('[{"id":"TREND_SHORT","name":"Trend Following","horizon":"SHORT","frame":5,"confirm":15,"stopATR":2,"targetR":2.5,"maxHoldMs":86400000,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false},{"id":"BREAKOUT_SHORT","name":"Breakout","horizon":"SHORT","frame":5,"confirm":15,"stopATR":2,"targetR":3,"maxHoldMs":86400000,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false},{"id":"PULLBACK_MEDIUM","name":"Pullback","horizon":"MEDIUM","frame":60,"confirm":240,"stopATR":2,"targetR":3,"maxHoldMs":1209600000,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false},{"id":"MEAN_REVERSION_SHORT","name":"Mean Reversion","horizon":"SHORT","frame":5,"confirm":15,"stopATR":1.5,"targetR":2,"maxHoldMs":21600000,"riskScale":0.5,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false},{"id":"MOMENTUM_SHORT","name":"Momentum","horizon":"SHORT","frame":5,"confirm":60,"stopATR":2,"targetR":3,"maxHoldMs":43200000,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false},{"id":"SWING_MEDIUM","name":"Swing","horizon":"MEDIUM","frame":240,"confirm":1440,"stopATR":2.5,"targetR":3,"maxHoldMs":2419200000,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false},{"id":"POSITION_LONG","name":"Position","horizon":"LONG","frame":1440,"confirm":10080,"stopATR":2.5,"targetR":3,"maxHoldMs":15552000000,"version":"REA-MASTER-31.0.0","mode":"VALIDATION_ONLY","canActivateLive":false}]'::jsonb);
@@ -71,7 +72,7 @@ declare a rea.master_books%rowtype;t bigint=floor(extract(epoch from now())*1000
 end;$$;
 create function public.rea_master_checkpoint(p_uid uuid,p_lease uuid,p_revision bigint,p_state jsonb,p_latest jsonb,p_events jsonb,p_signals jsonb,p_fills jsonb,p_at bigint,p_error text,p_experiments jsonb,p_master jsonb,p_config_revision bigint) returns boolean
 language plpgsql security invoker set search_path='' as $$
-declare master_at bigint;a rea.master_books%rowtype;s jsonb;c jsonb;j jsonb;o jsonb;p jsonb;old jsonb;parent rea.bot_settings%rowtype;saved boolean;slots integer;base numeric;exposure numeric;risk numeric;reserved numeric;new_buys boolean;streak integer;all_losses boolean;last_loss bigint;scale numeric;estimated_qty numeric;stop_gross numeric;target_gross numeric;model_risk numeric;model_reward numeric;begin
+declare master_at bigint;a rea.master_books%rowtype;s jsonb;c jsonb;j jsonb;o jsonb;p jsonb;old jsonb;parent rea.bot_settings%rowtype;saved boolean;slots integer;base numeric;exposure numeric;risk numeric;reserved numeric;new_buys boolean;streak integer;all_losses boolean;last_loss bigint;scale numeric;estimated_qty numeric;stop_gross numeric;target_gross numeric;model_risk numeric;model_reward numeric;basis_qty numeric;basis_gross numeric;basis_fees numeric;gross_pnl numeric;begin
  select * into parent from rea.bot_settings where user_id=p_uid for update;
  if not found or parent.lease is distinct from p_lease or parent.revision<>p_revision or parent.lease_until<now() then return false;end if;
  select * into a from rea.master_books where user_id=p_uid for update;if not found or a.config_revision<>p_config_revision then return false;end if;
@@ -116,6 +117,13 @@ declare master_at bigint;a rea.master_books%rowtype;s jsonb;c jsonb;j jsonb;o js
  if not saved then return false;end if;
  for j in select value from jsonb_array_elements(p_master->'journal') loop
   if j->>'type' not in('DECISION','FILL','CLOSED','RISK','VALIDATION') or j->>'type'='FILL' and j->'payload'->>'simulation' is distinct from 'true' then raise exception 'INVALID_MASTER_JOURNAL';end if;
+  if j->>'type'='FILL' and j->'payload'->>'side'='SELL' then
+   select sum((payload->>'qty')::numeric),sum((payload->>'qty')::numeric*(payload->>'price')::numeric),sum((payload->>'fee')::numeric) into basis_qty,basis_gross,basis_fees from rea.master_journal where user_id=p_uid and event_type='FILL' and payload->>'side'='BUY' and payload->>'positionId'=j->'payload'->>'positionId';
+   if basis_qty>0 then
+    gross_pnl=(j->'payload'->>'qty')::numeric*((j->'payload'->>'price')::numeric-basis_gross/basis_qty);
+    j=jsonb_set(j,'{payload}',j->'payload'||jsonb_build_object('grossPnlTHB',gross_pnl,'netPnlTHB',(j->'payload'->>'realized')::numeric,'allocatedEntryFeeTHB',basis_fees*(j->'payload'->>'qty')::numeric/basis_qty,'exitFeeTHB',(j->'payload'->>'fee')::numeric,'grossPnlEvidence','PERSISTED_MATCHED_UNIT_COST_BEFORE_FEES','settlementAndRoundingResidualTHB',gross_pnl-(j->'payload'->>'realized')::numeric-basis_fees*(j->'payload'->>'qty')::numeric/basis_qty-(j->'payload'->>'fee')::numeric));
+   end if;
+  end if;
   insert into rea.master_journal(user_id,event_id,at_ms,event_type,payload) values(p_uid,j->>'id',(j->>'at')::bigint,j->>'type',j->'payload') on conflict do nothing;
  end loop;
  if p_master->'latest'->>'health'='OK' then insert into rea.master_equity values(p_uid,master_at,(s->>'equity')::numeric,s->>'day',(s->>'dayPnl')::numeric) on conflict do nothing;end if;
@@ -127,7 +135,12 @@ create function public.rea_master_view(p_uid uuid) returns jsonb language sql se
  'journal',(select coalesce(jsonb_agg(x order by at_ms desc),'[]') from(select at_ms,event_type,payload from rea.master_journal where user_id=p_uid order by at_ms desc limit 100)x),
  'curve',(select coalesce(jsonb_agg(x order by at_ms),'[]') from(select at_ms,equity,day,pnl from rea.master_equity where user_id=p_uid order by at_ms desc limit 1440)x),
  'strategies',(select jsonb_agg(payload order by strategy_id) from rea.master_strategy_versions where version='REA-MASTER-31.0.0'),
- 'performance',(select coalesce(jsonb_agg(x),'[]') from(select payload->>'strategyId' strategy_id,payload->>'horizon' horizon,count(*) closed_trades,sum((payload->>'pnl')::numeric) net_pnl,avg((payload->>'pnl')::numeric) expectancy,count(*) filter(where (payload->>'pnl')::numeric>0)::numeric/nullif(count(*),0) win_rate from rea.master_journal where user_id=p_uid and event_type='CLOSED' group by 1,2)x))
+ 'performance',(select coalesce(jsonb_agg(x order by x.net_pnl desc),'[]') from(
+  select g.*,coalesce(f.fees,0) fees from(
+   select payload->>'strategyId' strategy_id,payload->>'horizon' horizon,count(*) closed_trades,sum((payload->>'pnl')::numeric) net_pnl,avg((payload->>'pnl')::numeric) expectancy,sum(greatest((payload->>'pnl')::numeric,0))/nullif(sum(greatest(-(payload->>'pnl')::numeric,0)),0) profit_factor,count(*) filter(where (payload->>'pnl')::numeric>0)::numeric/nullif(count(*),0) win_rate
+   from rea.master_journal where user_id=p_uid and event_type='CLOSED' group by 1,2
+  )g left join(select payload->>'strategyId' strategy_id,sum((payload->>'fee')::numeric) fees from rea.master_journal where user_id=p_uid and event_type='FILL' group by 1)f using(strategy_id)
+ )x))
  from rea.master_books where user_id=p_uid;
 $$;
 revoke all on function rea.valid_master_config(jsonb),public.rea_master_state(uuid),public.rea_master_view(uuid),public.rea_master_configure(uuid,bigint,jsonb),public.rea_master_checkpoint(uuid,uuid,bigint,jsonb,jsonb,jsonb,jsonb,jsonb,bigint,text,jsonb,jsonb,bigint) from public,anon,authenticated;
