@@ -3,6 +3,21 @@ const N=(x,d=2)=>Number.isFinite(Number(x))&&x!==null?Number(x).toLocaleString('
 const H={SHORT:'สั้น',MEDIUM:'กลาง',LONG:'ยาว'},S={TREND_SHORT:'ตามแนวโน้ม · สั้น',BREAKOUT_SHORT:'ทะลุกรอบ · สั้น',PULLBACK_MEDIUM:'ย่อแล้วกลับตัว · กลาง',MEAN_REVERSION_SHORT:'กลับเข้ากรอบ · สั้น',MOMENTUM_SHORT:'โมเมนตัม · สั้น',SWING_MEDIUM:'สวิง · กลาง',POSITION_LONG:'แนวโน้มใหญ่ · ยาว',ALL_FIXED:'รวม · จุดออกคงที่',ALL_BALANCED:'รวม · จัดการจุดออก'};
 const REASONS={TIMEFRAME_DATA_INSUFFICIENT:'แท่งปิดในกรอบเวลายังไม่พอหรือไม่ต่อเนื่อง',TIMEFRAME_DISABLED:'ปิดกรอบเวลานี้ไว้',STRATEGY_DISABLED:'ปิดกลยุทธ์หรือระยะถือไว้',MARKET_NOT_READY:'คุณภาพตลาดยังไม่ผ่าน',TREND_NOT_ALIGNED:'แนวโน้มหลายกรอบเวลายังไม่ตรงกัน',MOMENTUM_NOT_CONFIRMED:'โมเมนตัมยังไม่ยืนยัน',WAIT_TREND_ENTRY:'รอจังหวะเข้าใกล้เส้นแนวโน้ม',WAIT_CONFIRMED_BREAKOUT:'ยังไม่ทะลุกรอบพร้อมเงื่อนไขยืนยัน',BREAKOUT_STRENGTH_INSUFFICIENT:'แรงทะลุกรอบยังไม่พอ',WAIT_PULLBACK_RECLAIM:'รอย่อและกลับมายืนเหนือแนวรับ',PULLBACK_MOMENTUM_INSUFFICIENT:'แรงกลับตัวหลังย่อยังไม่พอ',RANGE_REGIME_REQUIRED:'ตลาดไม่เหมาะกับการกลับเข้ากรอบ',WAIT_RANGE_REVERSAL:'รอสัญญาณกลับตัวในกรอบ',WAIT_VOLUME_MOMENTUM:'ปริมาณและโมเมนตัมยังไม่ยืนยัน',MOMENTUM_STRENGTH_INSUFFICIENT:'แรงส่งยังไม่ผ่าน',WAIT_SWING_PULLBACK:'รอสวิงย่อในแนวโน้มขาขึ้น',SWING_MOMENTUM_INSUFFICIENT:'โมเมนตัมสวิงยังไม่ผ่าน',HIGHER_TIMEFRAME_TREND_REQUIRED:'แนวโน้มรายวันและสัปดาห์ยังไม่ผ่าน',POSITION_MOMENTUM_INSUFFICIENT:'โมเมนตัมระยะยาวยังไม่ผ่าน',VERIFIED_NEWS_RISK:'พบข่าวความเสี่ยงที่ยืนยันได้',INVALID_ENTRY_EXIT_STRUCTURE:'จุดเข้า จุดออก หรือผลตอบแทนไม่เหมาะสม',STALE_PRICE:'ราคาเก่า',MARKET_UNAVAILABLE:'ตลาดไม่พร้อมซื้อขาย',INVALID_OR_STALE_DEPTH:'สมุดคำสั่งไม่พร้อมหรือเก่า',LOW_LIQUIDITY:'สภาพคล่องต่ำ',WIDE_SPREAD:'ส่วนต่างราคากว้าง',CANDLE_QUALITY:'แท่งราคาขาดหรือไม่ต่อเนื่อง',PRICE_ANOMALY:'ราคาผิดปกติ',MASTER_ENTRY_PAUSED:'พักเปิดสถานะใหม่',DAILY_LOSS_LOCK:'ล็อกขาดทุนรายวัน',MIDNIGHT_BASELINE_UNVERIFIED:'ยังตรวจทุนต้นวันไม่ได้',MAXIMUM_DRAWDOWN_LOCK:'ถึงเพดาน Drawdown',LOSS_STREAK_COOLDOWN:'พักหลังแพ้ต่อเนื่อง',MAX_POSITIONS:'เต็มจำนวนช่อง',SYMBOL_ALREADY_OWNED_OR_PENDING:'มีสถานะหรือซื้อค้างในเหรียญนี้',SIGNAL_ALREADY_USED:'ใช้สัญญาณนี้แล้ว',STRATEGY_NEGATIVE_FORWARD_EXPECTANCY:'ผลจำลองที่ครบเกณฑ์มีความคาดหวังติดลบ',LOSS_REENTRY_COOLDOWN:'พักซื้อซ้ำหลังขาดทุน',CORRELATION_DATA_INSUFFICIENT:'ข้อมูลความสัมพันธ์ไม่พอ',CORRELATED_RISK_LIMIT:'ความเสี่ยงเหรียญที่เคลื่อนไหวร่วมสูง',PORTFOLIO_RISK_EXHAUSTED:'วงเงินเสี่ยงรวมหมด',ENTRY_OR_STOP_EXIT_BELOW_MINIMUM:'ขนาดซื้อหรือมูลค่าขายที่ Stop ต่ำกว่าขั้นต่ำ',RISK_BUDGET_EXCEEDED:'เกินงบเสี่ยง',NET_REWARD_AFTER_COST_TOO_SMALL:'ผลตอบแทนสุทธิเทียบความเสี่ยงต่ำ',INSUFFICIENT_DEPTH_FOR_ORDER:'สมุดคำสั่งไม่ลึกพอ',MARKET_OR_OPERATIONAL_LOCK:'พักตามสุขภาพข้อมูลหรือ Backend',PAPER_RISK_APPROVED:'ผ่านกฎซื้อจำลอง',WAIT_NEXT_FRESH_DEPTH_OR_LIMIT:'รอสมุดคำสั่งรอบถัดไปหรือราคา Limit',COLLECTING_FORWARD_PAPER:'กำลังเก็บผล Paper ต่อเนื่อง',HISTORICAL_STUDY_REQUIRED:'รอผลศึกษาย้อนหลัง',NO_VALIDATED_EDGE:'ยังไม่พบความได้เปรียบที่ผ่านเกณฑ์',PAPER_REVIEW_CANDIDATES:'มีชุด Paper ให้ทบทวน',NO_VALIDATED_CANDIDATE:'ไม่มีชุดผ่านเกณฑ์',COMPLETED:'บันทึกผลแล้ว',WAITING:'รอข้อมูล',PAUSED:'พัก',COLLECTING:'เก็บผลทดสอบ'};
 export const masterReason=r=>REASONS[r]||String(r||'—');
+const chartDirections = { UP: 'ขาขึ้น', DOWN: 'ขาลง', RANGE: 'ในกรอบ' };
+const lessonExits = {
+ FIXED_STOP: 'ถึงจุดตัดขาดทุน', TRAILING_STOP: 'ถึงจุดขายที่เลื่อนตามราคา',
+ TAKE_PROFIT: 'ถึงเป้ากำไร', TIME_EXIT: 'ครบระยะถือ', VOLATILITY_EXIT: 'ความผันผวนสูง',
+ TREND_REVERSAL_EXIT: 'แนวโน้มกลับทิศ', RISK_REDUCTION_EXIT: 'ลดความเสี่ยง',
+ STOP_LOSS: 'ถึงจุดตัดขาดทุน', PROFIT_PROTECTION: 'รักษากำไร'
+};
+const earlierNames = { TREND_FOLLOWING: 'ตามแนวโน้ม', BREAKOUT: 'ทะลุกรอบ', MEAN_REVERSION: 'กลับเข้ากรอบ' };
+function priorityExplanation(decision) {
+ const e = decision.experience;
+ if (!e.eligible) return 'รอสัญญาณครบ';
+ if (!e.appliedPoints) return 'คงคะแนน ' + N(e.priority, 2);
+ return N(e.basePriority, 2) + ' → ' + N(e.priority, 2) + ' · ' +
+   [e.chart.points && 'ผลเทียบกราฟ', e.paper.points && 'ผลไม้ที่ปิด'].filter(Boolean).join(' และ ');
+}
 const fields=[['riskPerTrade','เสี่ยงต่อไม้ (%)',100,.1,1,.1],['maxPositions','จำนวนช่องรวมซื้อค้าง',1,1,5,1],['dailyLossLimit','ขาดทุนรายวัน (%)',100,.5,3,.1],['portfolioRiskCap','ความเสี่ยงเปิดรวม (%)',100,.5,3,.1],['cashReserve','เงินสดสำรอง (%)',100,20,90,1],['maxExposureFraction','ถือรวมสูงสุด (%)',100,10,80,1],['maxPositionFraction','วงเงินต่อเหรียญ (%)',100,5,40,1],['maxDrawdown','Drawdown สูงสุด (%)',100,2,20,.5],['minVolumeTHB','Volume ขั้นต่ำ (THB/วัน)',1,250000,1000000000,1000],['maxSpread','Spread สูงสุด (%)',100,.05,.6,.05],['minNetRewardRisk','ผลตอบแทนสุทธิ / ความเสี่ยง',1,1.2,5,.1]];
 export function masterOfficeModel(master,now=Date.now()){
  const l=master?.latest,stale=!l?.at||now-l.at>180000,roles=(l?.skills||[]).map(a=>({...a,worker_id:'master-'+a.id,role:a.name,title:a.name,room:a.room,method:'กฎคำนวณจากข้อมูลจริง · Paper',status:stale?'STALE':a.status==='COMPLETED'?'DONE':a.status==='COLLECTING'?'WAITING':a.status,summary:a.summary})),tasks=roles.filter(a=>a.at&&a.status==='DONE').map(a=>({id:a.worker_id+':'+a.at,worker:a.worker_id,role:a.room,status:'DONE',summary:a.summary,finishedAt:a.at,source:'REA_MASTER_BACKEND',output:{}}));
@@ -17,9 +32,42 @@ export function createMasterPanel({api,getSession,onUpdate=()=>{}}){
  for(const f of [1,5,15,60,240,1440,10080])checkbox($('reaMasterFrames'),'frames',f,f===1440?'1 วัน':f===10080?'1 สัปดาห์':f>=60?f/60+' ชั่วโมง':f+' นาที');
  for(const [id,label]of Object.entries(H))checkbox($('reaMasterHorizons'),'horizons',id,label);
  function form(){for(const id of ['Pause','Resume','StopEntry','Emergency','Reload'])$('reaMaster'+id).disabled=!current||!getSession()||saving;const c=current?.config,f=$('reaMasterForm');for(const el of f.elements)if('disabled'in el)el.disabled=!getSession()||!c||saving;if(!c||dirty)return;for(const [key,,mult]of fields)f.elements.namedItem(key).value=N(c[key]*mult,6).replace(/,/g,'');for(const name of ['strategies','frames','horizons'])for(const e of f.querySelectorAll('input[name='+name+']'))e.checked=c[name].includes(name==='frames'?+e.value:e.value);f.elements.namedItem('enabled').checked=c.enabled;f.elements.namedItem('inApp').checked=c.notifications.inApp;f.elements.namedItem('exitPolicy').value=c.exitPolicy;}
+ function drawExperience(latest) {
+  const memory = latest?.experience;
+  const ready = memory?.status === 'READY';
+  const summary = ready
+   ? 'กราฟย้อนหลังจาก Bitkub ' + N(memory.archiveCases,0) + ' ตัวอย่าง · ปิดไม้ Paper แล้ว ' +
+     N(memory.lifetimeClosed,0) + ' ไม้ · บทเรียนอ้างอิงจากพอร์ตเดิม ' +
+     (memory.baseline?.available ? N(memory.baseline.records.length,0) + ' ไม้' : 'รอข้อมูล') +
+     ' · รอบนี้ปรับคะแนน ' + N(memory.changedPriorities,0) + ' แผน'
+   : memory ? 'รอบนี้ใช้คะแนนกลยุทธ์เดิม เพราะอ่านประสบการณ์ไม่ได้' : 'รอผลประสบการณ์จากพอร์ต Paper';
+  set('reaExperienceStatus', summary);
+  set('reaExperienceMethod', ready ? 'เทียบเหรียญเดียวกันในภาวะกราฟคล้ายกัน ระยะสั้นดูราคาหลัง 1 ชั่วโมง กลาง 1 วัน ยาว 7 วัน โดยประมาณค่าธรรมเนียมสองขา ส่วนต่างราคา และราคาคลาดเคลื่อน · ใช้กราฟอย่างน้อย ' +
+    memory.chartMinimum + ' ช่วง หรือดีล Paper ที่ตรงกลยุทธ์และภาวะตลาด ' + memory.paperMinimum + ' ไม้ตามเกณฑ์ ระบบจัดลำดับเฉพาะสัญญาณที่ครบ' : '');
+  const distinct = new Map();
+  if (ready) for (const decision of latest.decisions || []) {
+   if (decision.experience && !distinct.has(decision.symbol)) distinct.set(decision.symbol, decision);
+  }
+  table('reaExperienceRanks', [...distinct.values()], [
+   d => d.symbol + ' · ' + (S[d.strategyId] || d.strategyId),
+   d => (chartDirections[d.experience.chart.direction] || 'ข้อมูลยังไม่พอ') + ' · ' + d.experience.chart.samples + ' ช่วง',
+   d => P(d.experience.chart.meanNetMove),
+   d => d.experience.paper.samples ? d.experience.paper.samples + ' ไม้ · สุทธิ ' + B(d.experience.paper.netTHB) : 'ยังไม่มีไม้ที่เทียบได้',
+   priorityExplanation
+  ], 'รอแผนที่ประเมิน');
+  const lessons = ready ? [
+   ...(memory.latestLessons || []).map(t => ({...t, source: 'Master Paper', reasons: t.exitReason ? [t.exitReason] : []})),
+   ...(memory.baseline?.records || []).map(t => ({...t, source: 'Paper รุ่นเดิม · อ้างอิง', reasons: t.exitReasons}))
+  ].sort((a,b) => b.closedAt - a.closedAt) : [];
+  table('reaExperienceCloses', lessons, [
+   t => t.source, t => T(t.closedAt), t => t.symbol + ' · ' + (S[t.strategyId] || earlierNames[t.strategyId] || t.strategyId),
+   t => t.reasons?.map(r => lessonExits[r] || r).join(' · ') || 'ไม่มีบันทึกเหตุผล', t => B(t.feesTHB), t => B(t.netTHB)
+  ], 'เมื่อปิดไม้ Paper แล้ว บทเรียนจะแสดงที่นี่');
+ }
  function draw(){const l=current?.latest,s=l?.summary||{},valid=l?.validation,stale=!l?.at||Date.now()-l.at>180000;set('reaMasterStatus',!getSession()?'เข้าสู่ระบบเพื่อดูพอร์ตของคุณ':!l?'รอรอบ Backend ของพอร์ตใหม่':(stale?'ข้อมูลเก่า · ':l.health==='OK'?'Backend มีข้อมูลพร้อม · ':'SAFE MODE · ')+T(l.at));set('reaMasterMode','PAPER ONLY · 7 กลยุทธ์');
   for(const [id,v]of [['Equity',B(s.equity)],['Cash',B(s.cash)],['Pnl',B(s.dayPnl)],['Slots',l?s.slots+' / '+s.maxPositions:'—'],['Risk',l?B(s.openRiskTHB)+' / '+B(s.portfolioRiskCapTHB):'—'],['Fees',B(s.fees)]])set('reaMaster'+id,v);
   set('reaMasterValidation',valid?masterReason(valid.status)+' · เก็บ '+N(valid.forward.daysObserved,2)+' วัน · ครอบคลุม '+P(valid.forward.coverage)+' · ปิดแล้ว '+valid.forward.closedTrades+' ไม้':'ต้องเก็บ Paper ใหม่อย่างน้อย 7 วันและข้อมูลอย่างน้อย 90% พร้อมจำนวนตัวอย่างต่อกลยุทธ์');
+  drawExperience(l);
   const entry=l?.diagnosis?.entry,scan=entry?.scan;
   set('reaMasterDiscovery',scan?'ตลาดที่อ่าน '+scan.universe+' คู่ · ผ่านเกณฑ์ราคา/Volume/Spread '+scan.eligible+' คู่ · เลือกตรวจละเอียด '+scan.selected.length+' คู่ · '+scan.selected.join(', '):'รอผลคัดเลือกตลาดจาก Backend');
   set('reaMasterEntrySummary',entry?.stages?'รอบนี้ประเมิน '+entry.evaluated+' แผน · สัญญาณครบแต่ติด Risk '+entry.stages.RISK_BLOCKED+' · อนุมัติซื้อจำลอง '+entry.stages.PAPER_BUY_APPROVED:'รอผลแยกด่านข้อมูล สัญญาณ และความเสี่ยง');

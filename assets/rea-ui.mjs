@@ -1,4 +1,4 @@
-import {createMasterPanel,masterOfficeModel} from './rea-master-ui.mjs?v=31.0.2';
+import {createMasterPanel,masterOfficeModel} from './rea-master-ui.mjs?v=32.0.0';
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
 import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason,walletView} from './rea-view-model.mjs?v=30.0.0';

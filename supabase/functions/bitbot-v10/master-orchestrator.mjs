@@ -1,4 +1,5 @@
 import {entryEvidence,diagnoseEntries} from './master-diagnostics.mjs';
+import {EXPERIENCE_VERSION, rankByExperience, recordPaperLessons} from './master-experience.mjs';
 import {executionQuality,profitIntelligence} from './master-insights.mjs';
 import {MASTER_SPEC,MASTER_DEFAULTS,validateMasterConfig,STRATEGIES} from './master-config.mjs';
 import {technicalFrames} from './master-technical.mjs';
@@ -18,7 +19,7 @@ export const MASTER_SKILLS=Object.freeze([
  {id:'BACKTESTING',name:'Backtesting Agent',room:'learning'}
 ]);
 const curveOf=book=>[{at:book.startedAt,equity:book.initialCapital},...Object.entries(book.days).map(([day,v])=>({at:Date.parse(day+'T16:59:59.999Z'),equity:v.equity})),{at:book.lastAt,equity:book.equity}].sort((a,b)=>a.at-b.at);
-export function runMaster(previous,bundle,now=Date.now(),{config=MASTER_DEFAULTS,history=null,operationalLock=false}={}){
+export function runMaster(previous,bundle,now=Date.now(),{config=MASTER_DEFAULTS,history=null,operationalLock=false,earlierPaperBook=null}={}){
  config=validateMasterConfig(config);const book=previous?structuredClone(previous):initialMasterBook(now);
  if(book.protocol!==MASTER_SPEC||book.mode!=='PAPER_ONLY'||now<book.startedAt||book.lastAt!==null&&now<book.lastAt)throw Error('INVALID_MASTER_BOOK_OR_CLOCK');
  if(book.lastAt===now)return{book,latest:null,decisions:[],fills:[],events:[],replayed:true};
@@ -33,7 +34,20 @@ export function runMaster(previous,bundle,now=Date.now(),{config=MASTER_DEFAULTS
  if(entryLocked)cancelMasterBuys(book,now,'ENTRY_SAFETY_LOCK',events);
  for(const o of book.orders)if(o.side==='BUY'&&activeMaster(o)&&analyses[o.symbol]?.intelligence.ready!==true){o.status='CANCELED';o.remaining=0;events.push({at:now,kind:'ORDER_CANCELED',orderId:o.id,reason:'ENTRY_MARKET_QUALITY_LOST'});}
  const fills=fillMasterOrders(book,markets,config,now,events);markMaster(book,markets,config,now,events);
- const priorValidation=validationAssessment({book,history,now}),decisions=manageMasterExits(book,markets,analyses,config,now,events),ranking=rankMasterSignals(markets,analyses,news,config,now).map(s=>({...s,adaptiveWeight:priorValidation.weights[s.strategyId]??1})).sort((a,b)=>Number(b.eligible)-Number(a.eligible)||b.score*b.adaptiveWeight-a.score*a.adaptiveWeight);let approved=0;
+ const priorValidation = validationAssessment({book, history, now});
+ const decisions = manageMasterExits(book, markets, analyses, config, now, events);
+ const candidates = rankMasterSignals(markets, analyses, news, config, now);
+ let ranking, experience;
+ try {
+  recordPaperLessons(book, fills, events);
+  ({ranking, report: experience} = rankByExperience(candidates, markets, book, config, priorValidation, now, {earlierBook: earlierPaperBook}));
+ } catch {
+  ranking = candidates.map(signal => ({...signal, adaptiveWeight: priorValidation.weights[signal.strategyId] ?? 1}))
+    .sort((a,b) => Number(b.eligible) - Number(a.eligible) || b.score*b.adaptiveWeight - a.score*a.adaptiveWeight);
+  experience = {version: EXPERIENCE_VERSION, mode: 'PAPER_ONLY', status: 'UNAVAILABLE', at: now, canActivateLive: false};
+  events.push({at: now, kind: 'EXPERIENCE_UNAVAILABLE', reason: 'PAPER_EXPERIENCE_UNAVAILABLE'});
+ }
+ let approved=0;
  for(const signal of ranking){const m=markets.find(m=>m.symbol===signal.symbol),risk=approveMasterEntry(book,signal,m,markets,config,now);if(entryLocked&&!risk.reasons.includes('MARKET_OR_OPERATIONAL_LOCK')){risk.approved=false;risk.reasons.push('MARKET_OR_OPERATIONAL_LOCK');risk.amountTHB=0;}
   const observed=book.strategyStats[signal.strategyId],sampleReady=priorValidation.forward.daysObserved>=7&&priorValidation.forward.coverage>=.9&&observed?.closedTrades>=30,empiricalReturn=sampleReady?observed.sumNetReturn/observed.closedTrades:null;
   const decision={...signal,marketEvidence:entryEvidence(m,analyses[m.symbol],signal),expectedNetReturn:sampleReady&&risk.amountTHB>0?empiricalReturn*risk.amountTHB:null,empiricalPaperEvidence:sampleReady?{trades:observed.closedTrades,meanNetReturn:empiricalReturn,observedWinRate:observed.wins/observed.closedTrades,method:'FORWARD_PAPER_SAMPLE_MEAN_NOT_GUARANTEED_RETURN'}:null,action:risk.approved?'BUY':'WAIT',riskApproval:risk,positionSizeTHB:risk.amountTHB,expectedTradingCost:risk.economics?{entryFeeTHB:risk.economics.entryFeeTHB,feePerSide:config.fee,slippageAllowance:config.slippage,roundingReserveTHB:.10}:null,modeledTargetNet:risk.economics?.modeledTargetProfitTHB??null,reasons:risk.approved?['PAPER_RISK_APPROVED']:risk.reasons,simulation:true};
@@ -46,5 +60,6 @@ export function runMaster(previous,bundle,now=Date.now(),{config=MASTER_DEFAULTS
  book.lastAt=now;book.ticks++;if(verified&&ready)book.validTicks++;const minute=Math.floor(now/60000);if(book.lastMinute!==minute){book.lastMinute=minute;book.lastMinuteValid=!!(verified&&ready);if(book.lastMinuteValid)book.validMinutes++;}else if(verified&&ready&&!book.lastMinuteValid){book.lastMinuteValid=true;book.validMinutes++;}compactMaster(book,now);
  const validation=validationAssessment({book,history,now});record('BACKTESTING',validation.status==='COLLECTING_FORWARD_PAPER'?'COLLECTING':validation.status==='HISTORICAL_STUDY_REQUIRED'?'WAITING':'COMPLETED','สถานะตรวจกลยุทธ์ '+validation.status,{status:validation.status,source:'OFFLINE_PUBLIC_DATA_RESEARCH_AND_FORWARD_PAPER',canActivateLive:false});
  const whyWait=decisions.filter(d=>d.action==='WAIT').flatMap(d=>d.reasons||[]).reduce((a,r)=>(a[r]=(a[r]||0)+1,a),{}),stats=performanceMetrics(book.closed,curveOf(book),book.initialCapital),latest={protocol:MASTER_SPEC,mode:'PAPER_ONLY',at:now,health:verified&&ready?'OK':'SAFE_MODE',runtime:'BACKEND_SCHEDULED',canTrade:false,canActivateLive:false,config,summary:{initialCapital:book.initialCapital,equity:book.equity,cash:book.cash,dayPnl:book.dayPnl,realized:book.realized,unrealized:money(book.equity-book.cash-book.positions.reduce((n,p)=>n+p.cost,0)),fees:book.fees,positions:book.positions.length,pending:book.orders.filter(activeMaster).length,...risk,closedTrades:book.stats.closedTrades,winRate:book.stats.closedTrades?book.stats.wins/book.stats.closedTrades:null,profitFactor:book.stats.grossLosses>0?book.stats.grossGains/book.stats.grossLosses:null,maxDrawdown:book.maxDrawdown},skills:agents,advancedCapabilities:['REGIME_DETECTION','COIN_RANKING','FIXED_VERSION_ADAPTIVE_SELECTION','ADVANCED_PAPER_EXITS','PORTFOLIO_RISK','EXECUTION_QUALITY','STRATEGY_VALIDATION','SELF_DIAGNOSIS'],markets:markets.map(m=>({symbol:m.symbol,...analyses[m.symbol].intelligence,sourceErrors:m.masterFrameErrors||{},sourceQuality:m.masterFrameQuality||{},frames:Object.fromEntries(Object.entries(analyses[m.symbol].frames).map(([k,t])=>[k,{ready:t.ready,reason:t.reason,bars:t.barCount,regime:t.regime,rsi:t.rsi,adx:t.adx,ema:t.ema,sma:t.sma,macd:t.macd,atr:t.atrWilder,obv:t.obv,vwap:t.vwap,bollinger:t.bollinger,fibonacci:t.fibonacci,patterns:t.patterns,lastClosedAt:t.lastClosedAt}]))})),decisions:decisions.slice(0,60),positions:book.positions,orders:book.orders.filter(activeMaster),news,validation,research:history?{generatedAt:history.generatedAt,status:history.status,mode:history.mode}:null,strategyStats:book.strategyStats,executionQuality:executionQuality(book),automatedReports:profitIntelligence(book,now),metrics:{...stats,tradeMetricsWindowLimited:book.stats.closedTrades>book.closed.length},reports:reportingPeriods(book,book.closed,now),diagnosis:{entry:entryDiagnostics,whyWait,healthy:!!(verified&&ready),dataFailures:markets.filter(m=>!analyses[m.symbol].intelligence.ready).map(m=>({symbol:m.symbol,reasons:analyses[m.symbol].intelligence.reasons})),pendingReasons:book.orders.filter(activeMaster).map(o=>({symbol:o.symbol,status:o.status,ageMs:now-o.createdAt,reason:'WAIT_NEXT_FRESH_DEPTH_OR_LIMIT'}))},durationMs:Date.now()-started,limitations:['NEW_FEATURES_ARE_PAPER_VALIDATION_ONLY','HORIZON_LOCKED_AT_ENTRY','PAPER_DEPTH_MODEL_NOT_PROOF_OF_REAL_FILL','NO_LIVE_POLICY_OR_PERMISSION_CHANGE']};
+ latest.experience = experience;
  return{book,latest,decisions,fills,events,replayed:false};
 }
