@@ -94,7 +94,7 @@ async function authAction(req,action,b){
 const markets=createMarketService({json,db,read,rpc,fetchFn:fetch});
 const verifiedMarkets=createVerifiedMarketService({base:markets,json,read,rpc});
 const codex=createCodexService({rpc});
-const master=createMasterService({rpc,data:createMasterData({base:markets,json,read,rpc}),history:MASTER_RESEARCH});
+const master=createMasterService({rpc,data:createMasterData({base:markets,json,read,rpc,verified:verifiedMarkets}),history:MASTER_RESEARCH});
 const rea=createREAService({rpc,marketService:verifiedMarkets,advisor:createAdvisory({rpc}),research:createExperimentStore({rpc}),master});
 const riskWatchdog=createRiskWatchdog({rpc,quotes:createRiskQuotes({markets,json,rpc})});
 const reaLive=createLiveService({rpc,keys,wallet,signed,brain:uid=>codex.strategy(uid),scan:held=>verifiedMarkets.scan(held),quotes:createRiskQuotes({markets,json,rpc})});
@@ -326,7 +326,7 @@ async function body(req){
 }
 async function handle(req){
  const a=new URL(req.url).searchParams.get('action')||'health';
- if(req.method==='GET'&&a==='health')return{version:'31.0.0',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE',masterMode:'PAPER_ONLY',masterSkills:7};
+ if(req.method==='GET'&&a==='health')return{version:'31.0.1',mode:'PAPER_ONLY',serverTime:Date.now(),engine:'REA / exchange receipt execution / independent risk / deterministic limits',liveEnabled:LIVE,liveCapability:'SERVER_GATED_REA_LIVE',masterMode:'PAPER_ONLY',masterSkills:7};
  if(req.method==='GET'&&a==='market')return{market:await market(new URL(req.url).searchParams.get('symbol')||'BTC_THB')};
  if(req.method==='GET'&&a==='scan'){const hold=new URL(req.url).searchParams.get('held');const holds=hold?hold.split(','):[];if(holds.length>3||holds.some(x=>!validSymbol(x)))fail('คู่เหรียญไม่ถูกต้อง');const policy=new URL(req.url).searchParams.get('dataPolicy')||'legacy';if(!['legacy','verified-v17'].includes(policy))fail('ระบบข้อมูลตลาดไม่ถูกต้อง');return{scan:await marketServiceFor({marketDataPolicy:policy}).scan(holds)};}
  if(req.method!=='POST'&&req.method!=='GET')fail('Method not allowed',405);

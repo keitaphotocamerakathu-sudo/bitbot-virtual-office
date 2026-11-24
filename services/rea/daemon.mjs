@@ -20,7 +20,7 @@ export async function runDaemon(role=process.env.REA_SERVICE||'strategy-worker')
  if(!['market-collector','strategy-worker','risk-watchdog','health-monitor'].includes(role))throw Error('UNKNOWN_SERVICE');
  const io=createTransport(),instance=randomUUID(),startedAt=Date.now();let stopped=false,active=false,status='STARTING',lastWorkAt=0,lastError=null,renewBusy=false,wake=null;
  const market=createMarketService({...io,fetchFn:io.newsFetch}),verified=createVerifiedMarketService({base:market,...io});
- const master=createMasterService({rpc:io.rpc,data:createMasterData({base:market,...io}),history:MASTER_RESEARCH});
+ const master=createMasterService({rpc:io.rpc,data:createMasterData({base:market,verified,...io}),history:MASTER_RESEARCH});
  const strategy=createREAService({rpc:io.rpc,marketService:createStreamingMarket({base:verified,rpc:io.rpc}),runtime:'DOCKER',advisor:createAdvisory({rpc:io.rpc}),research:createExperimentStore({rpc:io.rpc}),master});
  const risk=createRiskWatchdog({rpc:io.rpc,quotes:createRiskQuotes({markets:market,json:io.json,rpc:io.rpc,useStream:true})});
  const collector=new PublicTickerCollector();let discoveryAt=0;
