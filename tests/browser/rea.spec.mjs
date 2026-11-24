@@ -232,3 +232,18 @@ test('autonomous Codex shows a real billing block and requires no question input
  const codex={configured:true,consent:true,enabled:true,providerBlocked:'CODEX_PROVIDER_USAGE_LIMIT_EXCEEDED',dailyCalls:2,jobs:[{status:'FAILED',error_code:'CODEX_PROVIDER_USAGE_LIMIT_EXCEEDED',created_at:new Date().toISOString(),usage:{providerError:{code:'USAGE_LIMIT_EXCEEDED',message:'Your organization has reached a usage or billing limit.'}}}]};
  const {calls,errors}=await setup(page,{live:fundedLive(),codex,path:'/rea.html#codex'});await expect(page.locator('#reaCodexStatus')).toContainText('รอแก้ Billing');await expect(page.locator('#reaCodexAutoState')).toContainText('หยุดส่งคำขอใหม่');await expect(page.locator('#reaCodexProviderError')).toContainText('usage or billing limit');await expect(page.locator('#reaCodexBilling')).toBeVisible();await expect(page.locator('#reaCodexQuestion')).toBeHidden();await expect(page.locator('#reaCodexAuto')).toBeChecked();expect(calls.some(c=>c.a==='rea-codex-request'||c.a==='rea-live-control')).toBe(false);expect(errors).toEqual([]);
 });
+
+test('Paper shows a received watchdog and an unverified midnight as distinct states',async({page})=>{
+ const {data,calls,errors}=await setup(page);
+ await expect(page.locator('#reaEquity')).toHaveText('฿10,000.00');
+ data.state.baselinePending=true;data.state.dayPnl=6.75;data.latest.health='SAFE_MODE';
+ data.operations={locked:true,riskAt:Date.now(),reasons:['MIDNIGHT_BASELINE_UNVERIFIED'],alerts:[{status:'OPEN',reason:'MIDNIGHT_BASELINE_UNVERIFIED'}]};
+ await page.locator('#reaRefresh').click();
+ await expect(page.locator('#reaNotice')).toContainText('Paper พักเปิดไม้ใหม่');
+ await expect(page.locator('#reaRuntime')).toContainText('Watchdog รายงานล่าสุด');
+ await expect(page.locator('#reaNotice')).toContainText('00:00');await expect(page.locator('#reaDay')).toHaveText('รอยืนยันทุนเริ่มวัน');
+ await expect(page.locator('#reaRuntime')).not.toContainText('ขาดการติดต่อ');
+ data.operations.riskAt=Date.now()-210000;data.operations.reasons.push('INDEPENDENT_WATCHDOG_STALE');
+ await page.locator('#reaRefresh').click();await expect(page.locator('#reaRuntime')).toContainText('Watchdog ขาดการติดต่อ');
+ expect(calls.every(c=>['rea-state','rea-live-state','rea-codex-state'].includes(c.a))).toBe(true);expect(errors).toEqual([]);
+});

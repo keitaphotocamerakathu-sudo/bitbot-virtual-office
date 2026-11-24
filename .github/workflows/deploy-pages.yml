@@ -1,7 +1,7 @@
-name: Test and deploy REA 32 Paper Trading Experience
+name: Test and deploy REA 32.0.1 Paper watchdog
 on:
   push:
-    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17, feat/master-engine-v31, fix/paper-scan-evidence-v31-2, feat/paper-trading-experience-v32]
+    branches: [main, rebuild-v10, multi-asset-v11, intraday-v12, evidence-v13, company-v14, owner-consent-v14-1, animated-office-v14-2, adaptive-v16, fix/market-data-v17, feat/master-engine-v31, fix/paper-scan-evidence-v31-2, feat/paper-trading-experience-v32, fix/paper-watchdog-health-v32-1]
   workflow_dispatch:
 permissions:
   contents: read

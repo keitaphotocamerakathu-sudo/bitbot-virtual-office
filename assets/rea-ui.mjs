@@ -1,7 +1,7 @@
 import {createMasterPanel,masterOfficeModel} from './rea-master-ui.mjs?v=32.0.0';
 import {createCodexPanel} from './rea-codex-ui.mjs?v=21.1.0';
 import {VirtualOffice} from './office.mjs?v=20.0.0';
-import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason,walletView} from './rea-view-model.mjs?v=30.0.0';
+import {portfolioView,buildREAOffice,liveStatus,liveActivity,fresh,explainReason,walletView} from './rea-view-model.mjs?v=32.0.1';
 const $=id=>document.getElementById(id),cfg=window.BITBOT_CLOUD_CONFIG;
 let client=null,session=null,current=null,liveCurrent=null,busy=false,liveBusy=false,loaded=false;
 let liveSubmitting=false,liveBudgetEdited=false,liveControlBusy=false,authBusy=false,keyReceipt=null;
@@ -49,15 +49,25 @@ function renderMasterOffice(){officeModel=masterOfficeModel(masterPanel.get());t
 
 function renderPaper(data){
  current=data;loaded=!!data?.state;if(!loaded)return;const s=data.state,l=data.latest||{},a=l.summary||{},stale=!fresh(l.at,Date.now());
- const label=s.kill==='ALL'?'EMERGENCY_STOP':s.dailyLocked?'DAILY_LOSS_LOCK':data.operations?.locked?'SAFE_MODE':s.buyPaused||s.kill==='ENTRY'?'พักซื้อใหม่':stale?'รอ Backend':'PAPER_ONLY';
- text('reaEquity',baht(s.equity));text('reaDay',baht(s.dayPnl));text('reaCash',baht(a.available??s.cash));text('reaReserved','ถูกจอง '+baht(a.reserved??0));text('reaSlots',(a.slots??s.positions.length)+' / 2');text('reaHealth',stale?'Heartbeat ขาดหรือยังไม่เริ่ม':l.health||'รอข้อมูล');text('reaHeartbeat',time(l.at));
- text('reaRiskNote','วงเงินเสี่ยงต่อรายการ '+baht(a.riskBudget??100)+' · ใช้ขาดทุนรายวัน '+baht(Math.max(0,-s.dayPnl))+' / '+baht(a.dailyLossLimit??300));$('reaLossBar').max=a.dailyLossLimit??300;$('reaLossBar').value=Math.max(0,-s.dayPnl);text('reaControlState','Kill: '+s.kill+' · Pause: '+s.buyPaused+' · Daily Lock: '+s.dailyLocked);
- const ops=data.operations||{},evidence=data.paperEvidence||{};text('reaRuntime',(l.runtime==='DOCKER'?'Docker Backend':'Supabase Backend · รอบทุกนาที')+' · Watchdog '+time(ops.riskAt)+(ops.locked?' · SAFE MODE: '+(ops.reasons||[]).join(', '):''));
- text('reaObservation','บันทึกแล้ว '+(evidence.samples||0)+' จุดข้อมูล · สังเกตจริง '+number(Number(evidence.daysObserved||0),3)+' วัน / ขั้นต่ำ 7 วันสำหรับการตรวจรับเต็ม');
- $('reaIncidents').replaceChildren();for(const alert of (ops.alerts||[]).filter(a=>a.status==='OPEN')){const p=document.createElement('p');p.className='error-text';p.textContent='แจ้งเตือน: '+alert.reason;$('reaIncidents').append(p);}
+ const ops=data.operations||{},evidence=data.paperEvidence||{};
+ const pending=s.baselinePending===true,locked=ops.locked===true||pending;
+ const reasons=[...new Set([...(pending?['MIDNIGHT_BASELINE_UNVERIFIED']:[]),...(ops.reasons||[])])];
+ const reasonText=reasons.map(explainReason).join(' · ')||'รอผลตรวจความเสี่ยง';
+ const label=s.kill==='ALL'?'EMERGENCY_STOP':s.dailyLocked?'DAILY_LOSS_LOCK':locked?'SAFE_MODE':s.buyPaused||s.kill==='ENTRY'?'พักซื้อใหม่':stale?'รอ Backend':'PAPER_ONLY';
+ text('reaEquity',baht(s.equity));text('reaDay',pending?'รอยืนยันทุนเริ่มวัน':baht(s.dayPnl));text('reaCash',baht(a.available??s.cash));text('reaReserved','ถูกจอง '+baht(a.reserved??0));text('reaSlots',(a.slots??s.positions.length)+' / 2');text('reaHealth',stale?'Heartbeat ขาดหรือยังไม่เริ่ม':l.health||'รอข้อมูล');text('reaHeartbeat',time(l.at));
+ if(pending){text('reaRiskNote','รอยืนยันทุนเวลา 00:00 น. ตามเวลาไทย เพื่อคำนวณกำไรขาดทุนและวงเงินของวันนี้');$('reaLossBar').removeAttribute('value');}
+ else{text('reaRiskNote','วงเงินเสี่ยงต่อรายการ '+baht(a.riskBudget??100)+' · ใช้ขาดทุนรายวัน '+baht(Math.max(0,-s.dayPnl))+' / '+baht(a.dailyLossLimit??300));$('reaLossBar').max=a.dailyLossLimit??300;$('reaLossBar').value=Math.max(0,-s.dayPnl);}
+ text('reaControlState','Kill: '+s.kill+' · Pause: '+s.buyPaused+' · Daily Lock: '+s.dailyLocked);
+ const riskReceipt=ops.riskAt?(fresh(ops.riskAt,Date.now())?'Watchdog รายงานล่าสุด ':'Watchdog ขาดการติดต่อ · รายงานล่าสุด ')+time(ops.riskAt):'รอรายงาน Watchdog';
+ text('reaRuntime',(l.runtime==='DOCKER'?'Docker Backend':'Supabase Backend · รอบทุกนาที')+' · '+riskReceipt+(locked?' · '+reasonText:''));
+ $('reaRuntime').title=reasons.join(', ');
+ const boundary=ops.boundaryEvidence;
+ const boundaryNote=boundary?' · หลักฐานเที่ยงคืน '+boundary.day+' '+({OBSERVED:'เก็บราคาครบแล้ว',REQUESTED:'กำลังรอราคา',UNAVAILABLE:'ข้อมูลราคาไม่ครบ'}[boundary.status]||'รอตรวจ'):'';
+ text('reaObservation','บันทึกแล้ว '+(evidence.samples||0)+' จุดข้อมูล · สังเกตจริง '+number(Number(evidence.daysObserved||0),3)+' วัน / ขั้นต่ำ 7 วันสำหรับการตรวจรับเต็ม'+boundaryNote);
+ $('reaIncidents').replaceChildren();for(const alert of (ops.alerts||[]).filter(a=>a.status==='OPEN')){const p=document.createElement('p');p.className='error-text';p.textContent=explainReason(alert.reason);p.title=alert.reason;$('reaIncidents').append(p);}
  $('reaReasons').replaceChildren();for(const d of (l.decisions||[]).slice(0,8)){const p=document.createElement('p');p.textContent=d.symbol+' · '+explainReason(d.reason)+(d.codex?' · Codex: '+d.codex.reason:'');$('reaReasons').append(p);}if(!l.decisions?.length)text('reaReasons',l.error||'รอผลวิเคราะห์รอบแรก');
  $('reaAudit').replaceChildren();for(const log of data.audit||[]){const p=document.createElement('p');p.textContent=time(log.created_at)+' · '+log.action;$('reaAudit').append(p);}
- if(pageName==='overview'||scope==='PAPER'){text('reaMode',label);notice(stale?'ยังไม่พบ Heartbeat สด กรุณาตรวจ Backend':ops.locked?'SAFE MODE: '+(ops.reasons||[]).join(', '):'กำลังดูข้อมูลเงินจำลอง · ไม่ส่งคำสั่งเงินจริง',stale||ops.locked);}
+ if(pageName==='overview'||scope==='PAPER'){text('reaMode',label);notice(locked?'Paper พักเปิดไม้ใหม่ · '+reasonText:stale?'ยังไม่พบ Heartbeat สด กรุณาตรวจ Backend':'กำลังดูข้อมูลเงินจำลอง · ไม่ส่งคำสั่งเงินจริง',stale||locked);}
  renderAdvisory();renderShared();
 }
 function renderAdvisory(){
@@ -177,8 +187,8 @@ function renderResearchAndCorrelation(){
 }
 function daily(vm){
  const periods=new Map(),kind=$('reaPeriod').value;
- for(const row of vm.daily){let key=row.day;if(kind==='month')key=key.slice(0,7);if(kind==='week'){const d=new Date(row.day+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));key='เริ่ม '+d.toISOString().slice(0,10);}const old=periods.get(key)||{key,pnl:0,locked:false};old.pnl+=Number(row.payload.pnl||0);old.locked||=row.payload.locked===true;periods.set(key,old);}
- rows('reaDaily',[...periods.values()].sort((a,b)=>b.key.localeCompare(a.key)),[r=>r.key,r=>baht(r.pnl),r=>r.locked?'มีการล็อกขาดทุน':scope==='LIVE'?'เงินจริง':'Paper']);
+ for(const row of vm.daily){let key=row.day;if(kind==='month')key=key.slice(0,7);if(kind==='week'){const d=new Date(row.day+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));key='เริ่ม '+d.toISOString().slice(0,10);}const old=periods.get(key)||{key,pnl:0,locked:false};old.pnl+=Number(row.payload.pnl||0);old.locked||=row.payload.locked===true;old.unverified||=scope==='PAPER'&&(row.payload.baselinePending===true||(row.day===vm.state?.day&&vm.state?.baselinePending===true));periods.set(key,old);}
+ rows('reaDaily',[...periods.values()].sort((a,b)=>b.key.localeCompare(a.key)),[r=>r.key,r=>r.unverified?'รอยืนยันทุนเริ่มวัน':baht(r.pnl),r=>r.locked?'มีการล็อกขาดทุน':scope==='LIVE'?'เงินจริง':'Paper']);
 }
 function renderShared(){
  renderResearchAndCorrelation();

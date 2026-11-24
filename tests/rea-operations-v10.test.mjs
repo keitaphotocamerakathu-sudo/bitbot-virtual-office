@@ -54,3 +54,40 @@ test('risk watchdog cannot claim an accepted checkpoint when its revision became
 test('risk watchdog flat portfolio reports idle and never creates a paper fill',async()=>{
  let checkpoint=false;const w=createRiskWatchdog({clock:()=>now,quotes:async()=>[],rpc:async(name)=>{if(name==='rea_risk_accounts')return[{user_id:'u',state:initialREA(now),latest:{},revision:1}];if(name==='rea_risk_checkpoint')checkpoint=true;return true;}});const r=await w.run();assert.equal(r.results[0].health,'IDLE');assert.equal(checkpoint,false);
 });
+
+async function inspectRisk(states,markets, options={}) {
+ const observations=[];
+ const watchdog=createRiskWatchdog({clock:()=>now,quotes:async()=>markets,rpc:async(name,args)=>{
+  if(name==='rea_risk_accounts')return states.map((state,i)=>({user_id:'p'+i,state,latest:{},revision:1}));
+  if(name==='rea_risk_checkpoint')return options.commit!==false;
+  if(name==='rea_risk_observation'){observations.push(args);if(options.failFirst&&args.p_uid==='p0')throw Error('database unavailable');return true;}
+  throw Error('Unexpected RPC '+name);
+ }});
+ return {results:(await watchdog.run()).results,observations};
+}
+test('baseline pending produces a fresh, specific reason while an independent protective exit still commits',async()=>{
+ const state=held();state.baselinePending=true;
+ const {results,observations}=await inspectRisk([state],[riskMarket()]);
+ assert.equal(results[0].health,'SAFE_MODE');assert.equal(results[0].committed,true);
+ assert.deepEqual(observations[0].p_reasons,['MIDNIGHT_BASELINE_UNVERIFIED']);assert.equal(observations[0].p_at,now);
+});
+test('an unrelated account cannot lend its good price to a missing pending order or activate an idle watcher',async()=>{
+ const quote={...riskMarket(),last:101,bid:101,ask:101.01};
+ const pending=initialREA(now);pending.orders=[{id:'buy',symbol:'ETH_THB',side:'BUY',status:'OPEN',limit:5,remaining:10,reserved:10}];
+ const {observations}=await inspectRisk([held(),pending,initialREA(now)],[quote]);
+ assert.deepEqual(observations.map(x=>x.p_status),['OK','SAFE_MODE','IDLE']);
+ assert.deepEqual(observations[1].p_reasons,['WATCHDOG_MARKET_DATA_UNAVAILABLE']);
+});
+test('missing, stale, future or empty depth cannot look ready and baseline stays blocked on a flat book',async()=>{
+ for(const depth of [null,{...riskMarket().depth,at:now-30001},{...riskMarket().depth,at:now+5001},{...riskMarket().depth,bids:[]}]){
+  const {observations}=await inspectRisk([held()],[{...riskMarket(),depth}]);
+  assert(observations[0].p_reasons.includes('WATCHDOG_DEPTH_UNAVAILABLE'));
+ }
+ const flat=initialREA(now);flat.baselinePending=true;
+ assert.deepEqual((await inspectRisk([flat],[])).observations[0].p_reasons,['MIDNIGHT_BASELINE_UNVERIFIED']);
+});
+test('invalid individual state, unconfirmed protective checkpoint, and receipt write failure stay fail-closed',async()=>{
+ const {results,observations}=await inspectRisk([{...initialREA(now),positions:null},held(),initialREA(now)],[riskMarket()],{commit:false,failFirst:true});
+ assert.deepEqual(observations.map(x=>x.p_reasons),[['WATCHDOG_RISK_STATE_UNAVAILABLE'],['WATCHDOG_CHECKPOINT_UNCONFIRMED'],[]]);
+ assert.equal(results[0].recorded,false);assert.deepEqual(results.map(r=>r.health),['SAFE_MODE','SAFE_MODE','IDLE']);
+});
