@@ -41,6 +41,8 @@ jobs:
             research/data-v31.json.gz
       - name: Install browser dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Replay Paper watchdog and Bangkok midnight in isolated PostgreSQL
+        run: node tests/rea-paper-db-replay.mjs
       - name: Prepare browser for UI checks
         timeout-minutes: 5
         run: |

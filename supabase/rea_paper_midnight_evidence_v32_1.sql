@@ -51,9 +51,9 @@ language sql immutable security invoker set search_path='' as $$
  from unique_tickers where bid>0 and ask>=bid and last>0;
 $$;
 
-create function rea.paper_collect_boundary() returns text language plpgsql security invoker set search_path='' as $$
+create or replace function rea.paper_collect_boundary() returns text language plpgsql security invoker set search_path='' as $$
 declare trading_date date=(now() at time zone 'Asia/Bangkok')::date; req rea.paper_boundary_requests%rowtype;
- response net._http_response%rowtype; required_symbols text[]; quotes jsonb='{}'; body jsonb;
+ response net._http_response%rowtype; required_symbols text[]; captured_quotes jsonb='{}'; body jsonb;
 begin
  select * into req from rea.paper_boundary_requests where trading_day=trading_date and status='REQUESTED' for update;
  if not found then return 'NO_PENDING_REQUEST'; end if;
@@ -65,10 +65,10 @@ begin
     and response.created between req.requested_at and req.requested_at+interval '10 seconds'
     and response.created<=((trading_date::timestamp at time zone 'Asia/Bangkok')+interval '30 seconds') then
   begin body=response.content::jsonb; exception when invalid_text_representation then body=null; end;
-  quotes=rea.paper_boundary_quotes(body,required_symbols);
+  captured_quotes=rea.paper_boundary_quotes(body,required_symbols);
  end if;
- update rea.paper_boundary_requests set received_at=response.created,quotes=quotes,
-   status=case when (case when jsonb_typeof(body)='array' then jsonb_array_length(body)>0 else false end) and quotes ?& required_symbols then 'OBSERVED' else 'UNAVAILABLE' end
+ update rea.paper_boundary_requests set received_at=response.created,quotes=captured_quotes,
+   status=case when (case when jsonb_typeof(body)='array' then jsonb_array_length(body)>0 else false end) and captured_quotes ?& required_symbols then 'OBSERVED' else 'UNAVAILABLE' end
  where trading_day=trading_date;
  return (select status from rea.paper_boundary_requests where trading_day=trading_date);
 end $$;
