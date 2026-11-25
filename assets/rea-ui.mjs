@@ -64,7 +64,13 @@ function renderPaper(data){
  const boundary=ops.boundaryEvidence;
  const boundaryNote=boundary?' · หลักฐานเที่ยงคืน '+boundary.day+' '+({OBSERVED:'เก็บราคาครบแล้ว',REQUESTED:'กำลังรอราคา',UNAVAILABLE:'ข้อมูลราคาไม่ครบ'}[boundary.status]||'รอตรวจ'):'';
  text('reaObservation','บันทึกแล้ว '+(evidence.samples||0)+' จุดข้อมูล · สังเกตจริง '+number(Number(evidence.daysObserved||0),3)+' วัน / ขั้นต่ำ 7 วันสำหรับการตรวจรับเต็ม'+boundaryNote);
- $('reaIncidents').replaceChildren();for(const alert of (ops.alerts||[]).filter(a=>a.status==='OPEN')){const p=document.createElement('p');p.className='error-text';p.textContent=explainReason(alert.reason);p.title=alert.reason;$('reaIncidents').append(p);}
+ const incidents=$('reaIncidents');
+ incidents.replaceChildren();
+ for(const alert of (ops.alerts||[]).filter(a=>a.status==='OPEN')){
+  const detail=document.createElement('details'),summary=document.createElement('summary'),code=document.createElement('code');
+  summary.className='error-text';summary.textContent=explainReason(alert.reason);
+  code.textContent=alert.reason;detail.append(summary,code);incidents.append(detail);
+ }
  $('reaReasons').replaceChildren();for(const d of (l.decisions||[]).slice(0,8)){const p=document.createElement('p');p.textContent=d.symbol+' · '+explainReason(d.reason)+(d.codex?' · Codex: '+d.codex.reason:'');$('reaReasons').append(p);}if(!l.decisions?.length)text('reaReasons',l.error||'รอผลวิเคราะห์รอบแรก');
  $('reaAudit').replaceChildren();for(const log of data.audit||[]){const p=document.createElement('p');p.textContent=time(log.created_at)+' · '+log.action;$('reaAudit').append(p);}
  if(pageName==='overview'||scope==='PAPER'){text('reaMode',label);notice(locked?'Paper พักเปิดไม้ใหม่ · '+reasonText:stale?'ยังไม่พบ Heartbeat สด กรุณาตรวจ Backend':'กำลังดูข้อมูลเงินจำลอง · ไม่ส่งคำสั่งเงินจริง',stale||locked);}

@@ -243,6 +243,10 @@ test('Paper shows a received watchdog and an unverified midnight as distinct sta
  await expect(page.locator('#reaRuntime')).toContainText('Watchdog รายงานล่าสุด');
  await expect(page.locator('#reaNotice')).toContainText('00:00');await expect(page.locator('#reaDay')).toHaveText('รอยืนยันทุนเริ่มวัน');
  await expect(page.locator('#reaRuntime')).not.toContainText('ขาดการติดต่อ');
+ await expect(page.locator('#reaIncidents summary')).toContainText('00:00');
+ await page.locator('#reaIncidents summary').click();
+ await expect(page.locator('#reaIncidents code')).toBeVisible();
+ await expect(page.locator('#reaIncidents code')).toHaveText('MIDNIGHT_BASELINE_UNVERIFIED');
  data.operations.riskAt=Date.now()-210000;data.operations.reasons.push('INDEPENDENT_WATCHDOG_STALE');
  await page.locator('#reaRefresh').click();await expect(page.locator('#reaRuntime')).toContainText('Watchdog ขาดการติดต่อ');
  expect(calls.every(c=>['rea-state','rea-live-state','rea-codex-state'].includes(c.a))).toBe(true);expect(errors).toEqual([]);
